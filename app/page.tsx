@@ -4,17 +4,24 @@ import { useMemo, useState } from 'react';
 import {
   Activity,
   ArrowUpRight,
+  BrainCircuit,
   CalendarDays,
   Check,
   ChevronRight,
   CircleDollarSign,
+  Clock3,
+  Database,
   Factory,
   Flag,
+  Gauge,
   Handshake,
   Landmark,
+  Newspaper,
   Radio,
+  RefreshCcw,
   Send,
   Shield,
+  Sparkles,
   Users,
 } from 'lucide-react';
 
@@ -39,6 +46,40 @@ type Message = {
   author: 'player' | 'foreign';
   text: string;
   meta?: string;
+};
+
+type HistoricalEvent = {
+  id: string;
+  title: string;
+  realDate: string;
+  score: number;
+  verdict: 'REJOUABLE' | 'À ADAPTER' | 'ÉCARTÉ';
+  source: string;
+  sourceUrl: string;
+  historicalOutcome: string;
+  divergence: string;
+  adaptation: string;
+};
+
+type AdvisorChoice = {
+  id: string;
+  title: string;
+  detail: string;
+  recommended?: boolean;
+  effects: {
+    budget: number;
+    stability: number;
+    security: number;
+    influence: number;
+  };
+};
+
+type AdvisorProposal = {
+  title: string;
+  urgency: string;
+  reason: string;
+  signals: string[];
+  choices: AdvisorChoice[];
 };
 
 const countries: Country[] = [
@@ -81,6 +122,73 @@ const events = [
   { status: 'SURVEILLANCE', title: 'Pression sur le flanc oriental', detail: 'La Pologne demande de nouvelles garanties.', tone: 'neutral' },
 ];
 
+const historicalCandidates: HistoricalEvent[] = [
+  {
+    id: 'energy-inflation',
+    title: 'Accélération de la crise énergétique européenne',
+    realDate: 'Janvier 2022',
+    score: 94,
+    verdict: 'REJOUABLE',
+    source: 'Eurostat · inflation énergétique',
+    sourceUrl: 'https://ec.europa.eu/eurostat/web/products-eurostat-news/-/ddn-20220225-2',
+    historicalOutcome: 'L’inflation du gaz atteint près de 41 % dans l’Union européenne.',
+    divergence: 'La dépendance au gaz et les stocks restent proches de la situation réelle.',
+    adaptation: 'Déclencher la pression sur les prix, mais recalculer son intensité selon les réserves et les accords du joueur.',
+  },
+  {
+    id: 'ukraine-escalation',
+    title: 'Escalade militaire autour de l’Ukraine',
+    realDate: 'Janvier–février 2022',
+    score: 78,
+    verdict: 'À ADAPTER',
+    source: 'Conseil de l’Union européenne',
+    sourceUrl: 'https://www.consilium.europa.eu/en/press/press-releases/2022/02/19/declaration-by-the-high-representative-on-behalf-of-the-eu-on-the-situation-in-eastern-ukraine-and-the-russian-military-build-up/',
+    historicalOutcome: 'La concentration de forces russes débouche sur l’invasion du 24 février.',
+    divergence: 'Le dialogue franco-allemand est plus dense et les garanties au flanc oriental diffèrent.',
+    adaptation: 'Créer une chaîne de crise probabiliste : ultimatum, médiation, incident frontalier ou invasion.',
+  },
+  {
+    id: 'versailles-summit',
+    title: 'Sommet européen de Versailles',
+    realDate: '10–11 mars 2022',
+    score: 31,
+    verdict: 'ÉCARTÉ',
+    source: 'Élysée · Présidence française de l’UE',
+    sourceUrl: 'https://www.elysee.fr/emmanuel-macron/2022/03/11/sommet-de-versailles-union-europeenne',
+    historicalOutcome: 'Les dirigeants européens se réunissent après l’invasion de l’Ukraine.',
+    divergence: 'La cause historique du sommet n’existe pas encore dans la partie.',
+    adaptation: 'Ne pas forcer le sommet. Le remplacer par une conférence européenne seulement si une crise équivalente apparaît.',
+  },
+];
+
+const advisorProposal: AdvisorProposal = {
+  title: 'Réduire la vulnérabilité énergétique avant l’hiver',
+  urgency: 'DÉCISION CONSEILLÉE · 18 JOURS',
+  reason: 'L’énergie domine l’agenda simulé et peut contaminer l’industrie, le budget et la stabilité sociale.',
+  signals: ['Inflation du gaz : +41 %', 'Réserves régionales : 74 jours', 'Tensions Russie–Ukraine en hausse'],
+  choices: [
+    {
+      id: 'shield',
+      title: 'A — Bouclier tarifaire immédiat',
+      detail: 'Protège les ménages, mais transfère le choc sur le budget public.',
+      effects: { budget: -12, stability: 8, security: 0, influence: 1 },
+    },
+    {
+      id: 'diversify',
+      title: 'B — Réserves et diversification',
+      detail: 'Achats groupés, stocks obligatoires et nouveaux fournisseurs.',
+      recommended: true,
+      effects: { budget: -6, stability: 3, security: 7, influence: 2 },
+    },
+    {
+      id: 'market',
+      title: 'C — Laisser les prix s’ajuster',
+      detail: 'Préserve la trésorerie à court terme, avec un risque social élevé.',
+      effects: { budget: 3, stability: -9, security: -2, influence: -1 },
+    },
+  ],
+};
+
 function generateReply(country: Country, text: string) {
   const normalized = text.toLowerCase();
   if (/commerce|douan|industrie|invest|économ/.test(normalized)) {
@@ -114,11 +222,20 @@ export default function Home() {
   const [month, setMonth] = useState(0);
   const [pendingTreaty, setPendingTreaty] = useState(false);
   const [activeTreaty, setActiveTreaty] = useState(false);
+  const [budget, setBudget] = useState(318);
   const [influence, setInfluence] = useState(42);
   const [industry, setIndustry] = useState(100);
+  const [stability, setStability] = useState(64);
+  const [security, setSecurity] = useState(58);
   const [isThinking, setIsThinking] = useState(false);
+  const [isScanning, setIsScanning] = useState(false);
+  const [lastScan, setLastScan] = useState('09:00');
+  const [selectedCandidateId, setSelectedCandidateId] = useState('energy-inflation');
+  const [queuedEventId, setQueuedEventId] = useState<string | null>(null);
+  const [advisorChoiceId, setAdvisorChoiceId] = useState<string | null>(null);
 
   const selected = useMemo(() => countries.find((country) => country.id === selectedId) ?? countries[0], [selectedId]);
+  const selectedCandidate = historicalCandidates.find((candidate) => candidate.id === selectedCandidateId) ?? historicalCandidates[0];
   const currentMessages = messages[selectedId] ?? [];
   const date = month === 0 ? 'Janvier 2022' : month === 1 ? 'Février 2022' : 'Mars 2022';
 
@@ -161,6 +278,23 @@ export default function Home() {
     if (activeTreaty) setIndustry((value) => Number((value + 0.6).toFixed(1)));
   };
 
+  const scanHistoricalSources = async () => {
+    if (isScanning) return;
+    setIsScanning(true);
+    await new Promise((resolve) => setTimeout(resolve, 850));
+    setLastScan(new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }));
+    setIsScanning(false);
+  };
+
+  const applyAdvisorChoice = (choice: AdvisorChoice) => {
+    if (advisorChoiceId) return;
+    setAdvisorChoiceId(choice.id);
+    setBudget((value) => value + choice.effects.budget);
+    setStability((value) => Math.max(0, Math.min(100, value + choice.effects.stability)));
+    setSecurity((value) => Math.max(0, Math.min(100, value + choice.effects.security)));
+    setInfluence((value) => Math.max(0, value + choice.effects.influence));
+  };
+
   return (
     <main className="min-h-screen bg-background text-foreground">
       <header className="border-b border-border bg-card/85 backdrop-blur-xl">
@@ -174,8 +308,10 @@ export default function Home() {
           </div>
           <div className="flex flex-wrap items-center gap-x-6 gap-y-2 font-mono text-xs">
             <Metric icon={CalendarDays} label="CALENDRIER" value={date} />
-            <Metric icon={CircleDollarSign} label="BUDGET" value="318 Md€" delta="+1,2" />
+            <Metric icon={CircleDollarSign} label="BUDGET" value={`${budget} Md€`} delta="+1,2" />
             <Metric icon={Factory} label="INDUSTRIE" value={`${industry}`} delta={activeTreaty ? '+0,6' : 'stable'} />
+            <Metric icon={Gauge} label="STABILITÉ" value={`${stability}`} />
+            <Metric icon={Shield} label="SÉCURITÉ" value={`${security}`} />
             <Metric icon={Users} label="INFLUENCE" value={`${influence}`} delta={activeTreaty ? '-4' : '+2/mois'} />
           </div>
           <Button onClick={advanceMonth} className="h-10 rounded-none px-5 font-mono text-xs tracking-[0.08em]">TERMINER LE MOIS <ChevronRight /></Button>
@@ -191,6 +327,79 @@ export default function Home() {
               <p className="mt-0.5 text-xs text-muted-foreground">{event.detail}</p>
             </article>
           ))}
+        </div>
+      </section>
+
+      <section className="intelligence-shell">
+        <div className="mx-auto max-w-[1600px] px-4 py-5 xl:px-8">
+          <div className="intelligence-grid">
+            <section className="dossier-panel min-w-0">
+              <div className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-3.5">
+                <Newspaper className="size-4 text-primary" />
+                <div className="mr-auto">
+                  <p className="font-mono text-[9px] tracking-[0.14em] text-muted-foreground">OBSERVATOIRE HISTORIQUE</p>
+                  <h2 className="text-sm font-medium">Événements réels candidats</h2>
+                </div>
+                <span className="source-status"><Database className="size-3" /> 3 SOURCES OFFICIELLES</span>
+                <Button variant="outline" onClick={() => void scanHistoricalSources()} disabled={isScanning} className="h-8 rounded-none border-border px-3 font-mono text-[10px]">
+                  <RefreshCcw className={`size-3 ${isScanning ? 'animate-spin' : ''}`} /> {isScanning ? 'ANALYSE…' : 'RÉANALYSER'}
+                </Button>
+              </div>
+
+              <div className="historical-layout">
+                <div className="divide-y divide-border border-r border-border">
+                  {historicalCandidates.map((candidate) => (
+                    <button key={candidate.id} type="button" onClick={() => setSelectedCandidateId(candidate.id)} className={`historical-row ${selectedCandidateId === candidate.id ? 'selected' : ''}`}>
+                      <span className={`plausibility-score ${candidate.score >= 75 ? 'high' : candidate.score >= 45 ? 'medium' : 'low'}`}>{candidate.score}%</span>
+                      <span className="min-w-0 flex-1 text-left">
+                        <span className="mb-1 flex items-center gap-2 font-mono text-[9px] tracking-[0.08em] text-muted-foreground"><Clock3 className="size-3" /> {candidate.realDate}</span>
+                        <span className="block text-sm font-medium leading-5">{candidate.title}</span>
+                      </span>
+                      <span className={`verdict ${candidate.verdict === 'REJOUABLE' ? 'replay' : candidate.verdict === 'À ADAPTER' ? 'adapt' : 'reject'}`}>{candidate.verdict}</span>
+                    </button>
+                  ))}
+                </div>
+
+                <article className="event-analysis">
+                  <div className="flex items-start justify-between gap-4">
+                    <div><p className="font-mono text-[9px] tracking-[0.12em] text-primary">COMPARAISON RÉALITÉ ↔ PARTIE</p><h3 className="mt-1 text-base font-medium">{selectedCandidate.title}</h3></div>
+                    <span className="score-badge">{selectedCandidate.score}% PLAUSIBLE</span>
+                  </div>
+                  <AnalysisLine label="DANS LA RÉALITÉ" text={selectedCandidate.historicalOutcome} />
+                  <AnalysisLine label="ÉCART DANS LA PARTIE" text={selectedCandidate.divergence} />
+                  <AnalysisLine label="VERSION PROPOSÉE" text={selectedCandidate.adaptation} accent />
+                  <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-border pt-3">
+                    <a href={selectedCandidate.sourceUrl} target="_blank" rel="noreferrer" className="mr-auto font-mono text-[9px] text-muted-foreground underline decoration-border underline-offset-4 hover:text-foreground">SOURCE : {selectedCandidate.source}</a>
+                    <Button variant="outline" onClick={() => setQueuedEventId(selectedCandidate.id)} className="h-8 rounded-none border-border px-3 font-mono text-[10px]" disabled={queuedEventId === selectedCandidate.id || selectedCandidate.verdict === 'ÉCARTÉ'}>
+                      {selectedCandidate.verdict === 'ÉCARTÉ' ? 'NON ÉLIGIBLE' : queuedEventId === selectedCandidate.id ? 'AJOUTÉ AU CALENDRIER' : 'PROPOSER AU JOUEUR'}
+                    </Button>
+                  </div>
+                </article>
+              </div>
+              <div className="pipeline-strip"><span>1 · SOURCES</span><ChevronRight /><span>2 · CONDITIONS HISTORIQUES</span><ChevronRight /><span>3 · ÉTAT DU MONDE</span><ChevronRight /><span>4 · SCORE</span><ChevronRight /><span>5 · PROPOSITION</span><span className="ml-auto">DERNIÈRE ANALYSE {lastScan}</span></div>
+            </section>
+
+            <aside className="dossier-panel advisor-panel">
+              <div className="flex items-center gap-3 border-b border-border px-4 py-3.5"><BrainCircuit className="size-4 text-primary" /><div><p className="font-mono text-[9px] tracking-[0.14em] text-muted-foreground">PROPOSITION DE L’IA</p><h2 className="text-sm font-medium">Conseil stratégique</h2></div></div>
+              <div className="p-4">
+                <p className="font-mono text-[9px] tracking-[0.1em] text-[var(--signal-red)]">{advisorProposal.urgency}</p>
+                <h3 className="mt-2 text-base font-medium leading-6">{advisorProposal.title}</h3>
+                <p className="mt-2 text-xs leading-5 text-muted-foreground">{advisorProposal.reason}</p>
+                <div className="my-4 grid gap-1.5">{advisorProposal.signals.map((signal) => <p key={signal} className="advisor-signal"><Activity className="size-3 text-primary" />{signal}</p>)}</div>
+                <div className="space-y-2">
+                  {advisorProposal.choices.map((choice) => (
+                    <button key={choice.id} type="button" onClick={() => applyAdvisorChoice(choice)} disabled={Boolean(advisorChoiceId)} className={`advisor-choice ${advisorChoiceId === choice.id ? 'chosen' : ''}`}>
+                      <span className="flex items-center justify-between gap-2"><strong>{choice.title}</strong>{choice.recommended && <span className="recommendation"><Sparkles className="size-3" /> IA</span>}</span>
+                      <span className="mt-1 block text-[11px] leading-4 text-muted-foreground">{choice.detail}</span>
+                      <span className="mt-2 block font-mono text-[9px] text-muted-foreground">BUDGET {formatImpact(choice.effects.budget)} · STAB. {formatImpact(choice.effects.stability)} · SÉCUR. {formatImpact(choice.effects.security)}</span>
+                    </button>
+                  ))}
+                </div>
+                {advisorChoiceId && <p className="mt-3 flex items-center gap-2 border border-[var(--signal-green)]/30 bg-[var(--signal-green)]/5 px-3 py-2 font-mono text-[9px] text-[var(--signal-green)]"><Check className="size-3" /> CHOIX ENREGISTRÉ — EFFETS APPLIQUÉS</p>}
+              </div>
+            </aside>
+          </div>
+          <p className="mt-2 font-mono text-[9px] leading-4 text-muted-foreground">SNAPSHOT DE DÉMONSTRATION · Le score est calculé par des règles vérifiables ; l’IA explique les écarts et rédige les variantes, mais ne peut ni inventer une source ni appliquer une conséquence seule.</p>
         </div>
       </section>
 
@@ -261,6 +470,14 @@ export default function Home() {
 
 function Metric({ icon: Icon, label, value, delta }: { icon: typeof Activity; label: string; value: string; delta?: string }) {
   return <div className="flex items-center gap-2"><Icon className="size-4 text-muted-foreground" /><span><span className="block text-[9px] tracking-[0.12em] text-muted-foreground">{label}</span><span className="text-foreground">{value}</span>{delta && <span className="ml-1.5 text-primary">{delta}</span>}</span></div>;
+}
+
+function AnalysisLine({ label, text, accent = false }: { label: string; text: string; accent?: boolean }) {
+  return <div className={`analysis-line ${accent ? 'accent' : ''}`}><p className="font-mono text-[8px] tracking-[0.1em] text-muted-foreground">{label}</p><p className="mt-1 text-xs leading-5">{text}</p></div>;
+}
+
+function formatImpact(value: number) {
+  return value > 0 ? `+${value}` : `${value}`;
 }
 
 function PanelTitle({ icon: Icon, eyebrow, title }: { icon: typeof Activity; eyebrow: string; title: string }) {
