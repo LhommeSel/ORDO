@@ -218,6 +218,64 @@
 .map-legend i.medium { background: var(--signal-gold); }
 .map-legend i.low { background: var(--signal-red); }
 
+#diplomacy-center { display: none; }
+.event-diplomacy-button { display: flex; align-items: center; gap: 0.3rem; margin-top: 0.7rem; color: var(--primary); font-family: var(--font-geist-mono); font-size: 0.52rem; letter-spacing: 0.08em; }
+.event-diplomacy-button svg { width: 0.7rem; height: 0.7rem; }
+.event-diplomacy-button.resolved { color: var(--signal-green); }
+.diplomatic-notice { display: flex; align-items: center; gap: 0.5rem; max-width: 1600px; margin-inline: auto; border-top: 1px solid var(--border); padding: 0.5rem 1.25rem; color: var(--muted-foreground); font-family: var(--font-geist-mono); font-size: 0.55rem; }
+.diplomacy-sheet { width: min(1180px, 94vw) !important; max-width: none !important; border-color: var(--border); background: var(--background); }
+.diplomacy-sheet-header { background: color-mix(in oklch, var(--card) 92%, transparent); }
+.diplomacy-sheet-layout { display: grid; grid-template-columns: 220px minmax(380px, 1fr) 285px; min-height: 0; flex: 1; overflow: hidden; }
+.diplomacy-contact-list { min-width: 0; overflow-y: auto; border-right: 1px solid var(--border); background: color-mix(in oklch, var(--card) 72%, var(--background)); }
+.diplomacy-contact { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 0.65rem; width: 100%; border-top: 1px solid var(--border); padding: 0.75rem; text-align: left; }
+.diplomacy-contact:hover { background: color-mix(in oklch, var(--muted) 55%, transparent); }
+.diplomacy-contact.selected { background: color-mix(in oklch, var(--primary) 8%, var(--card)); box-shadow: inset 3px 0 0 var(--primary); }
+.diplomacy-contact strong, .diplomacy-contact small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.diplomacy-contact strong { font-size: 0.72rem; font-weight: 550; }
+.diplomacy-contact small { margin-top: 0.15rem; color: var(--muted-foreground); font-size: 0.58rem; }
+.diplomacy-contact i { width: 0.42rem; height: 0.42rem; background: var(--muted-foreground); }
+.diplomacy-contact i.positive { background: var(--signal-green); }
+.diplomacy-contact i.neutral { background: var(--signal-gold); }
+.diplomacy-contact i.watch { background: var(--signal-red); }
+.diplomacy-conversation { display: flex; min-width: 0; min-height: 0; flex-direction: column; }
+.diplomacy-country-heading { display: flex; align-items: center; gap: 0.75rem; border-bottom: 1px solid var(--border); padding: 0.8rem 1rem; }
+.diplomacy-country-heading h2 { margin-top: 0.15rem; font-size: 0.95rem; font-weight: 550; }
+.diplomacy-message-list { min-height: 180px; flex: 1; overflow-y: auto; space-y: 1rem; padding: 1rem; }
+.diplomacy-message-list .message + .message { margin-top: 0.9rem; }
+.diplomacy-composer { border-top: 1px solid var(--border); background: color-mix(in oklch, var(--muted) 18%, transparent); padding: 0.85rem 1rem; }
+.diplomacy-composer label { display: block; margin-bottom: 0.45rem; color: var(--muted-foreground); font-family: var(--font-geist-mono); font-size: 0.52rem; letter-spacing: 0.08em; }
+.diplomatic-event-callout { margin: 0.85rem 1rem 0; border: 1px solid color-mix(in oklch, var(--signal-gold) 45%, var(--border)); background: color-mix(in oklch, var(--signal-gold) 6%, var(--card)); padding: 0.85rem; }
+.diplomatic-event-callout.direct_exchange_required { border-color: color-mix(in oklch, var(--signal-red) 55%, var(--border)); background: color-mix(in oklch, var(--signal-red) 7%, var(--card)); }
+.diplomatic-event-callout h3 { margin-top: 0.25rem; font-size: 0.82rem; font-weight: 550; }
+.diplomatic-event-callout p { margin-top: 0.25rem; color: var(--muted-foreground); font-size: 0.64rem; line-height: 1rem; }
+.diplomatic-event-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.4rem; margin-top: 0.75rem; }
+.diplomatic-event-actions > button { min-height: 2.8rem; border: 1px solid var(--border); padding: 0.5rem 0.6rem; background: color-mix(in oklch, var(--muted) 30%, transparent); text-align: left; }
+.diplomatic-event-actions > button:hover { border-color: color-mix(in oklch, var(--primary) 55%, var(--border)); }
+.diplomatic-event-actions strong, .diplomatic-event-actions span { display: block; }
+.diplomatic-event-actions strong { font-size: 0.62rem; font-weight: 550; }
+.diplomatic-event-actions span { margin-top: 0.15rem; color: var(--muted-foreground); font-size: 0.53rem; line-height: 0.8rem; }
+.diplomacy-country-recap { min-width: 0; overflow-y: auto; border-left: 1px solid var(--border); background: color-mix(in oklch, var(--card) 74%, var(--background)); padding: 1rem; }
+.diplomacy-recap-title { display: flex; align-items: center; gap: 0.65rem; }
+.diplomacy-recap-title h3 { font-size: 1rem; font-weight: 550; }
+.diplomacy-recap-title p { color: var(--muted-foreground); font-size: 0.62rem; }
+.diplomacy-score-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-block: 1rem; border: 1px solid var(--border); }
+.diplomacy-score-grid div { border-right: 1px solid var(--border); padding: 0.65rem; }
+.diplomacy-score-grid div:last-child { border-right: 0; }
+.diplomacy-score-grid span, .diplomacy-score-grid strong { display: block; font-family: var(--font-geist-mono); }
+.diplomacy-score-grid span { color: var(--muted-foreground); font-size: 0.48rem; }
+.diplomacy-score-grid strong { margin-top: 0.2rem; font-size: 0.68rem; }
+.diplomacy-country-recap section { border-top: 1px solid var(--border); padding-block: 0.85rem; }
+.recap-label { display: flex; align-items: center; gap: 0.4rem; color: var(--muted-foreground); font-family: var(--font-geist-mono); font-size: 0.5rem; letter-spacing: 0.08em; }
+.recap-label svg { width: 0.75rem; height: 0.75rem; color: var(--primary); }
+.relation-tags { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.55rem; }
+.relation-tags span { border: 1px solid color-mix(in oklch, var(--signal-blue) 35%, var(--border)); background: color-mix(in oklch, var(--signal-blue) 6%, transparent); padding: 0.25rem 0.35rem; font-size: 0.55rem; }
+.ai-rationale { margin-top: 0.55rem; color: var(--muted-foreground); font-size: 0.56rem; line-height: 0.9rem; }
+.diplomacy-country-recap ul { margin-top: 0.55rem; display: grid; gap: 0.35rem; font-size: 0.61rem; line-height: 0.95rem; }
+.diplomacy-country-recap li { position: relative; padding-left: 0.7rem; }
+.diplomacy-country-recap li::before { content: '◆'; position: absolute; left: 0; color: var(--primary); font-size: 0.4rem; }
+.resolved-event { display: flex; align-items: center; gap: 0.4rem; border: 1px solid color-mix(in oklch, var(--signal-green) 35%, var(--border)); background: color-mix(in oklch, var(--signal-green) 7%, transparent); padding: 0.55rem; color: var(--signal-green); font-family: var(--font-geist-mono); font-size: 0.52rem; }
+.resolved-event svg { width: 0.75rem; height: 0.75rem; }
+
 @media (max-width: 1279px) {
   .dossier-panel.flex { min-height: 560px; }
 }
@@ -230,6 +288,8 @@
   .map-dossier { min-height: 280px; }
   .map-facts { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .map-legend { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .diplomacy-sheet-layout { grid-template-columns: 180px minmax(360px, 1fr); }
+  .diplomacy-country-recap { display: none; }
 }
 
 @media (max-width: 760px) {
@@ -243,4 +303,10 @@
   .capacity-domain:nth-last-child(-n + 2) { border-bottom: 0; }
   .map-facts, .map-legend { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .world-map { min-height: 360px; }
+  .diplomacy-sheet { width: 100vw !important; }
+  .diplomacy-sheet-layout { grid-template-columns: 1fr; }
+  .diplomacy-contact-list { display: flex; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--border); }
+  .diplomacy-contact-list > p { display: none; }
+  .diplomacy-contact { min-width: 155px; border-top: 0; border-right: 1px solid var(--border); }
+  .diplomatic-event-actions { grid-template-columns: 1fr; }
 }

@@ -30,6 +30,11 @@ import {
 
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  DiplomacySheet,
+  type DiplomaticEventState,
+  type ResolutionChannel,
+} from '@/components/diplomacy-sheet';
 import { WorldMap, type MapMode } from '@/components/world-map';
 
 type Country = {
@@ -145,9 +150,23 @@ const initialMessages: Record<string, Message[]> = {
 };
 
 const events = [
-  { status: 'TENSION ACTIVE', title: 'Faiblesse de l’euro face au dollar', detail: 'La crédibilité de la monnaie unique est sous pression.', tone: 'danger' },
+  { status: 'POSITION ATTENDUE', title: 'Faiblesse de l’euro face au dollar', detail: 'Berlin demande une coordination avant la prochaine réunion de l’Eurogroupe.', tone: 'danger', diplomaticEventId: 'euro-coordination' },
   { status: 'ÉMERGENT', title: 'Sommet européen de Lisbonne', detail: 'Fenêtre de préparation : 3 mois.', tone: 'warning' },
   { status: 'SURVEILLANCE', title: 'Élection présidentielle russe', detail: 'Le scrutin anticipé est prévu le 26 mars.', tone: 'neutral' },
+];
+
+const initialDiplomaticEvents: DiplomaticEventState[] = [
+  {
+    id: 'euro-coordination',
+    title: 'Coordination franco-allemande sur l’euro',
+    summary: 'Berlin attend une position française. Vous pouvez discuter, agir directement, déléguer ou choisir de ne pas répondre.',
+    countryId: 'deu',
+    requirement: 'position_required',
+    deadlineLabel: 'AVANT FIN JANVIER',
+    deadlineMonth: 0,
+    allowedChannels: ['dialogue', 'government_action', 'economic_action', 'multilateral_channel', 'delegation', 'explicit_silence'],
+    resolved: false,
+  },
 ];
 
 const historicalCandidates: HistoricalEvent[] = [
@@ -286,6 +305,12 @@ export default function Home() {
   const [mapMode, setMapMode] = useState<MapMode>('diplomacy');
   const [selectedMapId, setSelectedMapId] = useState('FRA');
   const [selectedMapName, setSelectedMapName] = useState('France');
+  const [diplomacyOpen, setDiplomacyOpen] = useState(false);
+  const [diplomaticEvents, setDiplomaticEvents] = useState(initialDiplomaticEvents);
+  const [activeDiplomaticEventId, setActiveDiplomaticEventId] = useState<string | null>(null);
+  const [diplomaticNotice, setDiplomaticNotice] = useState('Une position française est attendue sur la faiblesse de l’euro.');
+  const [diplomaticImpacts, setDiplomaticImpacts] = useState<Record<string, { relation: number; trust: number }>>({});
+  const [diplomaticMemories, setDiplomaticMemories] = useState<Record<string, string[]>>({});
 
   const selected = useMemo(() => countries.find((country) => country.id === selectedId) ?? countries[0], [selectedId]);
   const selectedCandidate = historicalCandidates.find((candidate) => candidate.id === selectedCandidateId) ?? historicalCandidates[0];
@@ -293,17 +318,90 @@ export default function Home() {
   const militaryUncertainty = intelConfidence >= 75 ? 3 : intelConfidence >= 55 ? 8 : 15;
   const selectedMapCountry = countries.find((country) => country.id.toUpperCase() === selectedMapId);
   const mapMetrics = Object.fromEntries(countries.map((country) => {
+    const impact = diplomaticImpacts[country.id] ?? { relation: 0, trust: 0 };
     if (mapMode === 'military') return [country.id.toUpperCase(), country.military.potential];
-    if (mapMode === 'intelligence') return [country.id.toUpperCase(), Math.round((country.relation * 0.25) + (country.trust * 0.25) + (country.military.access * 0.5))];
-    return [country.id.toUpperCase(), country.relation];
+    if (mapMode === 'intelligence') return [country.id.toUpperCase(), Math.round(((country.relation + impact.relation) * 0.25) + ((country.trust + impact.trust) * 0.25) + (country.military.access * 0.5))];
+    return [country.id.toUpperCase(), country.relation + impact.relation];
   }));
   const currentMessages = messages[selectedId] ?? [];
+  const activeDiplomaticEvent = diplomaticEvents.find((event) => event.id === activeDiplomaticEventId);
+  const selectedDiplomaticImpact = diplomaticImpacts[selected.id] ?? { relation: 0, trust: 0 };
+  const selectedDiplomaticCountry = { ...selected, relation: Math.max(0, Math.min(100, selected.relation + selectedDiplomaticImpact.relation)), trust: Math.max(0, Math.min(100, selected.trust + selectedDiplomaticImpact.trust)) };
   const date = new Intl.DateTimeFormat('fr-FR', { month: 'long', year: 'numeric' }).format(new Date(2000, month, 1));
 
   const chooseCountry = (id: string) => {
     setSelectedId(id);
     setPendingTreaty(false);
     setDraft('');
+  };
+
+  const rememberDiplomaticChoice = (countryId: string, memory: string) => {
+    setDiplomaticMemories((current) => ({ ...current, [countryId]: [memory, ...(current[countryId] ?? [])].slice(0, 5) }));
+  };
+
+  const applyDiplomaticImpact = (countryId: string, relation: number, trust: number) => {
+    setDiplomaticImpacts((current) => ({
+      ...current,
+      [countryId]: {
+        relation: (current[countryId]?.relation ?? 0) + relation,
+        trust: (current[countryId]?.trust ?? 0) + trust,
+      },
+    }));
+  };
+
+  const resolveDiplomaticEvent = (channel: ResolutionChannel, targetEvent = activeDiplomaticEvent) => {
+    if (!targetEvent || targetEvent.resolved) return;
+    if (channel === 'dialogue') {
+      setDraft(`La France souhaite ouvrir une discussion directe concernant « ${targetEvent.title} ». Nous sommes prêts à exposer notre position et à examiner une réponse coordonnée.`);
+      setDiplomaticNotice('Discussion préparée : envoyez votre position pour résoudre l’événement par le dialogue.');
+      return;
+    }
+
+    const resolutionCopy: Record<Exclude<ResolutionChannel, 'dialogue'>, { player: string; foreign: string; notice: string; relation: number; trust: number; memory: string; load: number }> = {
+      government_action: {
+        player: 'La France traitera cette question par une décision gouvernementale. Une position publique sera annoncée sans négociation bilatérale préalable.',
+        foreign: 'Berlin prend acte de votre décision. Nous en évaluerons le contenu concret avant de déterminer notre propre position.',
+        notice: 'Événement réglé par une décision gouvernementale.', relation: 0, trust: 0, load: 3,
+        memory: 'La France a privilégié une décision gouvernementale à une négociation directe sur l’euro.',
+      },
+      economic_action: {
+        player: 'La France répondra par des mesures économiques vérifiables et communiquera leurs résultats par les canaux techniques.',
+        foreign: 'Nous jugerons cette réponse sur ses effets. Une coordination politique aurait toutefois facilité la convergence.',
+        notice: 'Événement réglé par une mesure économique.', relation: 0, trust: -1, load: 3,
+        memory: 'La France a répondu par une mesure économique plutôt que par un échange politique.',
+      },
+      multilateral_channel: {
+        player: 'La France préfère poursuivre cet échange par les canaux diplomatiques habituels et dans le cadre de l’Eurogroupe.',
+        foreign: 'Nous acceptons ce cadre, même si Berlin aurait préféré une clarification bilatérale plus rapide.',
+        notice: 'Événement réglé par un canal multilatéral.', relation: 0, trust: -1, load: 2,
+        memory: 'La France a redirigé la discussion vers l’Eurogroupe.',
+      },
+      delegation: {
+        player: 'Cette question sera traitée par notre ministère des Affaires étrangères. Il vous transmettra une réponse officielle.',
+        foreign: 'La chancellerie attendra la réponse de votre ministère et maintient ses services disponibles.',
+        notice: 'Événement délégué au ministère des Affaires étrangères.', relation: 0, trust: 0, load: 1,
+        memory: 'La présidence française a délégué la réponse à son ministère.',
+      },
+      explicit_silence: {
+        player: 'Votre communication a bien été reçue. La France ne souhaite pas faire de commentaire supplémentaire.',
+        foreign: 'Berlin interprète cette absence de position comme un refus de coordination dans une période monétaire sensible.',
+        notice: 'Silence diplomatique enregistré : la relation et la confiance diminuent.', relation: -4, trust: -5, load: 0,
+        memory: 'La France a choisi de ne pas répondre substantiellement à la demande allemande sur l’euro.',
+      },
+    };
+    const outcome = resolutionCopy[channel];
+    setDiplomaticEvents((current) => current.map((event) => event.id === targetEvent.id ? { ...event, resolved: true, resolvedBy: channel } : event));
+    setMessages((current) => ({
+      ...current,
+      [targetEvent.countryId]: [...(current[targetEvent.countryId] ?? []),
+        { id: Date.now(), author: 'player', text: outcome.player, meta: 'Réponse officielle française' },
+        { id: Date.now() + 1, author: 'foreign', text: outcome.foreign, meta: 'Réaction diplomatique · mémoire enregistrée' },
+      ],
+    }));
+    applyDiplomaticImpact(targetEvent.countryId, outcome.relation, outcome.trust);
+    rememberDiplomaticChoice(targetEvent.countryId, outcome.memory);
+    if (outcome.load) setCapacities((current) => applyCapacityChanges(current, { diplomacy: outcome.load }));
+    setDiplomaticNotice(outcome.notice);
   };
 
   const sendMessage = async () => {
@@ -323,6 +421,12 @@ export default function Home() {
     if (reply.treaty) {
       setCapacities((current) => applyCapacityChanges(current, { diplomacy: 5, economy: 7 }));
     }
+    if (activeDiplomaticEvent && !activeDiplomaticEvent.resolved && activeDiplomaticEvent.countryId === selectedId) {
+      setDiplomaticEvents((current) => current.map((event) => event.id === activeDiplomaticEvent.id ? { ...event, resolved: true, resolvedBy: 'dialogue' } : event));
+      applyDiplomaticImpact(selectedId, 1, 2);
+      rememberDiplomaticChoice(selectedId, `La France a ouvert un échange direct pour traiter « ${activeDiplomaticEvent.title} ».`);
+      setDiplomaticNotice('Événement réglé par un échange direct. La réponse est mémorisée dans la relation.');
+    }
     setIsThinking(false);
   };
 
@@ -337,6 +441,16 @@ export default function Home() {
   };
 
   const advanceMonth = () => {
+    const directExchangeBlocker = diplomaticEvents.find((event) => !event.resolved && event.requirement === 'direct_exchange_required' && event.deadlineMonth <= month);
+    if (directExchangeBlocker) {
+      setActiveDiplomaticEventId(directExchangeBlocker.id);
+      chooseCountry(directExchangeBlocker.countryId);
+      setDiplomacyOpen(true);
+      setDiplomaticNotice('Cette situation exige une position explicite avant de poursuivre le calendrier.');
+      return;
+    }
+    const expiringEvents = diplomaticEvents.filter((event) => !event.resolved && event.deadlineMonth < month + 1);
+    expiringEvents.forEach((event) => resolveDiplomaticEvent('explicit_silence', event));
     setMonth((value) => value + 1);
     if (activeTreaty) setIndustry((value) => Number((value + 0.6).toFixed(1)));
     if (institutionStage === 'building' || institutionStage === 'partial') {
@@ -398,6 +512,12 @@ export default function Home() {
     if (known) chooseCountry(known.id);
   };
 
+  const openDiplomaticWindow = (countryId = selectedId, eventId: string | null = null) => {
+    chooseCountry(countryId);
+    setActiveDiplomaticEventId(eventId);
+    setDiplomacyOpen(true);
+  };
+
   return (
     <main className="min-h-screen bg-background text-foreground">
       <header className="border-b border-border bg-card/85 backdrop-blur-xl">
@@ -416,20 +536,35 @@ export default function Home() {
             <Metric icon={Gauge} label="STABILITÉ" value={`${stability}`} />
             <Metric icon={Shield} label="SÉCURITÉ" value={`${security}`} />
           </div>
+          <Button variant="outline" onClick={() => openDiplomaticWindow()} className="h-10 rounded-none border-border px-4 font-mono text-xs">
+            <Radio className="size-3.5" /> DIPLOMATIE
+          </Button>
           <Button onClick={advanceMonth} className="h-10 rounded-none px-5 font-mono text-xs tracking-[0.08em]">TERMINER LE MOIS <ChevronRight /></Button>
         </div>
       </header>
 
       <section className="border-b border-border bg-muted/20">
         <div className="mx-auto grid max-w-[1600px] gap-px bg-border lg:grid-cols-3">
-          {events.map((event) => (
+          {events.map((event) => {
+            const diplomaticEvent = event.diplomaticEventId ? diplomaticEvents.find((item) => item.id === event.diplomaticEventId) : undefined;
+            return (
             <article key={event.title} className="bg-background px-5 py-3.5 lg:px-8">
               <div className="mb-1 flex items-center gap-2 font-mono text-[10px] tracking-[0.14em]"><span className={`event-dot ${event.tone}`} /><span className="text-muted-foreground">{event.status}</span></div>
               <p className="text-sm font-medium">{event.title}</p>
               <p className="mt-0.5 text-xs text-muted-foreground">{event.detail}</p>
+              {diplomaticEvent && (
+                <button
+                  type="button"
+                  className={`event-diplomacy-button ${diplomaticEvent.resolved ? 'resolved' : ''}`}
+                  onClick={() => openDiplomaticWindow(diplomaticEvent.countryId, diplomaticEvent.id)}
+                >
+                  {diplomaticEvent.resolved ? `TRAITÉ · ${resolutionLabel(diplomaticEvent.resolvedBy)}` : 'CHOISIR UNE RÉPONSE'} <ChevronRight />
+                </button>
+              )}
             </article>
-          ))}
+          );})}
         </div>
+        <div className="diplomatic-notice"><Radio className="size-3.5" /><span>{diplomaticNotice}</span></div>
       </section>
 
       <section className="strategic-map-shell">
@@ -453,7 +588,7 @@ export default function Home() {
                   <MapFact label="PUISSANCE MILITAIRE" value={selectedMapCountry ? `${selectedMapCountry.military.potential}/100` : selectedMapId === 'FRA' ? 'État de référence' : 'À estimer'} />
                   <MapFact label="STATUT EN 2000" value={selectedMapId === 'YUG' || selectedMapId === 'SDN' ? 'Frontière historique' : 'Reconnu'} />
                 </div>
-                {selectedMapCountry ? <Button onClick={() => document.getElementById('diplomacy-center')?.scrollIntoView({ behavior: 'smooth' })} className="h-9 w-full rounded-none font-mono text-[10px]">OUVRIR LE DOSSIER COMPLET</Button> : <p className="border border-dashed border-border px-3 py-2 text-[10px] leading-4 text-muted-foreground">Cliquez sur n’importe quel pays pour l’identifier. Les quatre interlocuteurs déjà modélisés disposent d’un dossier complet ; les autres seront alimentés par la base mondiale.</p>}
+                {selectedMapCountry ? <Button onClick={() => openDiplomaticWindow(selectedMapCountry.id)} className="h-9 w-full rounded-none font-mono text-[10px]">OUVRIR LA FENÊTRE DIPLOMATIQUE</Button> : <p className="border border-dashed border-border px-3 py-2 text-[10px] leading-4 text-muted-foreground">Cliquez sur n’importe quel pays pour l’identifier. Les quatre interlocuteurs déjà modélisés disposent d’un dossier complet ; les autres seront alimentés par la base mondiale.</p>}
                 <div className="map-legend"><span><i className="player" />France</span><span><i className="high" />Fort / fiable</span><span><i className="medium" />Intermédiaire</span><span><i className="low" />Faible / incertain</span></div>
               </aside>
             </div>
@@ -664,6 +799,26 @@ export default function Home() {
           <section className="border border-dashed border-border px-4 py-3 text-[11px] leading-5 text-muted-foreground"><span className="font-mono text-[10px] text-primary">MODE DE DÉMONSTRATION</span><br />Les réactions utilisent actuellement le moteur local. Le connecteur LLM sécurisé sera activé sans exposer de clé dans le jeu.</section>
         </aside>
       </div>
+
+      <DiplomacySheet
+        open={diplomacyOpen}
+        onOpenChange={setDiplomacyOpen}
+        countries={countries.map((country) => {
+          const impact = diplomaticImpacts[country.id] ?? { relation: 0, trust: 0 };
+          return { ...country, relation: Math.max(0, Math.min(100, country.relation + impact.relation)), trust: Math.max(0, Math.min(100, country.trust + impact.trust)) };
+        })}
+        selectedId={selectedId}
+        onSelectCountry={(id) => { chooseCountry(id); setActiveDiplomaticEventId(null); }}
+        selectedCountry={selectedDiplomaticCountry}
+        messages={currentMessages}
+        draft={draft}
+        onDraftChange={setDraft}
+        onSend={() => void sendMessage()}
+        isThinking={isThinking}
+        activeEvent={activeDiplomaticEvent}
+        onResolveEvent={resolveDiplomaticEvent}
+        memories={diplomaticMemories[selectedId] ?? []}
+      />
     </main>
   );
 }
@@ -678,6 +833,18 @@ function AnalysisLine({ label, text, accent = false }: { label: string; text: st
 
 function formatImpact(value: number) {
   return value > 0 ? `+${value}` : `${value}`;
+}
+
+function resolutionLabel(channel?: ResolutionChannel) {
+  const labels: Partial<Record<ResolutionChannel, string>> = {
+    dialogue: 'DIALOGUE',
+    government_action: 'DÉCISION',
+    economic_action: 'MESURE ÉCONOMIQUE',
+    multilateral_channel: 'AUTRES CANAUX',
+    delegation: 'DÉLÉGUÉ',
+    explicit_silence: 'SILENCE',
+  };
+  return channel ? labels[channel] ?? 'RÉSOLU' : 'RÉSOLU';
 }
 
 function applyCapacityChanges(current: CapacityState, changes: Partial<Record<CapacityDomainId, number>>): CapacityState {
