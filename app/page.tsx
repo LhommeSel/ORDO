@@ -15,9 +15,11 @@ import {
   Flag,
   Gauge,
   Handshake,
+  Eye,
   Landmark,
   Newspaper,
   Radio,
+  Radar,
   RefreshCcw,
   Send,
   Shield,
@@ -39,6 +41,21 @@ type Country = {
   color: string;
   interests: string[];
   redLines: string[];
+  military: MilitaryProfile;
+};
+
+type MilitaryProfile = {
+  potential: number;
+  access: number;
+  personnel: string;
+  readiness: number;
+  projection: number;
+  logistics: number;
+  industry: number;
+  ground: number;
+  air: number;
+  naval: number;
+  strengths: string[];
 };
 
 type Message = {
@@ -88,24 +105,28 @@ const countries: Country[] = [
     posture: 'Prudente', color: 'var(--signal-blue)',
     interests: ['Stabilité de l’euro', 'Élargissement de l’Union', 'Industrie exportatrice'],
     redLines: ['Mutualisation durable des dettes', 'Découplage entre défense européenne et OTAN'],
+    military: { potential: 64, access: 88, personnel: '330–350 k', readiness: 68, projection: 46, logistics: 72, industry: 82, ground: 72, air: 67, naval: 43, strengths: ['Base industrielle', 'Logistique OTAN'] },
   },
   {
     id: 'ita', name: 'Italie', flag: '🇮🇹', role: 'Partenaire méditerranéen', relation: 57, trust: 53,
     posture: 'Opportuniste', color: 'var(--signal-green)',
     interests: ['Convergence dans la zone euro', 'Politique méditerranéenne', 'Flexibilité budgétaire'],
     redLines: ['Austérité imposée', 'Marginalisation méditerranéenne'],
+    military: { potential: 52, access: 80, personnel: '270–300 k', readiness: 58, projection: 52, logistics: 57, industry: 61, ground: 52, air: 56, naval: 68, strengths: ['Flotte méditerranéenne', 'Aéronautique'] },
   },
   {
     id: 'pol', name: 'Pologne', flag: '🇵🇱', role: 'Puissance du flanc oriental', relation: 44, trust: 39,
     posture: 'Méﬁante', color: 'var(--signal-red)',
     interests: ['Adhésion à l’Union européenne', 'Modernisation militaire', 'Souveraineté nationale'],
     redLines: ['Pression politique russe', 'Affaiblissement des garanties de l’OTAN'],
+    military: { potential: 39, access: 52, personnel: '180–260 k', readiness: 48, projection: 25, logistics: 40, industry: 47, ground: 66, air: 41, naval: 18, strengths: ['Masse terrestre', 'Profondeur stratégique'] },
   },
   {
     id: 'usa', name: 'États-Unis', flag: '🇺🇸', role: 'Allié stratégique', relation: 73, trust: 66,
     posture: 'Exigeante', color: 'var(--signal-gold)',
     interests: ['Stabilité des Balkans', 'Cohésion de l’OTAN', 'Commerce transatlantique'],
     redLines: ['Défense européenne concurrente de l’OTAN', 'Protectionnisme technologique'],
+    military: { potential: 94, access: 69, personnel: '1,3–1,5 M', readiness: 89, projection: 100, logistics: 97, industry: 98, ground: 89, air: 100, naval: 100, strengths: ['Projection mondiale', 'Supériorité aéronavale'] },
   },
 ];
 
@@ -233,9 +254,12 @@ export default function Home() {
   const [selectedCandidateId, setSelectedCandidateId] = useState('lisbon-strategy');
   const [queuedEventId, setQueuedEventId] = useState<string | null>(null);
   const [advisorChoiceId, setAdvisorChoiceId] = useState<string | null>(null);
+  const [intelBoost, setIntelBoost] = useState<Record<string, number>>({});
 
   const selected = useMemo(() => countries.find((country) => country.id === selectedId) ?? countries[0], [selectedId]);
   const selectedCandidate = historicalCandidates.find((candidate) => candidate.id === selectedCandidateId) ?? historicalCandidates[0];
+  const intelConfidence = Math.min(95, Math.round((selected.relation * 0.25) + (selected.trust * 0.25) + (selected.military.access * 0.5) + (intelBoost[selected.id] ?? 0)));
+  const militaryUncertainty = intelConfidence >= 75 ? 3 : intelConfidence >= 55 ? 8 : 15;
   const currentMessages = messages[selectedId] ?? [];
   const date = month === 0 ? 'Janvier 2000' : month === 1 ? 'Février 2000' : 'Mars 2000';
 
@@ -293,6 +317,12 @@ export default function Home() {
     setStability((value) => Math.max(0, Math.min(100, value + choice.effects.stability)));
     setSecurity((value) => Math.max(0, Math.min(100, value + choice.effects.security)));
     setInfluence((value) => Math.max(0, value + choice.effects.influence));
+  };
+
+  const reinforceIntelligence = () => {
+    if (influence < 2 || (intelBoost[selected.id] ?? 0) >= 20) return;
+    setInfluence((value) => value - 2);
+    setIntelBoost((current) => ({ ...current, [selected.id]: Math.min(20, (current[selected.id] ?? 0) + 12) }));
   };
 
   return (
@@ -450,6 +480,39 @@ export default function Home() {
             <div className="space-y-5 p-4"><DossierList title="INTÉRÊTS PRIORITAIRES" items={selected.interests} positive /><DossierList title="LIGNES ROUGES" items={selected.redLines} /></div>
           </section>
 
+          <section className="dossier-panel military-panel">
+            <PanelTitle icon={Radar} eyebrow="RENSEIGNEMENT MILITAIRE" title={`Forces de ${selected.name}`} />
+            <div className="military-summary">
+              <div>
+                <p className="font-mono text-[8px] tracking-[0.1em] text-muted-foreground">PUISSANCE POTENTIELLE ESTIMÉE</p>
+                <p className="mt-1 font-mono text-2xl text-primary">{formatEstimate(selected.military.potential, militaryUncertainty)}</p>
+              </div>
+              <div className="intel-confidence">
+                <Eye className="size-4" />
+                <span><span className="block text-[8px] tracking-[0.08em] text-muted-foreground">FIABILITÉ</span><strong>{intelConfidence}%</strong></span>
+              </div>
+            </div>
+            <div className="military-grid">
+              <MilitaryDimension label="PRÉPARATION" value={selected.military.readiness} uncertainty={militaryUncertainty} />
+              <MilitaryDimension label="PROJECTION" value={selected.military.projection} uncertainty={militaryUncertainty} />
+              <MilitaryDimension label="LOGISTIQUE" value={selected.military.logistics} uncertainty={militaryUncertainty} />
+              <MilitaryDimension label="INDUSTRIE" value={selected.military.industry} uncertainty={militaryUncertainty} />
+              <MilitaryDimension label="TERRESTRE" value={selected.military.ground} uncertainty={militaryUncertainty} />
+              <MilitaryDimension label="AÉRIEN" value={selected.military.air} uncertainty={militaryUncertainty} />
+              <MilitaryDimension label="NAVAL" value={selected.military.naval} uncertainty={militaryUncertainty} />
+            </div>
+            <div className="border-t border-border p-4">
+              <div className="mb-3 grid grid-cols-2 gap-3 text-xs">
+                <div><p className="font-mono text-[8px] text-muted-foreground">EFFECTIFS ESTIMÉS</p><p className="mt-1">{intelConfidence >= 55 ? selected.military.personnel : 'Données fragmentaires'}</p></div>
+                <div><p className="font-mono text-[8px] text-muted-foreground">POINTS FORTS PROBABLES</p><p className="mt-1">{selected.military.strengths.join(' · ')}</p></div>
+              </div>
+              <p className="mb-3 text-[10px] leading-4 text-muted-foreground">La fourchette combine relations diplomatiques, confiance, accès aux sources et partage allié. Elle peut être volontairement trompée par l’adversaire.</p>
+              <Button variant="outline" onClick={reinforceIntelligence} disabled={influence < 2 || (intelBoost[selected.id] ?? 0) >= 20} className="h-8 w-full rounded-none border-border font-mono text-[9px]">
+                {(intelBoost[selected.id] ?? 0) >= 20 ? 'RENSEIGNEMENT RENFORCÉ' : 'RENFORCER LE RENSEIGNEMENT · 2 INF.'}
+              </Button>
+            </div>
+          </section>
+
           <section className={`dossier-panel treaty-card ${pendingTreaty || activeTreaty ? 'active' : ''}`}>
             <PanelTitle icon={Handshake} eyebrow={activeTreaty ? 'TRAITÉ ACTIF' : 'PROPOSITION STRUCTURÉE'} title="Protocole industriel" />
             {pendingTreaty || activeTreaty ? (
@@ -478,6 +541,17 @@ function AnalysisLine({ label, text, accent = false }: { label: string; text: st
 
 function formatImpact(value: number) {
   return value > 0 ? `+${value}` : `${value}`;
+}
+
+function formatEstimate(value: number, uncertainty: number) {
+  if (uncertainty <= 3) return `${value - uncertainty}–${value + uncertainty}`;
+  return `${Math.max(0, value - uncertainty)}–${Math.min(100, value + uncertainty)}`;
+}
+
+function MilitaryDimension({ label, value, uncertainty }: { label: string; value: number; uncertainty: number }) {
+  const lower = Math.max(0, value - uncertainty);
+  const upper = Math.min(100, value + uncertainty);
+  return <div className="military-dimension"><div className="flex items-center justify-between font-mono text-[8px]"><span className="text-muted-foreground">{label}</span><span>{lower}–{upper}</span></div><div className="military-track"><span className="military-known" style={{ width: `${lower}%` }} /><span className="military-fog" style={{ left: `${lower}%`, width: `${upper - lower}%` }} /></div></div>;
 }
 
 function PanelTitle({ icon: Icon, eyebrow, title }: { icon: typeof Activity; eyebrow: string; title: string }) {
