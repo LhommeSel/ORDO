@@ -4,7 +4,9 @@ import { useMemo, useState } from 'react';
 import {
   Activity,
   ArrowUpRight,
+  Bell,
   BrainCircuit,
+  Building2,
   CalendarDays,
   Check,
   ChevronRight,
@@ -24,7 +26,6 @@ import {
   Send,
   Shield,
   Sparkles,
-  Users,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -87,9 +88,14 @@ type AdvisorChoice = {
     budget: number;
     stability: number;
     security: number;
-    influence: number;
   };
 };
+
+type CapacityDomainId = 'government' | 'administration' | 'diplomacy' | 'economy' | 'intelligence' | 'defense';
+
+type CapacityState = Record<CapacityDomainId, { maximum: number; committed: number }>;
+
+type InstitutionStage = 'proposal' | 'building' | 'partial' | 'operational';
 
 type AdvisorProposal = {
   title: string;
@@ -192,22 +198,40 @@ const advisorProposal: AdvisorProposal = {
       id: 'public-investment',
       title: 'A — Grand plan numérique public',
       detail: 'Équipe les écoles et les administrations, avec un coût budgétaire immédiat.',
-      effects: { budget: -10, stability: 4, security: 1, influence: 2 },
+      effects: { budget: -10, stability: 4, security: 1 },
     },
     {
       id: 'european-coalition',
       title: 'B — Coalition numérique européenne',
       detail: 'Coordonne télécoms, recherche et règles communes avec Berlin et Rome.',
       recommended: true,
-      effects: { budget: -5, stability: 2, security: 3, influence: 6 },
+      effects: { budget: -5, stability: 2, security: 3 },
     },
     {
       id: 'prudence',
       title: 'C — Prudence budgétaire',
       detail: 'Attend la correction des marchés avant d’engager de nouveaux crédits.',
-      effects: { budget: 4, stability: -2, security: 0, influence: -3 },
+      effects: { budget: 4, stability: -2, security: 0 },
     },
   ],
+};
+
+const capacityCatalog: Array<{ id: CapacityDomainId; label: string; short: string }> = [
+  { id: 'government', label: 'Gouvernement', short: 'GOUV.' },
+  { id: 'administration', label: 'Administration', short: 'ADMIN.' },
+  { id: 'diplomacy', label: 'Diplomatie', short: 'DIPLO.' },
+  { id: 'economy', label: 'Économie et commerce', short: 'ÉCON.' },
+  { id: 'intelligence', label: 'Renseignement', short: 'RENS.' },
+  { id: 'defense', label: 'Défense', short: 'DÉF.' },
+];
+
+const initialCapacities: CapacityState = {
+  government: { maximum: 68, committed: 31 },
+  administration: { maximum: 72, committed: 42 },
+  diplomacy: { maximum: 64, committed: 36 },
+  economy: { maximum: 62, committed: 39 },
+  intelligence: { maximum: 55, committed: 30 },
+  defense: { maximum: 70, committed: 43 },
 };
 
 function generateReply(country: Country, text: string) {
@@ -244,7 +268,6 @@ export default function Home() {
   const [pendingTreaty, setPendingTreaty] = useState(false);
   const [activeTreaty, setActiveTreaty] = useState(false);
   const [budget, setBudget] = useState(246);
-  const [influence, setInfluence] = useState(42);
   const [industry, setIndustry] = useState(100);
   const [stability, setStability] = useState(68);
   const [security, setSecurity] = useState(54);
@@ -255,13 +278,17 @@ export default function Home() {
   const [queuedEventId, setQueuedEventId] = useState<string | null>(null);
   const [advisorChoiceId, setAdvisorChoiceId] = useState<string | null>(null);
   const [intelBoost, setIntelBoost] = useState<Record<string, number>>({});
+  const [capacities, setCapacities] = useState<CapacityState>(initialCapacities);
+  const [institutionStage, setInstitutionStage] = useState<InstitutionStage>('proposal');
+  const [institutionMonths, setInstitutionMonths] = useState(0);
+  const [institutionNotice, setInstitutionNotice] = useState('Projet disponible : créer un sous-ministère à la Prospérité.');
 
   const selected = useMemo(() => countries.find((country) => country.id === selectedId) ?? countries[0], [selectedId]);
   const selectedCandidate = historicalCandidates.find((candidate) => candidate.id === selectedCandidateId) ?? historicalCandidates[0];
   const intelConfidence = Math.min(95, Math.round((selected.relation * 0.25) + (selected.trust * 0.25) + (selected.military.access * 0.5) + (intelBoost[selected.id] ?? 0)));
   const militaryUncertainty = intelConfidence >= 75 ? 3 : intelConfidence >= 55 ? 8 : 15;
   const currentMessages = messages[selectedId] ?? [];
-  const date = month === 0 ? 'Janvier 2000' : month === 1 ? 'Février 2000' : 'Mars 2000';
+  const date = new Intl.DateTimeFormat('fr-FR', { month: 'long', year: 'numeric' }).format(new Date(2000, month, 1));
 
   const chooseCountry = (id: string) => {
     setSelectedId(id);
@@ -283,14 +310,16 @@ export default function Home() {
       [selectedId]: [...(current[selectedId] ?? []), { id: Date.now() + 1, author: 'foreign', text: reply.text, meta: `${selected.name} · réponse confidentielle` }],
     }));
     setPendingTreaty(reply.treaty);
+    if (reply.treaty) {
+      setCapacities((current) => applyCapacityChanges(current, { diplomacy: 5, economy: 7 }));
+    }
     setIsThinking(false);
   };
 
   const ratifyTreaty = () => {
-    if (influence < 4) return;
     setPendingTreaty(false);
     setActiveTreaty(true);
-    setInfluence((value) => value - 4);
+    setCapacities((current) => applyCapacityChanges(current, { government: 6, administration: 8, economy: 5 }));
     setMessages((current) => ({
       ...current,
       [selectedId]: [...(current[selectedId] ?? []), { id: Date.now(), author: 'foreign', text: 'Le protocole commercial est ratifié. Il entrera en vigueur au début du mois prochain.', meta: 'Accord enregistré · effet mécanique confirmé' }],
@@ -298,8 +327,26 @@ export default function Home() {
   };
 
   const advanceMonth = () => {
-    setMonth((value) => Math.min(value + 1, 2));
+    setMonth((value) => value + 1);
     if (activeTreaty) setIndustry((value) => Number((value + 0.6).toFixed(1)));
+    if (institutionStage === 'building' || institutionStage === 'partial') {
+      const nextMonth = institutionMonths + 1;
+      setInstitutionMonths(nextMonth);
+      setBudget((value) => Number((value - 0.02).toFixed(2)));
+      if (nextMonth === 3 && institutionStage === 'building') {
+        setInstitutionStage('partial');
+        setCapacities((current) => ({ ...current, economy: { ...current.economy, maximum: current.economy.maximum + 4 } }));
+        setInstitutionNotice('Le sous-ministère est partiellement opérationnel : capacité économique +4.');
+      }
+      if (nextMonth >= 7) {
+        setInstitutionStage('operational');
+        setCapacities((current) => {
+          const expanded = { ...current, economy: { ...current.economy, maximum: current.economy.maximum + 5 } };
+          return applyCapacityChanges(expanded, { government: -4, administration: -8, economy: -3 });
+        });
+        setInstitutionNotice('Institution pleinement opérationnelle : capacité économique totale +9, charge de transition libérée.');
+      }
+    }
   };
 
   const scanHistoricalSources = async () => {
@@ -316,13 +363,22 @@ export default function Home() {
     setBudget((value) => value + choice.effects.budget);
     setStability((value) => Math.max(0, Math.min(100, value + choice.effects.stability)));
     setSecurity((value) => Math.max(0, Math.min(100, value + choice.effects.security)));
-    setInfluence((value) => Math.max(0, value + choice.effects.influence));
+    setCapacities((current) => applyCapacityChanges(current, { government: 4, administration: 5, economy: 6 }));
   };
 
   const reinforceIntelligence = () => {
-    if (influence < 2 || (intelBoost[selected.id] ?? 0) >= 20) return;
-    setInfluence((value) => value - 2);
+    if ((intelBoost[selected.id] ?? 0) >= 20) return;
+    setCapacities((current) => applyCapacityChanges(current, { intelligence: 6 }));
     setIntelBoost((current) => ({ ...current, [selected.id]: Math.min(20, (current[selected.id] ?? 0) + 12) }));
+  };
+
+  const createProsperityMinistry = () => {
+    if (institutionStage !== 'proposal' || budget < 0.42) return;
+    setBudget((value) => Number((value - 0.42).toFixed(2)));
+    setInstitutionStage('building');
+    setInstitutionMonths(0);
+    setCapacities((current) => applyCapacityChanges(current, { government: 4, administration: 8, economy: 3 }));
+    setInstitutionNotice('Décret publié : recrutement et transfert des compétences en cours. Aucun gain immédiat.');
   };
 
   return (
@@ -342,7 +398,6 @@ export default function Home() {
             <Metric icon={Factory} label="INDUSTRIE" value={`${industry}`} delta={activeTreaty ? '+0,6' : 'stable'} />
             <Metric icon={Gauge} label="STABILITÉ" value={`${stability}`} />
             <Metric icon={Shield} label="SÉCURITÉ" value={`${security}`} />
-            <Metric icon={Users} label="INFLUENCE" value={`${influence}`} delta={activeTreaty ? '-4' : '+2/mois'} />
           </div>
           <Button onClick={advanceMonth} className="h-10 rounded-none px-5 font-mono text-xs tracking-[0.08em]">TERMINER LE MOIS <ChevronRight /></Button>
         </div>
@@ -433,6 +488,42 @@ export default function Home() {
         </div>
       </section>
 
+      <section className="capacity-shell">
+        <div className="mx-auto max-w-[1600px] px-4 py-5 xl:px-8">
+          <div className="capacity-layout">
+            <section className="dossier-panel">
+              <div className="flex items-center gap-3 border-b border-border px-4 py-3.5"><Gauge className="size-4 text-primary" /><div><p className="font-mono text-[9px] tracking-[0.14em] text-muted-foreground">APPAREIL D’ÉTAT</p><h2 className="text-sm font-medium">Capacités opérationnelles</h2></div></div>
+              <div className="capacity-domain-grid">
+                {capacityCatalog.map((domain) => <CapacityDomain key={domain.id} label={domain.label} state={capacities[domain.id]} />)}
+              </div>
+              <p className="border-t border-border px-4 py-2.5 font-mono text-[9px] leading-4 text-muted-foreground">CHARGE = moyens déjà engagés · dépasser 100 % reste possible, mais augmente délais, erreurs, fuites ou désorganisation selon le domaine.</p>
+            </section>
+
+            <aside className="dossier-panel reform-panel">
+              <div className="flex items-center gap-3 border-b border-border px-4 py-3.5"><Building2 className="size-4 text-primary" /><div><p className="font-mono text-[9px] tracking-[0.14em] text-muted-foreground">RÉFORME INSTITUTIONNELLE</p><h2 className="text-sm font-medium">Sous-ministère à la Prospérité</h2></div></div>
+              <div className="p-4">
+                <div className="reform-effects">
+                  <ReformFact label="COÛT INITIAL" value="0,42 Md€" />
+                  <ReformFact label="FONCTIONNEMENT" value="0,16 Md€/an" />
+                  <ReformFact label="MISE EN PLACE" value="7 mois" />
+                  <ReformFact label="GAIN FINAL" value="Économie +9" accent />
+                </div>
+                <div className="my-4 space-y-2 text-xs"><Term icon={Check} text="1 800 postes créés ou transférés" /><Term icon={ArrowUpRight} text="Gouvernement +4 et Administration +8 de charge pendant la transition" /><Term icon={Shield} text="Gain progressif : +4 au 3e mois, +5 au 7e mois" /></div>
+                {institutionStage === 'proposal' ? (
+                  <Button onClick={createProsperityMinistry} className="h-9 w-full rounded-none font-mono text-[10px]">CRÉER L’INSTITUTION</Button>
+                ) : (
+                  <div>
+                    <div className="mb-2 flex items-center justify-between font-mono text-[9px]"><span>{institutionStage === 'operational' ? 'OPÉRATIONNEL' : institutionStage === 'partial' ? 'PARTIELLEMENT OPÉRATIONNEL' : 'MISE EN PLACE'}</span><span>{Math.min(institutionMonths, 7)} / 7 MOIS</span></div>
+                    <div className="institution-progress"><span style={{ width: `${Math.min(100, (institutionMonths / 7) * 100)}%` }} /></div>
+                  </div>
+                )}
+                <div className="institution-notice" aria-live="polite"><Bell className="mt-0.5 size-3.5 shrink-0" /><p>{institutionNotice}</p></div>
+              </div>
+            </aside>
+          </div>
+        </div>
+      </section>
+
       <div className="mx-auto grid max-w-[1600px] gap-4 px-4 py-5 xl:grid-cols-[280px_minmax(420px,1fr)_340px] xl:px-8">
         <aside className="dossier-panel min-w-0">
           <PanelTitle icon={Radio} eyebrow="CANAUX OUVERTS" title="Contacts diplomatiques" />
@@ -507,8 +598,8 @@ export default function Home() {
                 <div><p className="font-mono text-[8px] text-muted-foreground">POINTS FORTS PROBABLES</p><p className="mt-1">{selected.military.strengths.join(' · ')}</p></div>
               </div>
               <p className="mb-3 text-[10px] leading-4 text-muted-foreground">La fourchette combine relations diplomatiques, confiance, accès aux sources et partage allié. Elle peut être volontairement trompée par l’adversaire.</p>
-              <Button variant="outline" onClick={reinforceIntelligence} disabled={influence < 2 || (intelBoost[selected.id] ?? 0) >= 20} className="h-8 w-full rounded-none border-border font-mono text-[9px]">
-                {(intelBoost[selected.id] ?? 0) >= 20 ? 'RENSEIGNEMENT RENFORCÉ' : 'RENFORCER LE RENSEIGNEMENT · 2 INF.'}
+              <Button variant="outline" onClick={reinforceIntelligence} disabled={(intelBoost[selected.id] ?? 0) >= 20} className="h-8 w-full rounded-none border-border font-mono text-[9px]">
+                {(intelBoost[selected.id] ?? 0) >= 20 ? 'RENSEIGNEMENT RENFORCÉ' : 'MOBILISER LE RENSEIGNEMENT · +6 CHARGE'}
               </Button>
             </div>
           </section>
@@ -518,7 +609,7 @@ export default function Home() {
             {pendingTreaty || activeTreaty ? (
               <div className="space-y-4 p-4">
                 <div className="space-y-2 text-xs"><Term icon={Check} text="Droits de douane industriels −12 %" /><Term icon={Check} text="Durée initiale : 12 mois" /><Term icon={ArrowUpRight} text="Capacité industrielle +0,6 / mois" /><Term icon={Shield} text="Clause de révision automatique" /></div>
-                <div className="flex items-center justify-between border-y border-border py-3 font-mono text-[10px]"><span className="text-muted-foreground">COÛT POLITIQUE</span><span>4 INFLUENCE</span></div>
+                <div className="border-y border-border py-3 font-mono text-[9px]"><span className="block text-muted-foreground">CHARGE DE MISE EN ŒUVRE</span><span className="mt-1 block">GOUV. +6 · ADMIN. +8 · ÉCON. +5</span></div>
                 {activeTreaty ? <p className="flex items-center gap-2 font-mono text-[10px] text-[var(--signal-green)]"><Check className="size-3.5" /> RATIFIÉ — EFFET AU PROCHAIN MOIS</p> : <Button onClick={ratifyTreaty} className="h-9 w-full rounded-none font-mono text-xs">RATIFIER LE PROTOCOLE</Button>}
               </div>
             ) : <div className="p-4 text-xs leading-5 text-muted-foreground">Faites une proposition économique à votre interlocuteur. Les accords acceptables seront convertis en règles vérifiables avant ratification.</div>}
@@ -541,6 +632,30 @@ function AnalysisLine({ label, text, accent = false }: { label: string; text: st
 
 function formatImpact(value: number) {
   return value > 0 ? `+${value}` : `${value}`;
+}
+
+function applyCapacityChanges(current: CapacityState, changes: Partial<Record<CapacityDomainId, number>>): CapacityState {
+  const next = { ...current };
+  for (const [id, delta] of Object.entries(changes) as Array<[CapacityDomainId, number]>) {
+    next[id] = { ...next[id], committed: Math.max(0, next[id].committed + delta) };
+  }
+  return next;
+}
+
+function capacityLabel(percent: number) {
+  if (percent < 60) return 'UTILISATION MODÉRÉE';
+  if (percent < 85) return 'FORTE MOBILISATION';
+  if (percent < 100) return 'CAPACITÉ MAXIMALE';
+  return 'SURCHARGE CRITIQUE';
+}
+
+function CapacityDomain({ label, state }: { label: string; state: { maximum: number; committed: number } }) {
+  const percent = Math.round((state.committed / state.maximum) * 100);
+  return <article className={`capacity-domain ${percent >= 100 ? 'overloaded' : percent >= 85 ? 'saturated' : ''}`}><div className="flex items-start justify-between gap-3"><div><h3 className="text-xs font-medium">{label}</h3><p className="mt-1 font-mono text-[8px] text-muted-foreground">{capacityLabel(percent)}</p></div><p className="font-mono text-sm">{state.committed}<span className="text-muted-foreground">/{state.maximum}</span></p></div><div className="capacity-track"><span style={{ width: `${Math.min(percent, 100)}%` }} /></div><p className="mt-1 text-right font-mono text-[8px] text-muted-foreground">{percent}% DE CHARGE</p></article>;
+}
+
+function ReformFact({ label, value, accent = false }: { label: string; value: string; accent?: boolean }) {
+  return <div><p className="font-mono text-[8px] text-muted-foreground">{label}</p><p className={`mt-1 font-mono text-[11px] ${accent ? 'text-[var(--signal-green)]' : ''}`}>{value}</p></div>;
 }
 
 function formatEstimate(value: number, uncertainty: number) {

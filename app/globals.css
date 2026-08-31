@@ -167,16 +167,39 @@
 .military-known { position: absolute; inset-block: 0; left: 0; background: var(--signal-blue); }
 .military-fog { position: absolute; inset-block: 0; background: repeating-linear-gradient(90deg, color-mix(in oklch, var(--signal-blue) 55%, transparent) 0 3px, transparent 3px 6px); }
 
+.capacity-shell { border-bottom: 1px solid var(--border); background: color-mix(in oklch, var(--background) 92%, black); }
+.capacity-layout { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(330px, 0.55fr); gap: 1rem; }
+.capacity-domain-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.capacity-domain { min-width: 0; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); padding: 0.8rem 0.9rem; }
+.capacity-domain:nth-child(3n) { border-right: 0; }
+.capacity-domain:nth-last-child(-n + 3) { border-bottom: 0; }
+.capacity-track { height: 0.32rem; margin-top: 0.65rem; overflow: hidden; background: var(--muted); }
+.capacity-track span { display: block; height: 100%; background: var(--signal-blue); transition: width 300ms ease; }
+.capacity-domain.saturated .capacity-track span { background: var(--signal-gold); }
+.capacity-domain.overloaded { background: color-mix(in oklch, var(--signal-red) 6%, transparent); }
+.capacity-domain.overloaded .capacity-track span { background: var(--signal-red); }
+.reform-panel { border-color: color-mix(in oklch, var(--signal-green) 28%, var(--border)); }
+.reform-effects { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; border: 1px solid var(--border); background: color-mix(in oklch, var(--muted) 25%, transparent); padding: 0.75rem; }
+.institution-progress { height: 0.38rem; overflow: hidden; background: var(--muted); }
+.institution-progress span { display: block; height: 100%; background: var(--signal-green); transition: width 300ms ease; }
+.institution-notice { display: flex; gap: 0.5rem; margin-top: 0.9rem; border-left: 2px solid var(--primary); background: color-mix(in oklch, var(--primary) 5%, transparent); padding: 0.6rem 0.7rem; color: var(--muted-foreground); font-size: 0.65rem; line-height: 1rem; }
+
 @media (max-width: 1279px) {
   .dossier-panel.flex { min-height: 560px; }
 }
 
 @media (max-width: 1080px) {
   .intelligence-grid { grid-template-columns: 1fr; }
+  .capacity-layout { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 760px) {
   .historical-layout { grid-template-columns: 1fr; }
   .historical-layout > div { border-right: 0; border-bottom: 1px solid var(--border); }
   .verdict { display: none; }
+  .capacity-domain-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .capacity-domain:nth-child(3n) { border-right: 1px solid var(--border); }
+  .capacity-domain:nth-child(2n) { border-right: 0; }
+  .capacity-domain:nth-last-child(-n + 3) { border-bottom: 1px solid var(--border); }
+  .capacity-domain:nth-last-child(-n + 2) { border-bottom: 0; }
 }
