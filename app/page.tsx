@@ -86,105 +86,105 @@ const countries: Country[] = [
   {
     id: 'deu', name: 'Allemagne', flag: '🇩🇪', role: 'Partenaire économique majeur', relation: 68, trust: 61,
     posture: 'Prudente', color: 'var(--signal-blue)',
-    interests: ['Stabilité européenne', 'Énergie abordable', 'Industrie exportatrice'],
-    redLines: ['Dette commune permanente', 'Engagement militaire automatique'],
+    interests: ['Stabilité de l’euro', 'Élargissement de l’Union', 'Industrie exportatrice'],
+    redLines: ['Mutualisation durable des dettes', 'Découplage entre défense européenne et OTAN'],
   },
   {
     id: 'ita', name: 'Italie', flag: '🇮🇹', role: 'Partenaire méditerranéen', relation: 57, trust: 53,
     posture: 'Opportuniste', color: 'var(--signal-green)',
-    interests: ['Accès aux marchés', 'Contrôle migratoire', 'Soutien budgétaire'],
-    redLines: ['Austérité imposée', 'Isolement méditerranéen'],
+    interests: ['Convergence dans la zone euro', 'Politique méditerranéenne', 'Flexibilité budgétaire'],
+    redLines: ['Austérité imposée', 'Marginalisation méditerranéenne'],
   },
   {
     id: 'pol', name: 'Pologne', flag: '🇵🇱', role: 'Puissance du flanc oriental', relation: 44, trust: 39,
     posture: 'Méﬁante', color: 'var(--signal-red)',
-    interests: ['Garanties militaires', 'Souveraineté nationale', 'Énergie sécurisée'],
-    redLines: ['Dépendance envers Moscou', 'Réduction de la présence américaine'],
+    interests: ['Adhésion à l’Union européenne', 'Modernisation militaire', 'Souveraineté nationale'],
+    redLines: ['Pression politique russe', 'Affaiblissement des garanties de l’OTAN'],
   },
   {
     id: 'usa', name: 'États-Unis', flag: '🇺🇸', role: 'Allié stratégique', relation: 73, trust: 66,
     posture: 'Exigeante', color: 'var(--signal-gold)',
-    interests: ['Cohésion de l’OTAN', 'Achats de défense', 'Alignement technologique'],
-    redLines: ['Autonomie stratégique hostile', 'Transfert de technologies sensibles'],
+    interests: ['Stabilité des Balkans', 'Cohésion de l’OTAN', 'Commerce transatlantique'],
+    redLines: ['Défense européenne concurrente de l’OTAN', 'Protectionnisme technologique'],
   },
 ];
 
 const initialMessages: Record<string, Message[]> = {
-  deu: [{ id: 1, author: 'foreign', text: 'Madame la Présidente, Berlin est prêt à discuter d’un approfondissement économique, à condition que les engagements soient mesurables et réciproques.', meta: 'Cabinet du Chancelier · canal sécurisé' }],
-  ita: [{ id: 2, author: 'foreign', text: 'Rome souhaite un accord méditerranéen concret. Nous écouterons toute proposition qui combine investissement, énergie et contrôle des frontières.', meta: 'Palais Chigi · canal diplomatique' }],
-  pol: [{ id: 3, author: 'foreign', text: 'Varsovie attend des garanties, pas une déclaration de principe. Toute coopération devra renforcer effectivement le flanc oriental.', meta: 'Chancellerie du Premier ministre' }],
-  usa: [{ id: 4, author: 'foreign', text: 'Washington reste ouvert à vos propositions. Nous évaluerons leur contribution à la sécurité collective et au partage du fardeau.', meta: 'Conseil de sécurité nationale' }],
+  deu: [{ id: 1, author: 'foreign', text: 'Monsieur le Président, Berlin veut consolider l’euro et préparer l’élargissement. Toute initiative française devra préserver la discipline commune et la compétitivité industrielle.', meta: 'Chancellerie fédérale · gouvernement Schröder' }],
+  ita: [{ id: 2, author: 'foreign', text: 'Rome souhaite que la nouvelle Europe monétaire reste aussi méditerranéenne et sociale. Nous examinerons toute proposition mêlant croissance, infrastructures et coopération régionale.', meta: 'Palais Chigi · gouvernement D’Alema' }],
+  pol: [{ id: 3, author: 'foreign', text: 'Notre entrée dans l’OTAN est acquise ; notre priorité est désormais l’Union européenne. Varsovie attend un calendrier politique et des investissements concrets.', meta: 'Chancellerie du Premier ministre Buzek' }],
+  usa: [{ id: 4, author: 'foreign', text: 'Washington reste ouvert à vos propositions. Nous jugerons leur effet sur l’OTAN, la stabilité des Balkans et l’ouverture du commerce transatlantique.', meta: 'Administration Clinton · Conseil de sécurité nationale' }],
 };
 
 const events = [
-  { status: 'CRISE ACTIVE', title: 'Tensions énergétiques en Europe', detail: 'Les réserves régionales couvrent 74 jours.', tone: 'danger' },
-  { status: 'ÉMERGENT', title: 'Coalition industrielle franco-allemande', detail: 'Fenêtre de négociation : 2 mois.', tone: 'warning' },
-  { status: 'SURVEILLANCE', title: 'Pression sur le flanc oriental', detail: 'La Pologne demande de nouvelles garanties.', tone: 'neutral' },
+  { status: 'TENSION ACTIVE', title: 'Faiblesse de l’euro face au dollar', detail: 'La crédibilité de la monnaie unique est sous pression.', tone: 'danger' },
+  { status: 'ÉMERGENT', title: 'Sommet européen de Lisbonne', detail: 'Fenêtre de préparation : 3 mois.', tone: 'warning' },
+  { status: 'SURVEILLANCE', title: 'Élection présidentielle russe', detail: 'Le scrutin anticipé est prévu le 26 mars.', tone: 'neutral' },
 ];
 
 const historicalCandidates: HistoricalEvent[] = [
   {
-    id: 'energy-inflation',
-    title: 'Accélération de la crise énergétique européenne',
-    realDate: 'Janvier 2022',
-    score: 94,
+    id: 'lisbon-strategy',
+    title: 'Conseil européen extraordinaire de Lisbonne',
+    realDate: '23–24 mars 2000',
+    score: 92,
     verdict: 'REJOUABLE',
-    source: 'Eurostat · inflation énergétique',
-    sourceUrl: 'https://ec.europa.eu/eurostat/web/products-eurostat-news/-/ddn-20220225-2',
-    historicalOutcome: 'L’inflation du gaz atteint près de 41 % dans l’Union européenne.',
-    divergence: 'La dépendance au gaz et les stocks restent proches de la situation réelle.',
-    adaptation: 'Déclencher la pression sur les prix, mais recalculer son intensité selon les réserves et les accords du joueur.',
+    source: 'Parlement européen · Conclusions de Lisbonne',
+    sourceUrl: 'https://www.europarl.europa.eu/summits/lis1_fr.htm',
+    historicalOutcome: 'L’Union adopte une stratégie décennale centrée sur l’emploi, la réforme économique et l’économie de la connaissance.',
+    divergence: 'Les institutions, les gouvernements et la préparation du sommet restent proches de la situation historique.',
+    adaptation: 'Maintenir le sommet, mais recalculer ses objectifs et son niveau d’ambition selon les coalitions construites par le joueur.',
   },
   {
-    id: 'ukraine-escalation',
-    title: 'Escalade militaire autour de l’Ukraine',
-    realDate: 'Janvier–février 2022',
-    score: 78,
+    id: 'russian-election',
+    title: 'Élection présidentielle anticipée en Russie',
+    realDate: '26 mars 2000',
+    score: 84,
     verdict: 'À ADAPTER',
-    source: 'Conseil de l’Union européenne',
-    sourceUrl: 'https://www.consilium.europa.eu/en/press/press-releases/2022/02/19/declaration-by-the-high-representative-on-behalf-of-the-eu-on-the-situation-in-eastern-ukraine-and-the-russian-military-build-up/',
-    historicalOutcome: 'La concentration de forces russes débouche sur l’invasion du 24 février.',
-    divergence: 'Le dialogue franco-allemand est plus dense et les garanties au flanc oriental diffèrent.',
-    adaptation: 'Créer une chaîne de crise probabiliste : ultimatum, médiation, incident frontalier ou invasion.',
+    source: 'OSCE/BIDDH · Mission d’observation électorale',
+    sourceUrl: 'https://odihr.osce.org/odihr/elections/russia/115757',
+    historicalOutcome: 'Le scrutin anticipé du 26 mars installe Vladimir Poutine à la présidence russe.',
+    divergence: 'L’élection reste certaine, mais le rapport de la France à Moscou peut modifier la campagne et les premières orientations diplomatiques.',
+    adaptation: 'Conserver le scrutin tout en faisant varier le résultat, la participation et la doctrine étrangère du nouveau pouvoir.',
   },
   {
-    id: 'versailles-summit',
-    title: 'Sommet européen de Versailles',
-    realDate: '10–11 mars 2022',
-    score: 31,
-    verdict: 'ÉCARTÉ',
-    source: 'Élysée · Présidence française de l’UE',
-    sourceUrl: 'https://www.elysee.fr/emmanuel-macron/2022/03/11/sommet-de-versailles-union-europeenne',
-    historicalOutcome: 'Les dirigeants européens se réunissent après l’invasion de l’Ukraine.',
-    divergence: 'La cause historique du sommet n’existe pas encore dans la partie.',
-    adaptation: 'Ne pas forcer le sommet. Le remplacer par une conférence européenne seulement si une crise équivalente apparaît.',
+    id: 'dotcom-correction',
+    title: 'Retournement des valeurs technologiques',
+    realDate: 'Mars–avril 2000',
+    score: 67,
+    verdict: 'À ADAPTER',
+    source: 'FMI · Marchés de capitaux internationaux',
+    sourceUrl: 'https://www.elibrary.imf.org/display/book/9781557759498/ch02.xml',
+    historicalOutcome: 'Le Nasdaq atteint un sommet en mars, puis la correction américaine se propage aux marchés européens.',
+    divergence: 'Les valorisations restent élevées, mais les investissements et réglementations technologiques du joueur modifient l’exposition française.',
+    adaptation: 'Créer une correction d’intensité variable plutôt qu’un krach obligatoire, avec des secteurs gagnants et perdants.',
   },
 ];
 
 const advisorProposal: AdvisorProposal = {
-  title: 'Réduire la vulnérabilité énergétique avant l’hiver',
-  urgency: 'DÉCISION CONSEILLÉE · 18 JOURS',
-  reason: 'L’énergie domine l’agenda simulé et peut contaminer l’industrie, le budget et la stabilité sociale.',
-  signals: ['Inflation du gaz : +41 %', 'Réserves régionales : 74 jours', 'Tensions Russie–Ukraine en hausse'],
+  title: 'Positionner la France dans l’économie numérique européenne',
+  urgency: 'DÉCISION CONSEILLÉE · AVANT LISBONNE',
+  reason: 'La technologie et la réforme du marché européen dominent l’agenda du début de l’année 2000, tandis que les valorisations deviennent fragiles.',
+  signals: ['Sommet de Lisbonne dans 3 mois', 'Valeurs technologiques proches d’un sommet', 'Euro sous pression face au dollar'],
   choices: [
     {
-      id: 'shield',
-      title: 'A — Bouclier tarifaire immédiat',
-      detail: 'Protège les ménages, mais transfère le choc sur le budget public.',
-      effects: { budget: -12, stability: 8, security: 0, influence: 1 },
+      id: 'public-investment',
+      title: 'A — Grand plan numérique public',
+      detail: 'Équipe les écoles et les administrations, avec un coût budgétaire immédiat.',
+      effects: { budget: -10, stability: 4, security: 1, influence: 2 },
     },
     {
-      id: 'diversify',
-      title: 'B — Réserves et diversification',
-      detail: 'Achats groupés, stocks obligatoires et nouveaux fournisseurs.',
+      id: 'european-coalition',
+      title: 'B — Coalition numérique européenne',
+      detail: 'Coordonne télécoms, recherche et règles communes avec Berlin et Rome.',
       recommended: true,
-      effects: { budget: -6, stability: 3, security: 7, influence: 2 },
+      effects: { budget: -5, stability: 2, security: 3, influence: 6 },
     },
     {
-      id: 'market',
-      title: 'C — Laisser les prix s’ajuster',
-      detail: 'Préserve la trésorerie à court terme, avec un risque social élevé.',
-      effects: { budget: 3, stability: -9, security: -2, influence: -1 },
+      id: 'prudence',
+      title: 'C — Prudence budgétaire',
+      detail: 'Attend la correction des marchés avant d’engager de nouveaux crédits.',
+      effects: { budget: 4, stability: -2, security: 0, influence: -3 },
     },
   ],
 };
@@ -222,22 +222,22 @@ export default function Home() {
   const [month, setMonth] = useState(0);
   const [pendingTreaty, setPendingTreaty] = useState(false);
   const [activeTreaty, setActiveTreaty] = useState(false);
-  const [budget, setBudget] = useState(318);
+  const [budget, setBudget] = useState(246);
   const [influence, setInfluence] = useState(42);
   const [industry, setIndustry] = useState(100);
-  const [stability, setStability] = useState(64);
-  const [security, setSecurity] = useState(58);
+  const [stability, setStability] = useState(68);
+  const [security, setSecurity] = useState(54);
   const [isThinking, setIsThinking] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const [lastScan, setLastScan] = useState('09:00');
-  const [selectedCandidateId, setSelectedCandidateId] = useState('energy-inflation');
+  const [selectedCandidateId, setSelectedCandidateId] = useState('lisbon-strategy');
   const [queuedEventId, setQueuedEventId] = useState<string | null>(null);
   const [advisorChoiceId, setAdvisorChoiceId] = useState<string | null>(null);
 
   const selected = useMemo(() => countries.find((country) => country.id === selectedId) ?? countries[0], [selectedId]);
   const selectedCandidate = historicalCandidates.find((candidate) => candidate.id === selectedCandidateId) ?? historicalCandidates[0];
   const currentMessages = messages[selectedId] ?? [];
-  const date = month === 0 ? 'Janvier 2022' : month === 1 ? 'Février 2022' : 'Mars 2022';
+  const date = month === 0 ? 'Janvier 2000' : month === 1 ? 'Février 2000' : 'Mars 2000';
 
   const chooseCountry = (id: string) => {
     setSelectedId(id);
@@ -399,7 +399,7 @@ export default function Home() {
               </div>
             </aside>
           </div>
-          <p className="mt-2 font-mono text-[9px] leading-4 text-muted-foreground">SNAPSHOT DE DÉMONSTRATION · Le score est calculé par des règles vérifiables ; l’IA explique les écarts et rédige les variantes, mais ne peut ni inventer une source ni appliquer une conséquence seule.</p>
+          <p className="mt-2 font-mono text-[9px] leading-4 text-muted-foreground">POINT DE DÉPART : 1er JANVIER 2000 · Le score est calculé par des règles vérifiables ; l’IA explique les écarts et rédige les variantes, mais ne peut ni révéler le futur, ni inventer une source, ni appliquer une conséquence seule.</p>
         </div>
       </section>
 
