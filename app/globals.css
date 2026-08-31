@@ -275,6 +275,36 @@
 .diplomacy-country-recap li::before { content: '◆'; position: absolute; left: 0; color: var(--primary); font-size: 0.4rem; }
 .resolved-event { display: flex; align-items: center; gap: 0.4rem; border: 1px solid color-mix(in oklch, var(--signal-green) 35%, var(--border)); background: color-mix(in oklch, var(--signal-green) 7%, transparent); padding: 0.55rem; color: var(--signal-green); font-family: var(--font-geist-mono); font-size: 0.52rem; }
 .resolved-event svg { width: 0.75rem; height: 0.75rem; }
+.simulation-notice { display: flex; align-items: center; gap: 0.5rem; max-width: 1600px; margin-inline: auto; border-top: 1px solid var(--border); padding: 0.45rem 1.25rem; color: var(--muted-foreground); font-family: var(--font-geist-mono); font-size: 0.54rem; }
+.simulation-notice svg { color: var(--primary); }
+.time-advance-dialog { border: 1px solid var(--border); background: var(--background); }
+.time-preset-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.5rem; }
+.time-preset-grid button { min-height: 4.2rem; border: 1px solid var(--border); padding: 0.7rem; background: color-mix(in oklch, var(--muted) 24%, transparent); text-align: left; transition: border-color 150ms ease, background 150ms ease; }
+.time-preset-grid button:hover { border-color: color-mix(in oklch, var(--primary) 50%, var(--border)); }
+.time-preset-grid button[aria-pressed='true'] { border-color: var(--primary); background: color-mix(in oklch, var(--primary) 8%, var(--card)); box-shadow: inset 3px 0 0 var(--primary); }
+.time-preset-grid strong, .time-preset-grid span { display: block; }
+.time-preset-grid strong { font-size: 0.72rem; font-weight: 550; }
+.time-preset-grid span { margin-top: 0.25rem; color: var(--muted-foreground); font-size: 0.56rem; }
+.custom-date-field { display: grid; grid-template-columns: 1fr 190px; align-items: center; gap: 1rem; margin-top: 0.75rem; border: 1px solid var(--border); padding: 0.75rem; }
+.custom-date-field > span { display: flex; align-items: center; gap: 0.45rem; color: var(--muted-foreground); font-family: var(--font-geist-mono); font-size: 0.55rem; }
+.custom-date-field svg { width: 0.8rem; height: 0.8rem; color: var(--primary); }
+.custom-date-field input { width: 100%; border: 1px solid var(--input); background: var(--card); padding: 0.55rem 0.65rem; color: var(--foreground); font-family: var(--font-geist-mono); font-size: 0.68rem; color-scheme: dark; }
+.time-advance-preview { margin-top: 1rem; border: 1px solid var(--border); background: color-mix(in oklch, var(--card) 72%, var(--background)); }
+.time-route { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 0.75rem; border-bottom: 1px solid var(--border); padding: 0.9rem; }
+.time-route > div:last-child { text-align: right; }
+.time-route span, .time-route strong { display: block; font-family: var(--font-geist-mono); }
+.time-route span { color: var(--muted-foreground); font-size: 0.48rem; letter-spacing: 0.08em; }
+.time-route strong { margin-top: 0.2rem; font-size: 0.68rem; }
+.time-route svg { width: 0.9rem; height: 0.9rem; color: var(--primary); }
+.time-preview-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.time-preview-facts > p { display: flex; align-items: center; gap: 0.55rem; border-right: 1px solid var(--border); padding: 0.75rem; }
+.time-preview-facts > p:last-child { border-right: 0; }
+.time-preview-facts svg { width: 0.9rem; height: 0.9rem; color: var(--signal-blue); }
+.time-preview-facts span, .time-preview-facts small, .time-preview-facts strong { display: block; }
+.time-preview-facts small { color: var(--muted-foreground); font-family: var(--font-geist-mono); font-size: 0.45rem; }
+.time-preview-facts strong { margin-top: 0.15rem; font-family: var(--font-geist-mono); font-size: 0.65rem; }
+.time-stop-rule { display: flex; align-items: flex-start; gap: 0.5rem; margin-top: 0.75rem; border-left: 2px solid var(--signal-gold); background: color-mix(in oklch, var(--signal-gold) 5%, transparent); padding: 0.65rem; color: var(--muted-foreground); font-size: 0.6rem; line-height: 1rem; }
+.time-stop-rule svg { margin-top: 0.05rem; width: 0.8rem; height: 0.8rem; flex: none; color: var(--signal-gold); }
 
 @media (max-width: 1279px) {
   .dossier-panel.flex { min-height: 560px; }
@@ -309,4 +339,9 @@
   .diplomacy-contact-list > p { display: none; }
   .diplomacy-contact { min-width: 155px; border-top: 0; border-right: 1px solid var(--border); }
   .diplomatic-event-actions { grid-template-columns: 1fr; }
+  .time-preset-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .custom-date-field { grid-template-columns: 1fr; }
+  .time-preview-facts { grid-template-columns: 1fr; }
+  .time-preview-facts > p { border-right: 0; border-bottom: 1px solid var(--border); }
+  .time-preview-facts > p:last-child { border-bottom: 0; }
 }

@@ -35,6 +35,7 @@ import {
   type DiplomaticEventState,
   type ResolutionChannel,
 } from '@/components/diplomacy-sheet';
+import { TimeAdvanceDialog } from '@/components/time-advance-dialog';
 import { WorldMap, type MapMode } from '@/components/world-map';
 
 type Country = {
@@ -163,10 +164,16 @@ const initialDiplomaticEvents: DiplomaticEventState[] = [
     countryId: 'deu',
     requirement: 'position_required',
     deadlineLabel: 'AVANT FIN JANVIER',
-    deadlineMonth: 0,
+    deadline: '2000-01-31',
     allowedChannels: ['dialogue', 'government_action', 'economic_action', 'multilateral_channel', 'delegation', 'explicit_silence'],
     resolved: false,
   },
+];
+
+const simulationStops = [
+  { id: 'russian-election', date: '2000-03-26', title: 'Élection présidentielle russe', candidateId: 'russian-election' },
+  { id: 'lisbon-summit', date: '2000-03-23', title: 'Conseil européen extraordinaire de Lisbonne', candidateId: 'lisbon-strategy' },
+  { id: 'dotcom-correction', date: '2000-04-14', title: 'Correction des valeurs technologiques', candidateId: 'dotcom-correction' },
 ];
 
 const historicalCandidates: HistoricalEvent[] = [
@@ -284,7 +291,10 @@ export default function Home() {
   const [selectedId, setSelectedId] = useState('deu');
   const [messages, setMessages] = useState(initialMessages);
   const [draft, setDraft] = useState('');
-  const [month, setMonth] = useState(0);
+  const [currentDate, setCurrentDate] = useState('2000-01-01');
+  const [timeAdvanceOpen, setTimeAdvanceOpen] = useState(false);
+  const [processedSimulationStops, setProcessedSimulationStops] = useState<string[]>([]);
+  const [simulationNotice, setSimulationNotice] = useState('Simulation active au 1er janvier 2000.');
   const [pendingTreaty, setPendingTreaty] = useState(false);
   const [activeTreaty, setActiveTreaty] = useState(false);
   const [budget, setBudget] = useState(246);
@@ -327,7 +337,7 @@ export default function Home() {
   const activeDiplomaticEvent = diplomaticEvents.find((event) => event.id === activeDiplomaticEventId);
   const selectedDiplomaticImpact = diplomaticImpacts[selected.id] ?? { relation: 0, trust: 0 };
   const selectedDiplomaticCountry = { ...selected, relation: Math.max(0, Math.min(100, selected.relation + selectedDiplomaticImpact.relation)), trust: Math.max(0, Math.min(100, selected.trust + selectedDiplomaticImpact.trust)) };
-  const date = new Intl.DateTimeFormat('fr-FR', { month: 'long', year: 'numeric' }).format(new Date(2000, month, 1));
+  const date = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${currentDate}T12:00:00Z`));
 
   const chooseCountry = (id: string) => {
     setSelectedId(id);
@@ -440,29 +450,43 @@ export default function Home() {
     }));
   };
 
-  const advanceMonth = () => {
-    const directExchangeBlocker = diplomaticEvents.find((event) => !event.resolved && event.requirement === 'direct_exchange_required' && event.deadlineMonth <= month);
-    if (directExchangeBlocker) {
-      setActiveDiplomaticEventId(directExchangeBlocker.id);
-      chooseCountry(directExchangeBlocker.countryId);
-      setDiplomacyOpen(true);
-      setDiplomaticNotice('Cette situation exige une position explicite avant de poursuivre le calendrier.');
-      return;
-    }
-    const expiringEvents = diplomaticEvents.filter((event) => !event.resolved && event.deadlineMonth < month + 1);
-    expiringEvents.forEach((event) => resolveDiplomaticEvent('explicit_silence', event));
-    setMonth((value) => value + 1);
-    if (activeTreaty) setIndustry((value) => Number((value + 0.6).toFixed(1)));
-    if (institutionStage === 'building' || institutionStage === 'partial') {
-      const nextMonth = institutionMonths + 1;
+  const advanceSimulation = (requestedTarget: string) => {
+    const directExchangeBlocker = diplomaticEvents
+      .filter((event) => !event.resolved && event.requirement === 'direct_exchange_required')
+      .filter((event) => event.deadline > currentDate && event.deadline <= requestedTarget)
+      .sort((a, b) => a.deadline.localeCompare(b.deadline))[0];
+    const majorStop = simulationStops
+      .filter((stop) => !processedSimulationStops.includes(stop.id) && stop.date > currentDate && stop.date <= requestedTarget)
+      .sort((a, b) => a.date.localeCompare(b.date))[0];
+
+    const stopCandidates = [
+      majorStop ? { date: majorStop.date, kind: 'major' as const } : null,
+      directExchangeBlocker ? { date: directExchangeBlocker.deadline, kind: 'diplomatic' as const } : null,
+    ].filter(Boolean) as Array<{ date: string; kind: 'major' | 'diplomatic' }>;
+    const firstStop = stopCandidates.sort((a, b) => a.date.localeCompare(b.date))[0];
+    const reachedDate = firstStop?.date ?? requestedTarget;
+    const elapsedDays = Math.max(0, Math.round((new Date(`${reachedDate}T12:00:00Z`).getTime() - new Date(`${currentDate}T12:00:00Z`).getTime()) / 86_400_000));
+    const elapsedMonths = elapsedDays / 30.44;
+
+    diplomaticEvents
+      .filter((event) => !event.resolved && event.requirement !== 'direct_exchange_required' && event.deadline > currentDate && event.deadline <= reachedDate)
+      .forEach((event) => resolveDiplomaticEvent('explicit_silence', event));
+
+    setCurrentDate(reachedDate);
+    setTimeAdvanceOpen(false);
+    if (activeTreaty) setIndustry((value) => Number((value + 0.6 * elapsedMonths).toFixed(1)));
+
+    if ((institutionStage === 'building' || institutionStage === 'partial') && elapsedMonths > 0) {
+      const previousMonth = institutionMonths;
+      const nextMonth = Math.min(7, previousMonth + elapsedMonths);
       setInstitutionMonths(nextMonth);
-      setBudget((value) => Number((value - 0.02).toFixed(2)));
-      if (nextMonth === 3 && institutionStage === 'building') {
+      setBudget((value) => Number((value - 0.02 * elapsedMonths).toFixed(2)));
+      if (previousMonth < 3 && nextMonth >= 3) {
         setInstitutionStage('partial');
         setCapacities((current) => ({ ...current, economy: { ...current.economy, maximum: current.economy.maximum + 4 } }));
         setInstitutionNotice('Le sous-ministère est partiellement opérationnel : capacité économique +4.');
       }
-      if (nextMonth >= 7) {
+      if (previousMonth < 7 && nextMonth >= 7) {
         setInstitutionStage('operational');
         setCapacities((current) => {
           const expanded = { ...current, economy: { ...current.economy, maximum: current.economy.maximum + 5 } };
@@ -471,6 +495,21 @@ export default function Home() {
         setInstitutionNotice('Institution pleinement opérationnelle : capacité économique totale +9, charge de transition libérée.');
       }
     }
+
+    if (firstStop?.kind === 'diplomatic' && directExchangeBlocker) {
+      setActiveDiplomaticEventId(directExchangeBlocker.id);
+      chooseCountry(directExchangeBlocker.countryId);
+      setDiplomacyOpen(true);
+      setSimulationNotice(`Simulation interrompue le ${formatSimulationDate(reachedDate)} : une réponse diplomatique directe est exigée.`);
+      return;
+    }
+    if (firstStop?.kind === 'major' && majorStop) {
+      setProcessedSimulationStops((current) => [...current, majorStop.id]);
+      setSelectedCandidateId(majorStop.candidateId);
+      setSimulationNotice(`Simulation interrompue le ${formatSimulationDate(reachedDate)} : ${majorStop.title}.`);
+      return;
+    }
+    setSimulationNotice(`Simulation avancée jusqu’au ${formatSimulationDate(reachedDate)}. Les effets continus ont été calculés proportionnellement.`);
   };
 
   const scanHistoricalSources = async () => {
@@ -539,8 +578,9 @@ export default function Home() {
           <Button variant="outline" onClick={() => openDiplomaticWindow()} className="h-10 rounded-none border-border px-4 font-mono text-xs">
             <Radio className="size-3.5" /> DIPLOMATIE
           </Button>
-          <Button onClick={advanceMonth} className="h-10 rounded-none px-5 font-mono text-xs tracking-[0.08em]">TERMINER LE MOIS <ChevronRight /></Button>
+          <Button onClick={() => setTimeAdvanceOpen(true)} className="h-10 rounded-none px-5 font-mono text-xs tracking-[0.08em]">AVANCER LA SIMULATION <ChevronRight /></Button>
         </div>
+        <div className="simulation-notice"><Clock3 className="size-3.5" /><span>{simulationNotice}</span></div>
       </header>
 
       <section className="border-b border-border bg-muted/20">
@@ -694,7 +734,7 @@ export default function Home() {
                   <Button onClick={createProsperityMinistry} className="h-9 w-full rounded-none font-mono text-[10px]">CRÉER L’INSTITUTION</Button>
                 ) : (
                   <div>
-                    <div className="mb-2 flex items-center justify-between font-mono text-[9px]"><span>{institutionStage === 'operational' ? 'OPÉRATIONNEL' : institutionStage === 'partial' ? 'PARTIELLEMENT OPÉRATIONNEL' : 'MISE EN PLACE'}</span><span>{Math.min(institutionMonths, 7)} / 7 MOIS</span></div>
+                    <div className="mb-2 flex items-center justify-between font-mono text-[9px]"><span>{institutionStage === 'operational' ? 'OPÉRATIONNEL' : institutionStage === 'partial' ? 'PARTIELLEMENT OPÉRATIONNEL' : 'MISE EN PLACE'}</span><span>{Math.min(institutionMonths, 7).toFixed(1).replace('.0', '')} / 7 MOIS</span></div>
                     <div className="institution-progress"><span style={{ width: `${Math.min(100, (institutionMonths / 7) * 100)}%` }} /></div>
                   </div>
                 )}
@@ -819,6 +859,14 @@ export default function Home() {
         onResolveEvent={resolveDiplomaticEvent}
         memories={diplomaticMemories[selectedId] ?? []}
       />
+      <TimeAdvanceDialog
+        open={timeAdvanceOpen}
+        onOpenChange={setTimeAdvanceOpen}
+        currentDate={currentDate}
+        deadlineDates={diplomaticEvents.filter((event) => !event.resolved).map((event) => event.deadline)}
+        eventDates={simulationStops.filter((stop) => !processedSimulationStops.includes(stop.id)).map((stop) => stop.date)}
+        onAdvance={advanceSimulation}
+      />
     </main>
   );
 }
@@ -833,6 +881,10 @@ function AnalysisLine({ label, text, accent = false }: { label: string; text: st
 
 function formatImpact(value: number) {
   return value > 0 ? `+${value}` : `${value}`;
+}
+
+function formatSimulationDate(iso: string) {
+  return new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${iso}T12:00:00Z`));
 }
 
 function resolutionLabel(channel?: ResolutionChannel) {

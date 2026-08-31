@@ -27,7 +27,7 @@ export type DiplomaticEventState = {
   countryId: string;
   requirement: 'optional' | 'position_required' | 'direct_exchange_required';
   deadlineLabel: string;
-  deadlineMonth: number;
+  deadline: string;
   allowedChannels: ResolutionChannel[];
   resolved: boolean;
   resolvedBy?: ResolutionChannel;
