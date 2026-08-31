@@ -30,6 +30,7 @@ import {
 
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { WorldMap, type MapMode } from '@/components/world-map';
 
 type Country = {
   id: string;
@@ -282,11 +283,20 @@ export default function Home() {
   const [institutionStage, setInstitutionStage] = useState<InstitutionStage>('proposal');
   const [institutionMonths, setInstitutionMonths] = useState(0);
   const [institutionNotice, setInstitutionNotice] = useState('Projet disponible : créer un sous-ministère à la Prospérité.');
+  const [mapMode, setMapMode] = useState<MapMode>('diplomacy');
+  const [selectedMapId, setSelectedMapId] = useState('FRA');
+  const [selectedMapName, setSelectedMapName] = useState('France');
 
   const selected = useMemo(() => countries.find((country) => country.id === selectedId) ?? countries[0], [selectedId]);
   const selectedCandidate = historicalCandidates.find((candidate) => candidate.id === selectedCandidateId) ?? historicalCandidates[0];
   const intelConfidence = Math.min(95, Math.round((selected.relation * 0.25) + (selected.trust * 0.25) + (selected.military.access * 0.5) + (intelBoost[selected.id] ?? 0)));
   const militaryUncertainty = intelConfidence >= 75 ? 3 : intelConfidence >= 55 ? 8 : 15;
+  const selectedMapCountry = countries.find((country) => country.id.toUpperCase() === selectedMapId);
+  const mapMetrics = Object.fromEntries(countries.map((country) => {
+    if (mapMode === 'military') return [country.id.toUpperCase(), country.military.potential];
+    if (mapMode === 'intelligence') return [country.id.toUpperCase(), Math.round((country.relation * 0.25) + (country.trust * 0.25) + (country.military.access * 0.5))];
+    return [country.id.toUpperCase(), country.relation];
+  }));
   const currentMessages = messages[selectedId] ?? [];
   const date = new Intl.DateTimeFormat('fr-FR', { month: 'long', year: 'numeric' }).format(new Date(2000, month, 1));
 
@@ -381,6 +391,13 @@ export default function Home() {
     setInstitutionNotice('Décret publié : recrutement et transfert des compétences en cours. Aucun gain immédiat.');
   };
 
+  const selectMapCountry = (id: string, name: string) => {
+    setSelectedMapId(id);
+    setSelectedMapName(name);
+    const known = countries.find((country) => country.id.toUpperCase() === id);
+    if (known) chooseCountry(known.id);
+  };
+
   return (
     <main className="min-h-screen bg-background text-foreground">
       <header className="border-b border-border bg-card/85 backdrop-blur-xl">
@@ -412,6 +429,35 @@ export default function Home() {
               <p className="mt-0.5 text-xs text-muted-foreground">{event.detail}</p>
             </article>
           ))}
+        </div>
+      </section>
+
+      <section className="strategic-map-shell">
+        <div className="mx-auto max-w-[1600px] px-4 py-5 xl:px-8">
+          <section className="dossier-panel">
+            <div className="map-header">
+              <div className="mr-auto"><p className="font-mono text-[9px] tracking-[0.14em] text-muted-foreground">CENTRE DE COMMANDEMENT · 1er JANVIER 2000</p><h2 className="text-base font-medium">Carte stratégique mondiale</h2></div>
+              <div className="map-mode-switch" aria-label="Mode cartographique">
+                {(['diplomacy', 'intelligence', 'military'] as MapMode[]).map((mode) => <button key={mode} type="button" onClick={() => setMapMode(mode)} aria-pressed={mapMode === mode}>{mode === 'diplomacy' ? 'DIPLOMATIE' : mode === 'intelligence' ? 'RENSEIGNEMENT' : 'MILITAIRE'}</button>)}
+              </div>
+            </div>
+            <div className="map-command-layout">
+              <WorldMap mode={mapMode} metrics={mapMetrics} selectedId={selectedMapId} onSelect={selectMapCountry} />
+              <aside className="map-dossier" aria-live="polite">
+                <p className="font-mono text-[9px] tracking-[0.14em] text-primary">PAYS SÉLECTIONNÉ</p>
+                <h3 className="mt-1 text-xl font-medium">{selectedMapName}</h3>
+                <p className="mt-1 text-xs text-muted-foreground">{selectedMapId === 'FRA' ? 'Votre État · République française' : selectedMapId === 'YUG' ? 'État fédéral · configuration historique' : selectedMapId === 'SDN' ? 'État souverain · territoire unifié en 2000' : selectedMapCountry?.role ?? 'Dossier diplomatique disponible'}</p>
+                <div className="map-facts">
+                  <MapFact label="RELATION" value={selectedMapId === 'FRA' ? '—' : selectedMapCountry ? `${selectedMapCountry.relation}/100` : 'Non évaluée'} />
+                  <MapFact label="RENSEIGNEMENT" value={selectedMapCountry ? `${Math.round((selectedMapCountry.relation * 0.25) + (selectedMapCountry.trust * 0.25) + (selectedMapCountry.military.access * 0.5))}%` : selectedMapId === 'FRA' ? 'Complet' : 'Fragmentaire'} />
+                  <MapFact label="PUISSANCE MILITAIRE" value={selectedMapCountry ? `${selectedMapCountry.military.potential}/100` : selectedMapId === 'FRA' ? 'État de référence' : 'À estimer'} />
+                  <MapFact label="STATUT EN 2000" value={selectedMapId === 'YUG' || selectedMapId === 'SDN' ? 'Frontière historique' : 'Reconnu'} />
+                </div>
+                {selectedMapCountry ? <Button onClick={() => document.getElementById('diplomacy-center')?.scrollIntoView({ behavior: 'smooth' })} className="h-9 w-full rounded-none font-mono text-[10px]">OUVRIR LE DOSSIER COMPLET</Button> : <p className="border border-dashed border-border px-3 py-2 text-[10px] leading-4 text-muted-foreground">Cliquez sur n’importe quel pays pour l’identifier. Les quatre interlocuteurs déjà modélisés disposent d’un dossier complet ; les autres seront alimentés par la base mondiale.</p>}
+                <div className="map-legend"><span><i className="player" />France</span><span><i className="high" />Fort / fiable</span><span><i className="medium" />Intermédiaire</span><span><i className="low" />Faible / incertain</span></div>
+              </aside>
+            </div>
+          </section>
         </div>
       </section>
 
@@ -524,7 +570,7 @@ export default function Home() {
         </div>
       </section>
 
-      <div className="mx-auto grid max-w-[1600px] gap-4 px-4 py-5 xl:grid-cols-[280px_minmax(420px,1fr)_340px] xl:px-8">
+      <div id="diplomacy-center" className="mx-auto grid max-w-[1600px] gap-4 px-4 py-5 xl:grid-cols-[280px_minmax(420px,1fr)_340px] xl:px-8">
         <aside className="dossier-panel min-w-0">
           <PanelTitle icon={Radio} eyebrow="CANAUX OUVERTS" title="Contacts diplomatiques" />
           <div className="divide-y divide-border">
@@ -656,6 +702,10 @@ function CapacityDomain({ label, state }: { label: string; state: { maximum: num
 
 function ReformFact({ label, value, accent = false }: { label: string; value: string; accent?: boolean }) {
   return <div><p className="font-mono text-[8px] text-muted-foreground">{label}</p><p className={`mt-1 font-mono text-[11px] ${accent ? 'text-[var(--signal-green)]' : ''}`}>{value}</p></div>;
+}
+
+function MapFact({ label, value }: { label: string; value: string }) {
+  return <div><p className="font-mono text-[8px] tracking-[0.08em] text-muted-foreground">{label}</p><p className="mt-1 text-xs">{value}</p></div>;
 }
 
 function formatEstimate(value: number, uncertainty: number) {
