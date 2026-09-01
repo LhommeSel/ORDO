@@ -1,0 +1,87 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+
+import { answerAdvisorQuestion, assessStrategicPlan } from './advisor';
+import { nodeAvailableExport, proposeEnergyContract } from './energy';
+import { advanceWorld, replayWorld } from './engine';
+import { deserializeWorld, serializeWorld } from './persistence';
+import { evaluatePoliticalPathway } from './politics';
+import { createFrance2000World } from './scenario-2000';
+
+test('le scénario 2000 charge un monde cohérent et jouable', () => {
+  const state = createFrance2000World();
+  assert.equal(state.currentDate, '2000-01-01');
+  assert.equal(state.playerCountryId, 'FRA');
+  assert.ok(Object.keys(state.countries).length >= 10);
+  assert.ok(Object.keys(state.historicalCurrents).length >= 3);
+  assert.ok(Object.keys(state.armamentProducts).length >= 6);
+});
+
+test('un contrat énergétique ne peut pas dépasser la capacité physique restante', () => {
+  const state = createFrance2000World();
+  const nodeId = 'norwegian-north-sea-oil';
+  const available = nodeAvailableExport(state, nodeId);
+  const result = proposeEnergyContract(state, {
+    id: 'impossible-contract', nodeId, buyerId: 'FRA', annualVolume: available + 1,
+    startDate: state.currentDate, endDate: '2005-01-01', priceFormula: 'Brent', route: 'Mer du Nord',
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.state.actions.length, 0);
+});
+
+test('une rupture idéologique est un chemin politique coûteux, pas une action gratuite', () => {
+  const state = createFrance2000World();
+  const pathway = evaluatePoliticalPathway(state, 'FRA', {
+    requiredAuthority: 'constitutional', doctrine: { economic: 0, sovereignty: 95 },
+    publicSalience: 95, administrativeComplexity: 90,
+  });
+  assert.ok(['blocked', 'rupture'].includes(pathway.status));
+  assert.ok(pathway.obstacles.length >= 2);
+  assert.ok(pathway.routes.length >= 1);
+});
+
+test('la cadence autonome dépend du calendrier, pas du nombre de clics', () => {
+  const initialA = createFrance2000World();
+  const oneJump = advanceWorld(initialA, '2000-04-01').state;
+
+  let monthly = createFrance2000World();
+  monthly = advanceWorld(monthly, '2000-02-01').state;
+  monthly = advanceWorld(monthly, '2000-03-01').state;
+  monthly = advanceWorld(monthly, '2000-04-01').state;
+
+  const nonPlayerReviews = (state: typeof monthly) => state.actions.filter((action) =>
+    action.intent === 'Révision périodique de la stratégie nationale' && action.actorId !== state.playerCountryId,
+  ).map((action) => `${action.createdAt}:${action.actorId}`);
+  assert.deepEqual(nonPlayerReviews(oneJump), nonPlayerReviews(monthly));
+});
+
+test('le monde agit sans attendre le joueur', () => {
+  const result = advanceWorld(createFrance2000World(), '2001-01-01');
+  const autonomousActors = new Set(result.state.actions
+    .filter((action) => action.intent === 'Révision périodique de la stratégie nationale')
+    .map((action) => action.actorId));
+  assert.ok(autonomousActors.size >= 4);
+  assert.ok(!autonomousActors.has('FRA'));
+});
+
+test('le conseiller local produit des options situées et auditables', () => {
+  const state = createFrance2000World();
+  const answer = answerAdvisorQuestion(state, 'Que pouvons-nous proposer à l’Allemagne avant le prochain conseil ?', { focusCountryId: 'DEU' });
+  assert.equal(answer.mode, 'options');
+  assert.equal(answer.generatedBy, 'local_rules');
+  assert.ok(answer.plans.length >= 2);
+  const diplomatic = answer.plans[0];
+  assert.ok(diplomatic.measures.length >= 3);
+  assert.ok(diplomatic.factsUsed.some((fact) => fact.includes('Relation')));
+  assert.ok(assessStrategicPlan(state, diplomatic).capabilityPressure.length >= 1);
+});
+
+test('la sauvegarde et le registre permettent de reconstruire exactement un état', () => {
+  const initial = createFrance2000World();
+  const advanced = advanceWorld(initial, '2000-03-01').state;
+  const restored = deserializeWorld(serializeWorld(advanced));
+  assert.deepEqual(restored, advanced);
+
+  const replayed = replayWorld(createFrance2000World(), advanced.actions);
+  assert.deepEqual(replayed, advanced);
+});
