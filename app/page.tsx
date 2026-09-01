@@ -59,7 +59,7 @@ function WorldPanel({ world }: { world: WorldState }) {
   return <div className="grid gap-4 xl:grid-cols-[1.15fr_.85fr]">
     <section className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Stat label="Pays jouable" value={String(Object.keys(world.countries).length)} detail="France active · architecture multi-pays" />
+        <Stat label="Pays modélisés" value={String(Object.keys(world.countries).length)} detail="France active · architecture multi-pays" />
         <Stat label="Budget" value={player.metrics.budget.toFixed(1)} detail="Ressource chiffrée, pas de capital politique" />
         <Stat label="Actions" value={String(world.actions.length)} detail={`${world.ledger.length} modifications causales`} />
         <Stat label="Courants actifs" value={String(Object.values(world.historicalCurrents).filter((item) => item.status === 'active').length)} detail="Manifestations non prédéterminées" />
