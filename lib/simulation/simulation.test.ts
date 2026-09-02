@@ -10,6 +10,7 @@ import { advanceWorld, replayWorld } from './engine';
 import { deserializeWorld, serializeWorld } from './persistence';
 import { evaluatePoliticalPathway } from './politics';
 import { createFrance2000World } from './scenario-2000';
+import { interpretPlayerIntent, rankEnergySuppliers } from './intent';
 
 test('le scénario 2000 charge un monde cohérent et jouable', () => {
   const state = createFrance2000World();
@@ -120,6 +121,36 @@ test('le conseiller local produit des options situées et auditables', () => {
   assert.ok(diplomatic.measures.length >= 3);
   assert.ok(diplomatic.factsUsed.some((fact) => fact.includes('Relation')));
   assert.ok(assessStrategicPlan(state, diplomatic).capabilityPressure.length >= 1);
+});
+
+test('une demande libre identifie le pays et la ressource sans sélecteur', () => {
+  const state = createFrance2000World();
+  const answer = answerAdvisorQuestion(state, 'Je veux négocier un contrat gazier de long terme avec l’Algérie.');
+  assert.equal(answer.interpretation.kind, 'energy_contract');
+  assert.equal(answer.interpretation.resource, 'gas');
+  assert.equal(answer.interpretation.targetId, 'DZA');
+  assert.equal(answer.plans.length, 1);
+  assert.equal(answer.plans[0].execution?.supplierId, 'DZA');
+});
+
+test('sans partenaire imposé, le moteur classe plusieurs fournisseurs réels', () => {
+  const state = createFrance2000World();
+  const answer = answerAdvisorQuestion(state, 'Je veux sécuriser un contrat gazier de long terme.');
+  const ranked = rankEnergySuppliers(state, 'gas');
+  assert.equal(answer.interpretation.targetStatus, 'unspecified');
+  assert.ok(answer.plans.length >= 2);
+  assert.equal(answer.plans[0].execution?.supplierId, ranked[0].countryId);
+  assert.equal(new Set(answer.plans.map((plan) => plan.execution?.supplierId)).size, answer.plans.length);
+});
+
+test('un pays absent est identifié sans inventer de capacité', () => {
+  const state = createFrance2000World();
+  const intent = interpretPlayerIntent(state, 'Négocier un contrat gazier avec le Kazakhstan.');
+  const answer = answerAdvisorQuestion(state, 'Négocier un contrat gazier avec le Kazakhstan.');
+  assert.equal(intent.targetLabel, 'Kazakhstan');
+  assert.equal(intent.targetStatus, 'unmodeled');
+  assert.equal(answer.plans.length, 0);
+  assert.ok(answer.synthesis.includes('ne fabrique donc pas'));
 });
 
 test('la sauvegarde et le registre permettent de reconstruire exactement un état', () => {

@@ -223,14 +223,17 @@ function EnergyNegotiationPanel({
 }
 
 function AdvisorPanel({ world, onWorldChange, onNotice }: { world: WorldState; onWorldChange: (world: WorldState) => void; onNotice: (message: string) => void }) {
-  const [question, setQuestion] = useState('Négocier un contrat gazier avec l’Algérie.');
-  const [focus, setFocus] = useState('DZA');
-  const [answer, setAnswer] = useState<AdvisorAnswer>(() => answerAdvisorQuestion(world, question, { focusCountryId: focus }));
+  const [question, setQuestion] = useState('');
+  const [answer, setAnswer] = useState<AdvisorAnswer>(() => answerAdvisorQuestion(world, ''));
   const [offer, setOffer] = useState<EnergyAdministrativeOffer | null>(null);
   const [response, setResponse] = useState<EnergyCounterpartResponse | null>(null);
   const [showAdjustments, setShowAdjustments] = useState(false);
   const [signedContractId, setSignedContractId] = useState<string | null>(null);
-  const ask = () => setAnswer(answerAdvisorQuestion(world, question, { focusCountryId: focus }));
+  const ask = () => {
+    if (question.trim().length < 3) return;
+    setAnswer(answerAdvisorQuestion(world, question));
+    setOffer(null); setResponse(null); setSignedContractId(null);
+  };
   const prepare = (plan: StrategicPlan) => {
     if (!plan.execution) return;
     const result = createAdministrativeEnergyOffer(world, plan.execution.supplierId, plan.execution.resource);
@@ -257,19 +260,19 @@ function AdvisorPanel({ world, onWorldChange, onNotice }: { world: WorldState; o
   };
   return <div className="grid gap-4 xl:grid-cols-[.75fr_1.25fr]">
     <section className="border border-border bg-card/70 p-4">
-      <div className="flex items-center gap-2 font-semibold"><BrainCircuit className="size-4 text-primary" /> Conseiller unique, deux modes</div>
-      <p className="mt-1 text-sm text-muted-foreground">Le même conseiller distingue automatiquement une question d’état du monde d’une demande d’options. Les règles locales extraient les faits ; un LLM pourra enrichir la formulation sans modifier directement l’état.</p>
-      <label className="mt-5 block font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Entité concernée</label>
-      <select value={focus} onChange={(event) => setFocus(event.target.value)} className="mt-2 h-9 w-full border border-input bg-background px-3 text-sm">
-        {Object.values(world.countries).filter((country) => country.id !== world.playerCountryId).map((country) => <option key={country.id} value={country.id}>{country.flag} {country.name}</option>)}
-      </select>
-      <label className="mt-4 block font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Question</label>
-      <Textarea value={question} onChange={(event) => setQuestion(event.target.value)} className="mt-2 min-h-32" />
-      <Button className="mt-3 w-full" onClick={ask}>Analyser l’état réel du jeu</Button>
+      <div className="flex items-center gap-2 font-semibold"><BrainCircuit className="size-4 text-primary" /> Action ou question libre</div>
+      <p className="mt-1 text-sm text-muted-foreground">Écrivez votre intention comme vous la formuleriez à votre administration. Le pays, la ressource et l’objectif sont extraits de la phrase ; aucun partenaire n’est imposé par un menu.</p>
+      <label className="mt-5 block font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Votre demande</label>
+      <Textarea value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="Ex. Je veux sécuriser un contrat gazier de long terme avec l’Algérie afin de diversifier nos approvisionnements." className="mt-2 min-h-36" />
+      <Button className="mt-3 w-full" disabled={question.trim().length < 3} onClick={ask}>Interpréter et préparer</Button>
       <div className="mt-4 border border-border bg-muted/20 p-3 text-xs text-muted-foreground">Moteur actuel : <b className="text-foreground">règles locales</b>. Appel LLM recommandé : <b className="text-foreground">{answer.llmRecommended ? 'oui' : 'non'}</b>.</div>
     </section>
     <section className="space-y-3">
-      <div className="border border-border bg-card/70 p-4"><div className="font-mono text-[10px] uppercase tracking-wider text-primary">{answer.mode}</div><h2 className="mt-1 text-xl font-semibold">{answer.headline}</h2><p className="mt-2 text-sm text-muted-foreground">{answer.synthesis}</p><div className="mt-4 flex flex-wrap gap-2">{answer.facts.map((fact) => <span key={fact.id} title={`${fact.sourcePath} · confiance ${fact.confidence}%`} className="border border-border bg-muted/30 px-2 py-1 text-xs"><b>{fact.label}</b> · {fact.value}</span>)}</div></div>
+      <div className="border border-border bg-card/70 p-4">
+        <div className="font-mono text-[10px] uppercase tracking-wider text-primary">{answer.mode}</div><h2 className="mt-1 text-xl font-semibold">{answer.headline}</h2><p className="mt-2 text-sm text-muted-foreground">{answer.synthesis}</p>
+        {answer.interpretation.kind === 'energy_contract' && <div className="mt-4 border-l-2 border-primary bg-muted/20 p-3 text-xs"><b>Demande comprise :</b> négociation énergétique · {answer.interpretation.resource === 'gas' ? 'gaz' : answer.interpretation.resource === 'oil' ? 'pétrole' : 'ressource à préciser'} · {answer.interpretation.targetLabel ?? 'fournisseur à recommander'} <span className="text-muted-foreground">· confiance {answer.interpretation.confidence}%</span>{answer.interpretation.warnings.map((warning) => <div key={warning} className="mt-2 text-amber-300">⚠ {warning}</div>)}</div>}
+        <div className="mt-4 flex flex-wrap gap-2">{answer.facts.map((fact) => <span key={fact.id} title={`${fact.sourcePath} · confiance ${fact.confidence}%`} className="border border-border bg-muted/30 px-2 py-1 text-xs"><b>{fact.label}</b> · {fact.value}</span>)}</div>
+      </div>
       {offer && <EnergyNegotiationPanel world={world} offer={offer} response={response} signedContractId={signedContractId} showAdjustments={showAdjustments} onSend={send} onAdjust={adjust} onSign={sign} onToggleAdjustments={() => setShowAdjustments((value) => !value)} onClose={() => { setOffer(null); setResponse(null); setSignedContractId(null); }} />}
       {answer.plans.map((plan) => <PlanCard key={plan.id} world={world} plan={plan} onPrepare={prepare} />)}
     </section>

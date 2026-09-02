@@ -1,6 +1,7 @@
 import { energyBalance, producerNodes } from './energy';
 import { createAdministrativeEnergyOffer } from './energy-negotiation';
 import { productEvidenceSummary } from './industry';
+import { interpretPlayerIntent, rankEnergySuppliers, type PlayerIntent } from './intent';
 import { relationBetween } from './ledger';
 import type {
   AiBudgetPolicy,
@@ -36,6 +37,7 @@ export type AdvisorAnswer = {
   plans: StrategicPlan[];
   generatedBy: 'local_rules';
   llmRecommended: boolean;
+  interpretation: PlayerIntent;
 };
 
 export const defaultAiBudgetPolicy: AiBudgetPolicy = {
@@ -211,19 +213,41 @@ export function answerAdvisorQuestion(
   question: string,
   options: { focusCountryId?: CountryId; policy?: AiBudgetPolicy } = {},
 ): AdvisorAnswer {
-  const mode = classifyQuestion(question);
-  const facts = collectFacts(state, options.focusCountryId);
-  const normalized = question.toLocaleLowerCase('fr');
-  const resourceHint = /gaz|gazier|gazière/.test(normalized) ? 'gas' : 'oil';
-  const plans = mode === 'options' ? generateStrategicPlans(state, options.focusCountryId, resourceHint) : [];
-  const focus = options.focusCountryId ? state.countries[options.focusCountryId]?.name : undefined;
+  const interpretation = interpretPlayerIntent(state, question);
+  const focusCountryId = interpretation.targetId ?? options.focusCountryId;
+  const mode = interpretation.kind === 'energy_contract' ? 'options' : classifyQuestion(question);
+  const facts = collectFacts(state, focusCountryId);
+  let plans: StrategicPlan[] = [];
+  if (interpretation.kind === 'energy_contract' && interpretation.resource) {
+    if (interpretation.targetStatus === 'modeled' && interpretation.targetId) {
+      const targeted = energyPlan(state, interpretation.resource, interpretation.targetId);
+      plans = targeted && targeted.execution?.supplierId === interpretation.targetId ? [targeted] : [];
+    } else if (interpretation.targetStatus === 'unspecified') {
+      plans = rankEnergySuppliers(state, interpretation.resource).slice(0, 3)
+        .map((candidate) => energyPlan(state, interpretation.resource!, candidate.countryId))
+        .filter((plan): plan is StrategicPlan => Boolean(plan));
+    }
+  } else if (mode === 'options') {
+    plans = generateStrategicPlans(state, focusCountryId);
+  }
+  const focus = focusCountryId ? state.countries[focusCountryId]?.name : interpretation.targetLabel;
+  const resourceLabel = interpretation.resource === 'gas' ? 'gaz' : interpretation.resource === 'oil' ? 'pétrole' : 'énergie';
+  const energySynthesis = interpretation.targetStatus === 'unmodeled'
+    ? `${interpretation.targetLabel} a bien été identifié, mais ses capacités ne sont pas encore présentes dans le monde simulé. ORDO ne fabrique donc pas de contrat fictif.`
+    : interpretation.targetStatus === 'modeled' && plans.length === 0
+      ? `${focus} est bien identifié, mais aucune capacité exportatrice de ${resourceLabel} compatible n’est actuellement disponible dans le registre physique.`
+      : interpretation.targetStatus === 'unspecified'
+        ? `${plans.length} fournisseur(s) ont été classés à partir des volumes encore disponibles, des routes, de la relation et de la fiabilité des données.`
+        : `Une proposition administrative exécutable a été préparée avec ${focus}, sans demander au joueur de régler tous les paramètres techniques.`;
   return {
     mode,
-    headline: mode === 'options' ? `Options concrètes${focus ? ` concernant ${focus}` : ''}` : `État de la situation${focus ? ` · ${focus}` : ''}`,
-    synthesis: mode === 'options'
+    headline: interpretation.kind === 'energy_contract'
+      ? `Négociation de ${resourceLabel}${focus ? ` · ${focus}` : ''}`
+      : mode === 'options' ? `Options concrètes${focus ? ` concernant ${focus}` : ''}` : `État de la situation${focus ? ` · ${focus}` : ''}`,
+    synthesis: interpretation.kind === 'energy_contract' ? energySynthesis : mode === 'options'
       ? `${plans.length} piste(s) sont reliées à des capacités, des interlocuteurs, des délais et des indicateurs vérifiables. Aucune n’est une simple étiquette de gameplay.`
       : `La réponse repose sur ${facts.length} faits du monde simulé, avec leur confiance et leur chemin de provenance.`,
-    facts, plans, generatedBy: 'local_rules',
+    facts, plans, generatedBy: 'local_rules', interpretation,
     llmRecommended: (options.policy?.advisorDepth ?? 'standard') === 'detailed' || question.length > 220,
   };
 }
