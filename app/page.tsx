@@ -3,17 +3,20 @@
 import { useMemo, useState } from 'react';
 import {
   Activity, Archive, BrainCircuit, ChevronRight, Database, Factory,
-  FlaskConical, Fuel, History, Landmark, RotateCcw, Save, Shield,
+  CheckCircle2, FlaskConical, Fuel, History, Landmark, RotateCcw, Save,
+  Send, Shield, SlidersHorizontal, X,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import {
   advanceWorld, answerAdvisorQuestion, armamentAdvisorFacts,
-  assessStrategicPlan, createFrance2000World, deserializeWorld,
+  acceptEnergyOffer, adjustEnergyOffer, assessStrategicPlan,
+  createAdministrativeEnergyOffer, createFrance2000World, deserializeWorld,
   energyBalance, evaluatePoliticalPathway, productEvidenceSummary,
-  serializeWorld, visibleLedger,
-  type AdvisorAnswer, type ISODate, type StrategicPlan, type WorldState,
+  sendEnergyOffer, serializeWorld, visibleLedger,
+  type AdvisorAnswer, type EnergyAdministrativeOffer, type EnergyCounterpartResponse,
+  type EnergyOfferAdjustment, type ISODate, type StrategicPlan, type WorldState,
 } from '@/lib/simulation';
 
 type Panel = 'world' | 'energy' | 'industry' | 'advisor' | 'ledger';
@@ -157,7 +160,7 @@ function IndustryPanel({ world }: { world: WorldState }) {
   </div>;
 }
 
-function PlanCard({ world, plan }: { world: WorldState; plan: StrategicPlan }) {
+function PlanCard({ world, plan, onPrepare }: { world: WorldState; plan: StrategicPlan; onPrepare?: (plan: StrategicPlan) => void }) {
   const assessment = assessStrategicPlan(world, plan);
   return <details className="group border border-border bg-card/70 p-4 open:border-primary/40">
     <summary className="cursor-pointer list-none"><div className="flex items-start justify-between gap-3"><div><div className="font-semibold">{plan.title}</div><p className="mt-1 text-sm text-muted-foreground">{plan.intent}</p></div><ChevronRight className="mt-1 size-4 shrink-0 transition-transform group-open:rotate-90" /></div></summary>
@@ -165,15 +168,93 @@ function PlanCard({ world, plan }: { world: WorldState; plan: StrategicPlan }) {
       <p>{plan.rationale}</p>
       <div className="mt-4 grid gap-4 lg:grid-cols-2"><div><div className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Mesures</div><ol className="mt-2 space-y-2">{plan.measures.map((measure, index) => <li key={`${measure.actor}-${index}`}><b>{index + 1}. {measure.actor}</b> — {measure.action} <span className="text-muted-foreground">({measure.deadline})</span></li>)}</ol></div><div><div className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Pourquoi accepter / refuser</div><ul className="mt-2 space-y-2 text-muted-foreground">{assessment.strengths.map((item) => <li key={item} className="text-emerald-300">+ {item}</li>)}{plan.risks.slice(0, 2).map((item) => <li key={item} className="text-amber-300">− {item}</li>)}</ul></div></div>
       <div className="mt-4 bg-muted/30 p-3 text-xs"><b>Conséquences estimées :</b> {assessment.estimatedConsequences.join(' · ')}</div>
+      {plan.execution && <Button className="mt-4" onClick={() => onPrepare?.(plan)}><ChevronRight className="size-4" /> Préparer la proposition</Button>}
     </div>
   </details>;
 }
 
-function AdvisorPanel({ world }: { world: WorldState }) {
-  const [question, setQuestion] = useState('Que pouvons-nous proposer à l’Allemagne avant le prochain conseil européen ?');
-  const [focus, setFocus] = useState('DEU');
+const adjustmentLabels: Record<EnergyOfferAdjustment, string> = {
+  more_volume: 'Demander plus de volume', better_price: 'Négocier une décote',
+  shorter_term: 'Réduire la durée', delivery_security: 'Garantir les livraisons',
+};
+
+function EnergyNegotiationPanel({
+  world, offer, response, signedContractId, showAdjustments, onSend, onAdjust, onSign, onToggleAdjustments, onClose,
+}: {
+  world: WorldState; offer: EnergyAdministrativeOffer; response: EnergyCounterpartResponse | null;
+  signedContractId: string | null; showAdjustments: boolean; onSend: () => void;
+  onAdjust: (kind: EnergyOfferAdjustment) => void; onSign: () => void;
+  onToggleAdjustments: () => void; onClose: () => void;
+}) {
+  const supplier = world.countries[offer.supplierId];
+  const resource = offer.resource === 'gas' ? 'gaz' : 'pétrole';
+  return <section className="border border-primary/50 bg-card/90">
+    <div className="flex items-start justify-between gap-4 border-b border-border p-4">
+      <div><div className="font-mono text-[10px] uppercase tracking-wider text-primary">Proposition administrative</div><h3 className="mt-1 text-lg font-semibold">Accord de {resource} avec {supplier?.flag} {supplier?.name}</h3></div>
+      <Button size="icon" variant="ghost" title="Fermer" onClick={onClose}><X className="size-4" /></Button>
+    </div>
+    <div className="space-y-4 p-4">
+      <div className="grid gap-px bg-border sm:grid-cols-2 lg:grid-cols-4">
+        <Stat label="Couverture" value={`${offer.coverageShare.toFixed(1)} %`} detail="des besoins annuels" />
+        <Stat label="Durée" value={`${offer.durationYears} ans`} detail="accord de long terme" />
+        <Stat label="Prix" value={offer.pricePosture === 'market' ? 'Marché' : 'Décote'} detail={offer.priceSummary} />
+        <Stat label="Moyens" value={offer.diplomaticEffort} detail={`${offer.adjustments.length} ajustement(s)`} />
+      </div>
+      <p className="text-sm text-muted-foreground">L’administration a dimensionné l’offre selon les <b className="text-foreground">besoins français</b> et la <b className="text-foreground">capacité réellement disponible</b> du fournisseur. Vous pouvez l’envoyer telle quelle.</p>
+      {showAdjustments && !signedContractId && <div className="border border-border bg-muted/20 p-3">
+        <div className="mb-2 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Ajustements facultatifs</div>
+        <div className="flex flex-wrap gap-2">{(Object.keys(adjustmentLabels) as EnergyOfferAdjustment[]).map((kind) => <Button key={kind} size="sm" variant={offer.adjustments.includes(kind) ? 'default' : 'outline'} disabled={offer.adjustments.includes(kind)} onClick={() => onAdjust(kind)}>{adjustmentLabels[kind]}</Button>)}</div>
+        <p className="mt-2 text-xs text-amber-300">Durcir plusieurs paramètres augmente les moyens engagés et le risque de contre-proposition.</p>
+      </div>}
+      <details className="border border-border p-3 text-xs text-muted-foreground"><summary className="cursor-pointer text-foreground">Voir les paramètres techniques</summary><div className="mt-2 grid gap-1 sm:grid-cols-2"><span>Volume : {offer.annualVolume.toFixed(2)} unités/an</span><span>Route : {offer.route}</span><span>Début : {offer.startDate}</span><span>Fin : {offer.endDate}</span>{offer.politicalClauses.map((clause) => <span key={clause} className="sm:col-span-2">Clause : {clause}</span>)}</div></details>
+      {response && <div className={`border p-4 ${response.status === 'refused' ? 'border-red-400/50' : response.status === 'countered' ? 'border-amber-400/50' : 'border-emerald-400/50'}`}>
+        <div className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Réponse de {supplier?.name} · {response.status === 'accepted' ? 'accord' : response.status === 'countered' ? 'contre-proposition' : 'refus'}</div>
+        <p className="mt-2 text-sm">{response.message}</p>
+        <ul className="mt-2 text-xs text-muted-foreground">{response.reasons.map((reason) => <li key={reason}>— {reason}</li>)}</ul>
+      </div>}
+      {signedContractId ? <div className="flex items-center gap-3 border border-emerald-400/50 bg-emerald-400/5 p-4 text-sm"><CheckCircle2 className="size-5 text-emerald-300" /><div><b>Accord signé et activé.</b><div className="font-mono text-[10px] text-muted-foreground">{signedContractId}</div></div></div> : <div className="flex flex-wrap gap-2">
+        {!response && <Button onClick={onSend}><Send className="size-4" /> Envoyer la proposition</Button>}
+        {response && response.status !== 'refused' && <Button onClick={onSign}><CheckCircle2 className="size-4" /> {response.status === 'countered' ? 'Accepter la contre-proposition' : 'Signer l’accord'}</Button>}
+        <Button variant="outline" onClick={onToggleAdjustments}><SlidersHorizontal className="size-4" /> Ajuster</Button>
+        <Button variant="ghost" onClick={onClose}>Abandonner</Button>
+      </div>}
+    </div>
+  </section>;
+}
+
+function AdvisorPanel({ world, onWorldChange, onNotice }: { world: WorldState; onWorldChange: (world: WorldState) => void; onNotice: (message: string) => void }) {
+  const [question, setQuestion] = useState('Négocier un contrat gazier avec l’Algérie.');
+  const [focus, setFocus] = useState('DZA');
   const [answer, setAnswer] = useState<AdvisorAnswer>(() => answerAdvisorQuestion(world, question, { focusCountryId: focus }));
+  const [offer, setOffer] = useState<EnergyAdministrativeOffer | null>(null);
+  const [response, setResponse] = useState<EnergyCounterpartResponse | null>(null);
+  const [showAdjustments, setShowAdjustments] = useState(false);
+  const [signedContractId, setSignedContractId] = useState<string | null>(null);
   const ask = () => setAnswer(answerAdvisorQuestion(world, question, { focusCountryId: focus }));
+  const prepare = (plan: StrategicPlan) => {
+    if (!plan.execution) return;
+    const result = createAdministrativeEnergyOffer(world, plan.execution.supplierId, plan.execution.resource);
+    if (!result.ok) return onNotice(result.error);
+    setOffer(result.offer); setResponse(null); setSignedContractId(null); setShowAdjustments(false);
+  };
+  const adjust = (kind: EnergyOfferAdjustment) => {
+    if (!offer) return;
+    setOffer(adjustEnergyOffer(world, offer, kind)); setResponse(null);
+  };
+  const send = () => {
+    if (!offer) return;
+    const result = sendEnergyOffer(world, offer);
+    if (!result.ok) return onNotice(result.error);
+    onWorldChange(result.state); setResponse(result.response); setOffer(result.response.offer);
+    onNotice(`Réponse reçue de ${world.countries[offer.supplierId]?.name}.`);
+  };
+  const sign = () => {
+    if (!response) return;
+    const result = acceptEnergyOffer(world, response.offer);
+    if (!result.ok) return onNotice(result.error);
+    onWorldChange(result.state); setSignedContractId(result.contractId);
+    onNotice(`Accord énergétique signé : les flux physiques et les capacités ont été mis à jour.`);
+  };
   return <div className="grid gap-4 xl:grid-cols-[.75fr_1.25fr]">
     <section className="border border-border bg-card/70 p-4">
       <div className="flex items-center gap-2 font-semibold"><BrainCircuit className="size-4 text-primary" /> Conseiller unique, deux modes</div>
@@ -189,7 +270,8 @@ function AdvisorPanel({ world }: { world: WorldState }) {
     </section>
     <section className="space-y-3">
       <div className="border border-border bg-card/70 p-4"><div className="font-mono text-[10px] uppercase tracking-wider text-primary">{answer.mode}</div><h2 className="mt-1 text-xl font-semibold">{answer.headline}</h2><p className="mt-2 text-sm text-muted-foreground">{answer.synthesis}</p><div className="mt-4 flex flex-wrap gap-2">{answer.facts.map((fact) => <span key={fact.id} title={`${fact.sourcePath} · confiance ${fact.confidence}%`} className="border border-border bg-muted/30 px-2 py-1 text-xs"><b>{fact.label}</b> · {fact.value}</span>)}</div></div>
-      {answer.plans.map((plan) => <PlanCard key={plan.id} world={world} plan={plan} />)}
+      {offer && <EnergyNegotiationPanel world={world} offer={offer} response={response} signedContractId={signedContractId} showAdjustments={showAdjustments} onSend={send} onAdjust={adjust} onSign={sign} onToggleAdjustments={() => setShowAdjustments((value) => !value)} onClose={() => { setOffer(null); setResponse(null); setSignedContractId(null); }} />}
+      {answer.plans.map((plan) => <PlanCard key={plan.id} world={world} plan={plan} onPrepare={prepare} />)}
     </section>
   </div>;
 }
@@ -234,7 +316,7 @@ export default function Home() {
       {panel === 'world' && <WorldPanel world={world} />}
       {panel === 'energy' && <EnergyPanel world={world} />}
       {panel === 'industry' && <IndustryPanel world={world} />}
-      {panel === 'advisor' && <AdvisorPanel world={world} />}
+      {panel === 'advisor' && <AdvisorPanel world={world} onWorldChange={setWorld} onNotice={setNotice} />}
       {panel === 'ledger' && <LedgerPanel world={world} />}
     </div>
   </main>;

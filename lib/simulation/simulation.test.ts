@@ -2,7 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { answerAdvisorQuestion, assessStrategicPlan } from './advisor';
-import { nodeAvailableExport, proposeEnergyContract } from './energy';
+import { energyBalance, nodeAvailableExport, proposeEnergyContract } from './energy';
+import {
+  acceptEnergyOffer, adjustEnergyOffer, createAdministrativeEnergyOffer, sendEnergyOffer,
+} from './energy-negotiation';
 import { advanceWorld, replayWorld } from './engine';
 import { deserializeWorld, serializeWorld } from './persistence';
 import { evaluatePoliticalPathway } from './politics';
@@ -19,7 +22,7 @@ test('le scénario 2000 charge un monde cohérent et jouable', () => {
 
 test('un contrat énergétique ne peut pas dépasser la capacité physique restante', () => {
   const state = createFrance2000World();
-  const nodeId = 'norwegian-north-sea-oil';
+  const nodeId = 'nor-oil';
   const available = nodeAvailableExport(state, nodeId);
   const result = proposeEnergyContract(state, {
     id: 'impossible-contract', nodeId, buyerId: 'FRA', annualVolume: available + 1,
@@ -27,6 +30,48 @@ test('un contrat énergétique ne peut pas dépasser la capacité physique resta
   });
   assert.equal(result.ok, false);
   assert.equal(result.state.actions.length, 0);
+});
+
+test('une demande simple produit une proposition gazière administrativement réaliste', () => {
+  const state = createFrance2000World();
+  const result = createAdministrativeEnergyOffer(state, 'DZA', 'gas');
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(result.offer.diplomaticEffort, 'faible');
+  assert.equal(result.offer.durationYears, 12);
+  assert.ok(result.offer.coverageShare > 0 && result.offer.coverageShare <= 20);
+  assert.ok(result.offer.annualVolume <= nodeAvailableExport(state, result.offer.nodeId));
+});
+
+test('une négociation acceptée devient un contrat physique actif', () => {
+  const initial = createFrance2000World();
+  const draft = createAdministrativeEnergyOffer(initial, 'DZA', 'gas');
+  assert.equal(draft.ok, true);
+  if (!draft.ok) return;
+  const sent = sendEnergyOffer(initial, draft.offer);
+  assert.equal(sent.ok, true);
+  if (!sent.ok) return;
+  assert.equal(sent.response.status, 'accepted');
+  const signed = acceptEnergyOffer(sent.state, sent.response.offer);
+  assert.equal(signed.ok, true);
+  if (!signed.ok) return;
+  assert.equal(signed.state.energyContracts[signed.contractId].status, 'active');
+  assert.ok(signed.state.actions.some((action) => action.origin === 'player' && action.intent.includes(signed.contractId)));
+  assert.ok((energyBalance(signed.state, 'FRA', 'gas')?.imports ?? 0) > (energyBalance(initial, 'FRA', 'gas')?.imports ?? 0));
+});
+
+test('durcir une offre reste facultatif et provoque une vraie contre-réaction', () => {
+  const initial = createFrance2000World();
+  const draft = createAdministrativeEnergyOffer(initial, 'DZA', 'gas');
+  assert.equal(draft.ok, true);
+  if (!draft.ok) return;
+  const volume = adjustEnergyOffer(initial, draft.offer, 'more_volume');
+  const price = adjustEnergyOffer(initial, volume, 'better_price');
+  assert.equal(price.diplomaticEffort, 'modérée');
+  const sent = sendEnergyOffer(initial, price);
+  assert.equal(sent.ok, true);
+  if (!sent.ok) return;
+  assert.ok(['countered', 'refused'].includes(sent.response.status));
 });
 
 test('une rupture idéologique est un chemin politique coûteux, pas une action gratuite', () => {
@@ -70,7 +115,8 @@ test('le conseiller local produit des options situées et auditables', () => {
   assert.equal(answer.mode, 'options');
   assert.equal(answer.generatedBy, 'local_rules');
   assert.ok(answer.plans.length >= 2);
-  const diplomatic = answer.plans[0];
+  const diplomatic = answer.plans.find((plan) => plan.id.startsWith('plan-diplomacy-'))!;
+  assert.ok(diplomatic);
   assert.ok(diplomatic.measures.length >= 3);
   assert.ok(diplomatic.factsUsed.some((fact) => fact.includes('Relation')));
   assert.ok(assessStrategicPlan(state, diplomatic).capabilityPressure.length >= 1);

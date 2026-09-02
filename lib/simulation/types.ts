@@ -379,6 +379,11 @@ export type StrategicPlan = {
   likelyReactions: string[];
   successIndicators: string[];
   horizon: string;
+  execution?: {
+    kind: 'energy_contract';
+    supplierId: CountryId;
+    resource: EnergyResource;
+  };
 };
 
 export type AiBudgetPolicy = {

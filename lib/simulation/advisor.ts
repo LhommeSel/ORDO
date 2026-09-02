@@ -1,4 +1,5 @@
 import { energyBalance, producerNodes } from './energy';
+import { createAdministrativeEnergyOffer } from './energy-negotiation';
 import { productEvidenceSummary } from './industry';
 import { relationBetween } from './ledger';
 import type {
@@ -48,7 +49,7 @@ const monthLabel = (months: number) => `${months.toFixed(1)} mois`;
 
 function classifyQuestion(question: string): AdvisorMode {
   const normalized = question.toLocaleLowerCase('fr');
-  return /(que faire|propose|option|agir|action|stratégie|strategie|comment)/.test(normalized)
+  return /(que faire|propose|option|agir|action|stratégie|strategie|comment|négoci|negoci|contrat|accord)/.test(normalized)
     ? 'options'
     : 'situation';
 }
@@ -119,24 +120,27 @@ function diplomaticPlan(state: WorldState, targetId: CountryId): StrategicPlan {
   };
 }
 
-function energyPlan(state: WorldState, resource: 'oil' | 'gas'): StrategicPlan | null {
+function energyPlan(state: WorldState, resource: 'oil' | 'gas', preferredSupplierId?: CountryId): StrategicPlan | null {
   const player = state.countries[state.playerCountryId];
   const balance = energyBalance(state, player.id, resource);
-  const supplier = producerNodes(state, resource).find(({ node, available }) => node.countryId !== player.id && available > 3);
+  const suppliers = producerNodes(state, resource).filter(({ node, available }) => node.countryId !== player.id && available > 3);
+  const supplier = suppliers.find(({ node }) => node.countryId === preferredSupplierId) ?? suppliers[0];
   if (!balance || !supplier) return null;
   const seller = state.countries[supplier.node.countryId];
-  const volume = Math.min(Math.max(5, balance.deficit), supplier.available).toFixed(1);
+  const prepared = createAdministrativeEnergyOffer(state, supplier.node.countryId, resource);
+  if (!prepared.ok) return null;
+  const offer = prepared.offer;
   const noun = resource === 'oil' ? 'pétrole' : 'gaz';
   return {
     id: `plan-${resource}-${supplier.node.countryId}-${state.currentDate}`,
-    title: `Sécuriser ${volume} unités/an de ${noun} auprès de ${seller.name}`,
+    title: `Ouvrir une négociation de ${noun} avec ${seller.name}`,
     intent: `Réduire l’exposition aux ruptures sans tenter de monopoliser la capacité mondiale.`,
-    rationale: `${player.name} dispose de ${balance.coverageMonths.toFixed(1)} mois de stocks et d’un déficit ferme de ${balance.deficit.toFixed(1)} unités/an. ${supplier.node.label} conserve ${supplier.available.toFixed(1)} unités/an exportables.`,
-    factsUsed: [`Stocks : ${balance.coverageMonths.toFixed(1)} mois`, `Déficit : ${balance.deficit.toFixed(1)} unités/an`, `Capacité disponible : ${supplier.available.toFixed(1)} unités/an`],
+    rationale: `L’administration propose spontanément un accord couvrant environ ${offer.coverageShare.toFixed(1)} % des besoins sur ${offer.durationYears} ans. Le joueur peut l’envoyer immédiatement ou demander un ajustement ciblé.`,
+    factsUsed: [`Stocks : ${balance.coverageMonths.toFixed(1)} mois`, `Déficit : ${balance.deficit.toFixed(1)} unités/an`, `Offre initiale : ${offer.coverageShare.toFixed(1)} % des besoins`],
     measures: [
-      { actor: 'Direction de l’énergie', action: 'Négocier une fourchette de volume et une formule de prix', target: seller.name, deadline: 'Sous 30 jours' },
-      { actor: 'Diplomatie', action: 'Tester les clauses politiques et la sécurité de la route', target: seller.name, deadline: 'Avant signature' },
-      { actor: 'Administration économique', action: 'Réserver la capacité de stockage correspondante', target: player.name, deadline: 'À l’activation du contrat' },
+      { actor: 'Direction de l’énergie', action: 'Préparer une proposition équilibrée à partir des besoins et capacités disponibles', target: seller.name, deadline: 'Immédiat' },
+      { actor: 'Diplomatie', action: 'Transmettre la proposition et recevoir la position du fournisseur', target: seller.name, deadline: 'Sous 30 jours' },
+      { actor: 'Gouvernement', action: 'Accepter, insister ou abandonner selon la réponse', target: player.name, deadline: 'À réception' },
     ],
     requiredCapabilities: ['economy', 'diplomacy'], interlocutors: [supplier.node.countryId],
     assumptions: ['Le volume exportable n’est pas attribué à un tiers avant ratification.'],
@@ -144,6 +148,7 @@ function energyPlan(state: WorldState, resource: 'oil' | 'gas'): StrategicPlan |
     likelyReactions: [`${seller.name} cherchera une durée ferme ou une contrepartie diplomatique.`, 'Les acheteurs concurrents peuvent surenchérir.'],
     successIndicators: ['Contrat activé sans dépasser la capacité du nœud', 'Stocks au-dessus de la cible nationale', 'Aucune route unique au-delà de 50 % des importations'],
     horizon: '1 à 4 mois',
+    execution: { kind: 'energy_contract', supplierId: supplier.node.countryId, resource },
   };
 }
 
@@ -173,11 +178,11 @@ function industrialPlan(state: WorldState): StrategicPlan | null {
   };
 }
 
-export function generateStrategicPlans(state: WorldState, focusCountryId?: CountryId) {
+export function generateStrategicPlans(state: WorldState, focusCountryId?: CountryId, resourceHint: 'oil' | 'gas' = 'oil') {
   const plans: StrategicPlan[] = [];
+  const energy = energyPlan(state, resourceHint, focusCountryId);
+  if (energy) plans.push(energy);
   if (focusCountryId && focusCountryId !== state.playerCountryId && state.countries[focusCountryId]) plans.push(diplomaticPlan(state, focusCountryId));
-  const oil = energyPlan(state, 'oil');
-  if (oil) plans.push(oil);
   const industry = industrialPlan(state);
   if (industry) plans.push(industry);
   return plans.slice(0, 3);
@@ -208,7 +213,9 @@ export function answerAdvisorQuestion(
 ): AdvisorAnswer {
   const mode = classifyQuestion(question);
   const facts = collectFacts(state, options.focusCountryId);
-  const plans = mode === 'options' ? generateStrategicPlans(state, options.focusCountryId) : [];
+  const normalized = question.toLocaleLowerCase('fr');
+  const resourceHint = /gaz|gazier|gazière/.test(normalized) ? 'gas' : 'oil';
+  const plans = mode === 'options' ? generateStrategicPlans(state, options.focusCountryId, resourceHint) : [];
   const focus = options.focusCountryId ? state.countries[options.focusCountryId]?.name : undefined;
   return {
     mode,
