@@ -281,6 +281,16 @@ function applyEffect(state: WorldState, action: WorldAction, effect: WorldEffect
     return appendChange(next, action, effect, 'worldEconomy', before, after);
   }
 
+  if (effect.kind === 'structural_profile_patch') {
+    const profile = state.structuralProfiles[effect.countryId];
+    if (!profile) return state;
+    const before = Object.fromEntries(Object.keys(effect.patch).map((key) => [key, profile[key as keyof typeof profile]]));
+    const afterProfile = { ...profile, ...effect.patch };
+    const after = Object.fromEntries(Object.keys(effect.patch).map((key) => [key, afterProfile[key as keyof typeof afterProfile]]));
+    const next = { ...state, structuralProfiles: { ...state.structuralProfiles, [effect.countryId]: afterProfile } };
+    return appendChange(next, action, effect, `structuralProfiles.${effect.countryId}`, before, after);
+  }
+
   const product = state.armamentProducts[effect.productId];
   if (!product) return state;
   const after = { ...product, ...effect.patch };

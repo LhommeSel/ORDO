@@ -222,6 +222,53 @@ export type WorldEconomyState = {
   lastUpdatedAt: ISODate;
 };
 
+export type MonetaryRegime =
+  | 'sovereign_floating'
+  | 'sovereign_managed'
+  | 'currency_union'
+  | 'pegged';
+
+export type WorkforceTrend = 'strong_growth' | 'growth' | 'stable' | 'decline' | 'strong_decline';
+
+/** Données structurelles lentes dont les diagnostics sont dérivés. */
+export type CountryStructuralProfile = {
+  countryId: CountryId;
+  industrialDepth: number;
+  economicDiversification: number;
+  innovationCapacity: number;
+  infrastructureQuality: number;
+  financialResilience: number;
+  socialStabilizers: number;
+  exportConcentration: number;
+  resourceRentDependency: number;
+  demographicPressure: number;
+  productivityCatchUp: number;
+  monetaryRegime: MonetaryRegime;
+  workforceTrend: WorkforceTrend;
+  source: {
+    basis: string;
+    observationYear: number;
+    confidence: number;
+    estimated: boolean;
+  };
+};
+
+export type StructuralDiagnosis = {
+  id: string;
+  countryId: CountryId;
+  category: 'strength' | 'vulnerability' | 'trend';
+  title: string;
+  summary: string;
+  severity: number;
+  direction: 'improving' | 'stable' | 'worsening';
+  horizonYears: [number, number];
+  reversibility: 'low' | 'medium' | 'high';
+  causes: string[];
+  possibleConsequences: string[];
+  availableLevers: string[];
+  confidence: number;
+};
+
 export type StrategicSectorId =
   | 'defense'
   | 'semiconductors'
@@ -325,7 +372,8 @@ export type WorldEffect =
   | { kind: 'dossier_patch'; dossierId: string; patch: Partial<StrategicDossier>; reason: string; visibility?: Visibility }
   | { kind: 'dossier_entry_add'; dossierId: string; entry: DossierEntry; reason: string; visibility?: Visibility }
   | { kind: 'macro_patch'; countryId: CountryId; patch: Partial<MacroeconomicState>; reason: string; visibility?: Visibility }
-  | { kind: 'world_economy_patch'; patch: Partial<WorldEconomyState>; reason: string; visibility?: Visibility };
+  | { kind: 'world_economy_patch'; patch: Partial<WorldEconomyState>; reason: string; visibility?: Visibility }
+  | { kind: 'structural_profile_patch'; countryId: CountryId; patch: Partial<CountryStructuralProfile>; reason: string; visibility?: Visibility };
 
 export type ActionDraft = {
   kind: ActionKind;
@@ -423,6 +471,7 @@ export type WorldState = {
   countryEnergy: Record<CountryId, CountryEnergyState>;
   macroEconomies: Record<CountryId, MacroeconomicState>;
   worldEconomy: WorldEconomyState;
+  structuralProfiles: Record<CountryId, CountryStructuralProfile>;
   sectors: Record<string, StrategicSectorState>;
   armamentProducts: Record<string, ArmamentProduct>;
   strategicDossiers: Record<string, StrategicDossier>;

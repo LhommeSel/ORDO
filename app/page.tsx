@@ -17,9 +17,11 @@ import {
   dossierUnreadCount, dossiersRequiringAttention, dossierUpdatesSinceView, energyBalance,
   evaluatePoliticalPathway, markDossierViewed, productEvidenceSummary,
   sendEnergyOffer, serializeWorld, visibleLedger,
+  structuralDiagnosisGroups,
   setDossierFollowed,
   type AdvisorAnswer, type EnergyAdministrativeOffer, type EnergyCounterpartResponse,
-  type EnergyOfferAdjustment, type ISODate, type StrategicDossier, type StrategicPlan, type WorldState,
+  type EnergyOfferAdjustment, type ISODate, type StrategicDossier, type StrategicPlan,
+  type StructuralDiagnosis, type WorldState,
 } from '@/lib/simulation';
 
 type Panel = 'world' | 'economy' | 'energy' | 'industry' | 'dossiers' | 'advisor' | 'ledger';
@@ -118,8 +120,52 @@ function WorldPanel({ world }: { world: WorldState }) {
   </div>;
 }
 
+const diagnosisDirectionLabels = {
+  improving: 'amélioration', stable: 'stable', worsening: 'dégradation',
+};
+
+const diagnosisReversibilityLabels = {
+  low: 'faible', medium: 'moyenne', high: 'forte',
+};
+
+function StructuralDiagnosisCard({ diagnosis }: { diagnosis: StructuralDiagnosis }) {
+  const tone = diagnosis.category === 'strength'
+    ? 'border-emerald-400/35'
+    : diagnosis.category === 'vulnerability'
+      ? 'border-amber-400/40'
+      : 'border-sky-400/35';
+  const signal = diagnosis.category === 'strength'
+    ? 'text-emerald-300'
+    : diagnosis.category === 'vulnerability'
+      ? 'text-amber-300'
+      : 'text-sky-300';
+  return <details className={`border bg-background/35 p-3 ${tone}`}>
+    <summary className="cursor-pointer list-none">
+      <div className="flex items-start justify-between gap-3">
+        <div><div className="font-medium">{diagnosis.title}</div><p className="mt-1 text-xs leading-5 text-muted-foreground">{diagnosis.summary}</p></div>
+        <span className={`shrink-0 font-mono text-[10px] ${signal}`}>{diagnosis.severity}/100</span>
+      </div>
+    </summary>
+    <div className="mt-3 space-y-3 border-t border-border/70 pt-3 text-xs">
+      <div className="flex flex-wrap gap-x-4 gap-y-1 font-mono text-[10px] text-muted-foreground">
+        <span>tendance : {diagnosisDirectionLabels[diagnosis.direction]}</span>
+        <span>horizon : {diagnosis.horizonYears[0]}–{diagnosis.horizonYears[1]} ans</span>
+        <span>réversibilité : {diagnosisReversibilityLabels[diagnosis.reversibility]}</span>
+        <span>confiance : {diagnosis.confidence}%</span>
+      </div>
+      <div><b>Fondements mesurés</b><ul className="mt-1 space-y-1 text-muted-foreground">{diagnosis.causes.map((item) => <li key={item}>— {item}</li>)}</ul></div>
+      <div><b>Si rien ne change</b><ul className="mt-1 space-y-1 text-muted-foreground">{diagnosis.possibleConsequences.map((item) => <li key={item}>— {item}</li>)}</ul></div>
+      <div><b>Leviers possibles</b><div className="mt-1 flex flex-wrap gap-1">{diagnosis.availableLevers.map((item) => <span key={item} className="border border-border bg-muted/30 px-2 py-1">{item}</span>)}</div></div>
+    </div>
+  </details>;
+}
+
 function EconomyPanel({ world }: { world: WorldState }) {
+  const [selectedCountryId, setSelectedCountryId] = useState(world.playerCountryId);
   const economies = Object.values(world.macroEconomies).sort((a, b) => b.realGdpBillion2000Usd - a.realGdpBillion2000Usd);
+  const selectedCountry = world.countries[selectedCountryId] ?? world.countries[world.playerCountryId];
+  const profile = world.structuralProfiles[selectedCountry.id];
+  const diagnoses = structuralDiagnosisGroups(world, selectedCountry.id);
   return <div className="space-y-4">
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
       <Stat label="Cycle mondial" value={world.worldEconomy.cycle} detail={`mis à jour au ${world.worldEconomy.lastUpdatedAt}`} />
@@ -128,13 +174,38 @@ function EconomyPanel({ world }: { world: WorldState }) {
       <Stat label="Demande mondiale" value={world.worldEconomy.demandIndex.toFixed(2)} detail="indice 100 au 1er janvier 2000" />
     </div>
     <div className="border border-border bg-card/70 p-4">
-      <div className="flex items-center gap-2 font-semibold"><TrendingUp className="size-4 text-primary" /> Premier noyau macroéconomique</div>
-      <p className="mt-1 max-w-4xl text-sm text-muted-foreground">Le PIB est ancré en milliards de dollars de 2000 puis évolue en volume. Chaque mois, la croissance converge vers un potentiel influencé par l’investissement, le commerce, la conjoncture mondiale, la stabilité et les pénuries énergétiques. La dette et la politique budgétaire seront ajoutées dans un lot ultérieur.</p>
+      <div className="flex items-center gap-2 font-semibold"><TrendingUp className="size-4 text-primary" /> Économie et structures de long terme</div>
+      <p className="mt-1 max-w-4xl text-sm text-muted-foreground">Les diagnostics ci-dessous ne donnent aucun bonus autonome : ils expliquent les conséquences produites par les données physiques, macroéconomiques et institutionnelles du pays. Ils apparaissent, évoluent ou disparaissent lorsque leurs causes changent.</p>
     </div>
+    <section className="border border-border bg-card/70">
+      <div className="border-b border-border p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div><div className="font-mono text-[10px] uppercase tracking-wider text-primary">Bilan structurel vivant</div><h2 className="mt-1 text-lg font-semibold">{selectedCountry.flag} {selectedCountry.name}</h2></div>
+          <div className="flex max-w-full gap-1 overflow-x-auto">{economies.map((economy) => {
+            const country = world.countries[economy.countryId];
+            return <button key={economy.countryId} onClick={() => setSelectedCountryId(economy.countryId)} className={`shrink-0 border px-2 py-1.5 text-xs ${selectedCountry.id === economy.countryId ? 'border-primary bg-primary/10 text-foreground' : 'border-border text-muted-foreground hover:text-foreground'}`}>{country?.flag} {country?.name}</button>;
+          })}</div>
+        </div>
+        <div className="mt-3 flex flex-wrap gap-3 font-mono text-[10px] text-muted-foreground">
+          <span>{diagnoses.strengths.length} force(s)</span><span>{diagnoses.vulnerabilities.length} vulnérabilité(s)</span><span>{diagnoses.trends.length} dynamique(s)</span>
+          {profile && <span title={profile.source.basis}>socle {profile.source.observationYear} · confiance {profile.source.confidence}% · {profile.source.estimated ? 'estimé' : 'documenté'}</span>}
+        </div>
+      </div>
+      <div className="grid gap-px bg-border xl:grid-cols-3">
+        {([
+          ['Forces structurelles', diagnoses.strengths, 'text-emerald-300'],
+          ['Vulnérabilités', diagnoses.vulnerabilities, 'text-amber-300'],
+          ['Dynamiques de long terme', diagnoses.trends, 'text-sky-300'],
+        ] as const).map(([label, items, tone]) => <div key={label} className="bg-card p-4">
+          <div className={`font-mono text-[10px] uppercase tracking-wider ${tone}`}>{label}</div>
+          <div className="mt-3 space-y-2">{items.length ? items.map((item) => <StructuralDiagnosisCard key={item.id} diagnosis={item} />) : <div className="border border-dashed border-border p-4 text-xs text-muted-foreground">Aucun signal structurel assez fort pour être affiché.</div>}</div>
+        </div>)}
+      </div>
+    </section>
     <div className="overflow-x-auto border border-border bg-card/70">
       <table className="w-full min-w-[980px] text-left text-sm">
         <thead className="border-b border-border bg-muted/30 font-mono text-[10px] uppercase tracking-wider text-muted-foreground"><tr><th className="p-3">Pays</th><th>PIB réel</th><th>Croissance</th><th>Potentiel</th><th>Inflation</th><th>Chômage</th><th>Commerce</th><th>Investissement</th><th>Confiance</th></tr></thead>
-        <tbody>{economies.map((economy) => <tr key={economy.countryId} className="border-b border-border/60">
+        <tbody>{economies.map((economy) => <tr key={economy.countryId} onClick={() => setSelectedCountryId(economy.countryId)} className={`cursor-pointer border-b border-border/60 hover:bg-muted/20 ${selectedCountry.id === economy.countryId ? 'bg-primary/5' : ''}`}>
           <td className="p-3 font-medium">{world.countries[economy.countryId]?.flag} {world.countries[economy.countryId]?.name}</td>
           <td>{economy.realGdpBillion2000Usd.toLocaleString('fr-FR', { maximumFractionDigits: 1 })} Md$</td>
           <td className={economy.realGrowthAnnualPct < 0 ? 'text-red-300' : 'text-emerald-300'}>{economy.realGrowthAnnualPct.toFixed(2)} %</td>

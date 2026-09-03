@@ -10,6 +10,7 @@ import { advanceWorld, replayWorld } from './engine';
 import { deserializeWorld, serializeWorld } from './persistence';
 import { evaluatePoliticalPathway } from './politics';
 import { createFrance2000World } from './scenario-2000';
+import { deriveStructuralDiagnostics } from './structural-diagnostics';
 import { interpretPlayerIntent, rankEnergySuppliers } from './intent';
 import {
   dossierUnreadCount, dossiersRequiringAttention, markDossierViewed, setDossierFollowed,
@@ -209,4 +210,19 @@ test('le noyau macroéconomique fait évoluer réellement les économies sur un 
   assert.notEqual(advanced.macroEconomies.FRA.realGrowthAnnualPct, initial.macroEconomies.FRA.realGrowthAnnualPct);
   assert.ok(advanced.worldEconomy.demandIndex > initial.worldEconomy.demandIndex);
   assert.equal(energyBalance(initial, 'FRA', 'oil')?.deficit, 0);
+});
+
+test('le bilan structurel dérive ses diagnostics des données du monde', () => {
+  const state = createFrance2000World();
+  const france = deriveStructuralDiagnostics(state, 'FRA');
+  const norway = deriveStructuralDiagnostics(state, 'NOR');
+
+  assert.equal(Object.keys(state.structuralProfiles).length, 12);
+  assert.ok(france.some((item) => item.id === 'energy-import-dependency'));
+  assert.ok(france.some((item) => item.id === 'industrial-depth'));
+  assert.ok(norway.some((item) => item.id === 'energy-export-capacity'));
+
+  state.countryEnergy.FRA.domesticProduction = { ...state.countryEnergy.FRA.annualDemand };
+  const energyIndependentFrance = deriveStructuralDiagnostics(state, 'FRA');
+  assert.ok(!energyIndependentFrance.some((item) => item.id === 'energy-import-dependency'));
 });

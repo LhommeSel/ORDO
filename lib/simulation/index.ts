@@ -13,4 +13,6 @@ export * from './macro-economy';
 export * from './persistence';
 export * from './politics';
 export * from './scenario-2000';
+export * from './structural-data-2000';
+export * from './structural-diagnostics';
 export * from './types';

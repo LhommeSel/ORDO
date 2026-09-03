@@ -1,5 +1,6 @@
 import type { WorldState } from './types';
 import { createMacroEconomies2000, worldEconomy2000 } from './macro-data-2000';
+import { createStructuralProfiles2000 } from './structural-data-2000';
 
 export type SaveEnvelope = {
   format: 'ordo-world';
@@ -39,6 +40,7 @@ export function deserializeWorld(raw: string): WorldState {
     strategicDossiers: restored.strategicDossiers ?? {},
     macroEconomies: restored.macroEconomies ?? createMacroEconomies2000(),
     worldEconomy: restored.worldEconomy ?? structuredClone(worldEconomy2000),
+    structuralProfiles: restored.structuralProfiles ?? createStructuralProfiles2000(),
   };
 }
 

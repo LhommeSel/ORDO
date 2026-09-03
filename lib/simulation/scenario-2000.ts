@@ -10,6 +10,7 @@ import type {
   WorldState,
 } from './types';
 import { createMacroEconomies2000, worldEconomy2000 } from './macro-data-2000';
+import { createStructuralProfiles2000 } from './structural-data-2000';
 
 const capacities = (values: Partial<Record<keyof CapacityState, [number, number]>> = {}): CapacityState => ({
   government: { maximum: values.government?.[0] ?? 55, committed: values.government?.[1] ?? 25 },
@@ -331,6 +332,7 @@ export function createFrance2000World(): WorldState {
     },
     macroEconomies: createMacroEconomies2000(),
     worldEconomy: structuredClone(worldEconomy2000),
+    structuralProfiles: createStructuralProfiles2000(),
     sectors: structuredClone(sectors),
     armamentProducts: structuredClone(armamentProducts),
     strategicDossiers: structuredClone(strategicDossiers),
