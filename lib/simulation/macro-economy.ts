@@ -1,5 +1,6 @@
 import { energyBalance } from './energy';
 import { commitWorldAction } from './ledger';
+import { stakeholderPressureByChannel } from './stakeholders';
 import type { MacroeconomicState, WorldEffect, WorldState } from './types';
 
 const clamp = (value: number, minimum: number, maximum: number) => Math.min(maximum, Math.max(minimum, value));
@@ -19,7 +20,8 @@ function nextCountryEconomy(state: WorldState, economy: MacroeconomicState, elap
   const investmentImpulse = (economy.investmentSharePctGdp - 22) * 0.035;
   const tradeImpulse = clamp(economy.tradeBalancePctGdp * 0.018, -0.8, 0.8);
   const stabilityDrag = Math.max(0, 55 - (country?.metrics.stability ?? 55)) * 0.025;
-  const targetGrowth = clamp(economy.potentialGrowthAnnualPct + globalImpulse + investmentImpulse + tradeImpulse - stabilityDrag - energyStress * 6, -12, 12);
+  const confidenceDrag = stakeholderPressureByChannel(state, economy.countryId, 'economic_confidence') * 0.012;
+  const targetGrowth = clamp(economy.potentialGrowthAnnualPct + globalImpulse + investmentImpulse + tradeImpulse - stabilityDrag - energyStress * 6 - confidenceDrag, -12, 12);
   const transition = 1 - Math.exp(-0.3 * elapsedMonths / 12);
   const growth = economy.realGrowthAnnualPct + (targetGrowth - economy.realGrowthAnnualPct) * transition;
   const averageGrowth = (economy.realGrowthAnnualPct + growth) / 2;

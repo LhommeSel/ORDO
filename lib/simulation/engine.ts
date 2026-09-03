@@ -4,6 +4,7 @@ import { advanceHistoricalCurrents, type HistoricalManifestation } from './histo
 import { advanceIndustrySystem } from './industry';
 import { commitWorldAction } from './ledger';
 import { advanceMacroeconomy } from './macro-economy';
+import { advanceStakeholderReactions } from './stakeholders';
 import type { ISODate, SimulationStop, WorldEffect, WorldState } from './types';
 
 export type AdvanceResult = {
@@ -109,6 +110,7 @@ export function advanceWorld(
     });
     next = advanceTreaties(next, chunkMonths);
     next = advanceInstitutions(next, chunkMonths);
+    next = advanceStakeholderReactions(next, chunkMonths);
     next = advanceEnergySystem(next, chunkMonths);
     next = advanceIndustrySystem(next, chunkMonths);
     const historical = advanceHistoricalCurrents(next, chunkMonths, chunkEnd);

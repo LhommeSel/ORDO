@@ -269,6 +269,70 @@ export type StructuralDiagnosis = {
   confidence: number;
 };
 
+export type StakeholderCategory = 'military' | 'organized_labor' | 'capital' | 'administration' | 'civic';
+export type StakeholderInfluenceChannel =
+  | 'political_support'
+  | 'economic_confidence'
+  | 'policy_execution'
+  | 'security_cohesion'
+  | 'social_mobilization'
+  | 'diplomatic_acceptance';
+export type ReactionLevel = 'low' | 'moderate' | 'important' | 'critical';
+export type ReactionTrend = 'falling' | 'stable' | 'rising' | 'rising_fast';
+export type PolicySignal =
+  | 'defense_cuts'
+  | 'labor_deregulation'
+  | 'capital_controls'
+  | 'administrative_reorganization'
+  | 'austerity'
+  | 'public_industrial_investment'
+  | 'tax_increase_high_incomes'
+  | 'fossil_expansion';
+
+export type StakeholderGroup = {
+  id: string;
+  countryId: CountryId;
+  label: string;
+  category: StakeholderCategory;
+  influence: number;
+  cohesion: number;
+  baselineDefiance: number;
+  sensitivities: Partial<Record<PolicySignal, number>>;
+  influenceChannels: StakeholderInfluenceChannel[];
+  possibleResponses: string[];
+};
+
+export type StakeholderReaction = {
+  id: string;
+  countryId: CountryId;
+  groupId: string;
+  targetId: EntityId;
+  subjectId: string;
+  label: string;
+  defiance: number;
+  mobilization: number;
+  level: ReactionLevel;
+  trend: ReactionTrend;
+  causes: string[];
+  likelyConsequences: string[];
+  relatedMeasureIds: string[];
+  createdAt: ISODate;
+  updatedAt: ISODate;
+  decayPerMonth: number;
+  status: 'active' | 'subsiding' | 'resolved';
+  visibility: 'public' | 'internal' | 'secret';
+};
+
+export type GovernmentMeasure = {
+  id: string;
+  countryId: CountryId;
+  title: string;
+  subjectId: string;
+  intensity: number;
+  signals: Array<{ signal: PolicySignal; weight: number }>;
+  effects: WorldEffect[];
+};
+
 export type StrategicSectorId =
   | 'defense'
   | 'semiconductors'
@@ -373,7 +437,10 @@ export type WorldEffect =
   | { kind: 'dossier_entry_add'; dossierId: string; entry: DossierEntry; reason: string; visibility?: Visibility }
   | { kind: 'macro_patch'; countryId: CountryId; patch: Partial<MacroeconomicState>; reason: string; visibility?: Visibility }
   | { kind: 'world_economy_patch'; patch: Partial<WorldEconomyState>; reason: string; visibility?: Visibility }
-  | { kind: 'structural_profile_patch'; countryId: CountryId; patch: Partial<CountryStructuralProfile>; reason: string; visibility?: Visibility };
+  | { kind: 'structural_profile_patch'; countryId: CountryId; patch: Partial<CountryStructuralProfile>; reason: string; visibility?: Visibility }
+  | { kind: 'stakeholder_group_add'; group: StakeholderGroup; reason: string; visibility?: Visibility }
+  | { kind: 'stakeholder_reaction_add'; reaction: StakeholderReaction; reason: string; visibility?: Visibility }
+  | { kind: 'stakeholder_reaction_patch'; reactionId: string; patch: Partial<StakeholderReaction>; reason: string; visibility?: Visibility };
 
 export type ActionDraft = {
   kind: ActionKind;
@@ -472,6 +539,8 @@ export type WorldState = {
   macroEconomies: Record<CountryId, MacroeconomicState>;
   worldEconomy: WorldEconomyState;
   structuralProfiles: Record<CountryId, CountryStructuralProfile>;
+  stakeholderGroups: Record<string, StakeholderGroup>;
+  stakeholderReactions: Record<string, StakeholderReaction>;
   sectors: Record<string, StrategicSectorState>;
   armamentProducts: Record<string, ArmamentProduct>;
   strategicDossiers: Record<string, StrategicDossier>;

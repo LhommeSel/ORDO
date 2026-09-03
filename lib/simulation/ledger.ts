@@ -291,6 +291,28 @@ function applyEffect(state: WorldState, action: WorldAction, effect: WorldEffect
     return appendChange(next, action, effect, `structuralProfiles.${effect.countryId}`, before, after);
   }
 
+  if (effect.kind === 'stakeholder_group_add') {
+    const before = state.stakeholderGroups[effect.group.id] ?? null;
+    const after = before ?? effect.group;
+    const next = { ...state, stakeholderGroups: { ...state.stakeholderGroups, [effect.group.id]: after } };
+    return appendChange(next, action, effect, `stakeholderGroups.${effect.group.id}`, before, after);
+  }
+
+  if (effect.kind === 'stakeholder_reaction_add') {
+    const before = state.stakeholderReactions[effect.reaction.id] ?? null;
+    const after = before ?? effect.reaction;
+    const next = { ...state, stakeholderReactions: { ...state.stakeholderReactions, [effect.reaction.id]: after } };
+    return appendChange(next, action, effect, `stakeholderReactions.${effect.reaction.id}`, before, after);
+  }
+
+  if (effect.kind === 'stakeholder_reaction_patch') {
+    const reaction = state.stakeholderReactions[effect.reactionId];
+    if (!reaction) return state;
+    const after = { ...reaction, ...effect.patch };
+    const next = { ...state, stakeholderReactions: { ...state.stakeholderReactions, [effect.reactionId]: after } };
+    return appendChange(next, action, effect, `stakeholderReactions.${effect.reactionId}`, reaction, after);
+  }
+
   const product = state.armamentProducts[effect.productId];
   if (!product) return state;
   const after = { ...product, ...effect.patch };

@@ -11,6 +11,9 @@ import { deserializeWorld, serializeWorld } from './persistence';
 import { evaluatePoliticalPathway } from './politics';
 import { createFrance2000World } from './scenario-2000';
 import { deriveStructuralDiagnostics } from './structural-diagnostics';
+import {
+  enactPrototypeGovernmentMeasure, stakeholderPressureByChannel, visibleStakeholderReactions,
+} from './stakeholders';
 import { interpretPlayerIntent, rankEnergySuppliers } from './intent';
 import {
   dossierUnreadCount, dossiersRequiringAttention, markDossierViewed, setDossierFollowed,
@@ -225,4 +228,27 @@ test('le bilan structurel dérive ses diagnostics des données du monde', () => 
   state.countryEnergy.FRA.domesticProduction = { ...state.countryEnergy.FRA.annualDemand };
   const energyIndependentFrance = deriveStructuralDiagnostics(state, 'FRA');
   assert.ok(!energyIndependentFrance.some((item) => item.id === 'energy-import-dependency'));
+});
+
+test('les mesures successives font émerger une défiance qualitative puis celle-ci s’use', () => {
+  let state = createFrance2000World();
+  assert.equal(Object.keys(state.stakeholderGroups).length, 48);
+  assert.equal(visibleStakeholderReactions(state).length, 0);
+
+  state = enactPrototypeGovernmentMeasure(state, 'labor_restrictions');
+  let unionReaction = visibleStakeholderReactions(state).find((item) => item.groupId === 'FRA-organized-labor');
+  assert.equal(unionReaction?.level, 'moderate');
+
+  state = enactPrototypeGovernmentMeasure(state, 'labor_restrictions');
+  unionReaction = visibleStakeholderReactions(state).find((item) => item.groupId === 'FRA-organized-labor');
+  assert.equal(unionReaction?.level, 'important');
+  assert.equal(unionReaction?.relatedMeasureIds.length, 2);
+
+  state = enactPrototypeGovernmentMeasure(state, 'capital_controls');
+  assert.ok(stakeholderPressureByChannel(state, 'FRA', 'economic_confidence') > 0);
+  const beforeDecay = unionReaction!.defiance;
+  state = advanceWorld(state, '2000-07-01').state;
+  unionReaction = visibleStakeholderReactions(state).find((item) => item.groupId === 'FRA-organized-labor');
+  assert.ok(unionReaction!.defiance < beforeDecay);
+  assert.equal(unionReaction?.trend, 'falling');
 });

@@ -1,6 +1,7 @@
 import type { WorldState } from './types';
 import { createMacroEconomies2000, worldEconomy2000 } from './macro-data-2000';
 import { createStructuralProfiles2000 } from './structural-data-2000';
+import { createStakeholderGroups2000 } from './stakeholder-data-2000';
 
 export type SaveEnvelope = {
   format: 'ordo-world';
@@ -27,6 +28,7 @@ export function deserializeWorld(raw: string): WorldState {
     throw new Error('État du monde incomplet.');
   }
   const restored = structuredClone(envelope.state);
+  const structuralProfiles = restored.structuralProfiles ?? createStructuralProfiles2000();
   const countryEnergy = Object.fromEntries(Object.entries(restored.countryEnergy).map(([countryId, energy]) => [countryId, {
     ...energy,
     legacyImports: energy.legacyImports ?? {
@@ -40,7 +42,9 @@ export function deserializeWorld(raw: string): WorldState {
     strategicDossiers: restored.strategicDossiers ?? {},
     macroEconomies: restored.macroEconomies ?? createMacroEconomies2000(),
     worldEconomy: restored.worldEconomy ?? structuredClone(worldEconomy2000),
-    structuralProfiles: restored.structuralProfiles ?? createStructuralProfiles2000(),
+    structuralProfiles,
+    stakeholderGroups: restored.stakeholderGroups ?? createStakeholderGroups2000(restored.countries, structuralProfiles),
+    stakeholderReactions: restored.stakeholderReactions ?? {},
   };
 }
 

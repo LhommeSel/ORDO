@@ -16,12 +16,13 @@ import {
   createAdministrativeEnergyOffer, createFrance2000World, deserializeWorld,
   dossierUnreadCount, dossiersRequiringAttention, dossierUpdatesSinceView, energyBalance,
   evaluatePoliticalPathway, markDossierViewed, productEvidenceSummary,
-  sendEnergyOffer, serializeWorld, visibleLedger,
+  enactPrototypeGovernmentMeasure, reactionLevelLabels, reactionTrendLabels,
+  sendEnergyOffer, serializeWorld, visibleLedger, visibleStakeholderReactions,
   structuralDiagnosisGroups,
   setDossierFollowed,
   type AdvisorAnswer, type EnergyAdministrativeOffer, type EnergyCounterpartResponse,
   type EnergyOfferAdjustment, type ISODate, type StrategicDossier, type StrategicPlan,
-  type StructuralDiagnosis, type WorldState,
+  type PrototypeMeasureId, type StructuralDiagnosis, type WorldState,
 } from '@/lib/simulation';
 
 type Panel = 'world' | 'economy' | 'energy' | 'industry' | 'dossiers' | 'advisor' | 'ledger';
@@ -57,8 +58,23 @@ function Stat({ label, value, detail }: { label: string; value: string; detail?:
   </div>;
 }
 
-function WorldPanel({ world }: { world: WorldState }) {
+const reactionTone = {
+  low: 'text-muted-foreground', moderate: 'text-sky-300', important: 'text-amber-300', critical: 'text-red-300',
+};
+
+function WorldPanel({ world, onWorldChange, onNotice }: {
+  world: WorldState;
+  onWorldChange: (world: WorldState) => void;
+  onNotice: (message: string) => void;
+}) {
   const player = world.countries[world.playerCountryId];
+  const reactions = visibleStakeholderReactions(world, player.id);
+  const enact = (measureId: PrototypeMeasureId) => {
+    const next = enactPrototypeGovernmentMeasure(world, measureId);
+    onWorldChange(next);
+    const action = next.actions.at(-1);
+    onNotice(`${action?.intent ?? 'Mesure gouvernementale'} · réactions des corps organisés actualisées.`);
+  };
   const politicalTest = evaluatePoliticalPathway(world, player.id, {
     requiredAuthority: 'constitutional', doctrine: { economic: 10, sovereignty: 90 },
     publicSalience: 90, administrativeComplexity: 80,
@@ -85,6 +101,43 @@ function WorldPanel({ world }: { world: WorldState }) {
             <div className="flex justify-between text-sm"><span className="capitalize">{domain}</span><span className={`font-mono ${capacityTone(value.committed, value.maximum)}`}>{value.committed}/{value.maximum}</span></div>
             <div className="mt-2 h-1.5 bg-muted"><div className="h-full bg-primary" style={{ width: `${Math.min(100, value.committed / value.maximum * 100)}%` }} /></div>
           </div>)}
+        </div>
+      </div>
+
+      <div className="border border-border bg-card/70">
+        <div className="border-b border-border p-4">
+          <div className="flex items-center gap-2 font-semibold"><Activity className="size-4 text-primary" /> Réactions des corps organisés</div>
+          <p className="mt-1 text-xs text-muted-foreground">Le moteur conserve des valeurs continues, mais n’affiche que le niveau, la tendance, les causes et les conséquences concrètes. Les mesures successives s’accumulent dans un même courant de défiance.</p>
+        </div>
+        <div className="grid gap-px bg-border lg:grid-cols-[.72fr_1.28fr]">
+          <div className="bg-card p-4">
+            <div className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Mesures pilotes du prototype</div>
+            <div className="mt-3 grid gap-2">
+              <Button variant="outline" className="h-auto justify-start whitespace-normal py-2 text-left" onClick={() => enact('defense_cuts')}>Réduire fortement les crédits militaires</Button>
+              <Button variant="outline" className="h-auto justify-start whitespace-normal py-2 text-left" onClick={() => enact('labor_restrictions')}>Encadrer davantage le droit de grève</Button>
+              <Button variant="outline" className="h-auto justify-start whitespace-normal py-2 text-left" onClick={() => enact('capital_controls')}>Encadrer les sorties de capitaux</Button>
+            </div>
+            <p className="mt-3 text-[11px] leading-5 text-muted-foreground">Ces boutons servent à éprouver le mécanisme avant son raccordement au futur moteur d’actions libres et à l’IA.</p>
+          </div>
+          <div className="bg-card p-4">
+            <div className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Signaux actifs</div>
+            <div className="mt-3 space-y-2">{reactions.length ? reactions.map((reaction) => {
+              const group = world.stakeholderGroups[reaction.groupId];
+              return <details key={reaction.id} className="border border-border bg-background/35 p-3">
+                <summary className="cursor-pointer list-none">
+                  <div className="flex items-start justify-between gap-3">
+                    <div><div className="font-medium">{reaction.label}</div><div className="mt-1 text-xs text-muted-foreground">{reaction.causes[0]}</div></div>
+                    <div className="shrink-0 text-right"><div className={`font-mono text-[10px] uppercase ${reactionTone[reaction.level]}`}>{reactionLevelLabels[reaction.level]}</div><div className="mt-1 text-[10px] text-muted-foreground">{reactionTrendLabels[reaction.trend]}</div></div>
+                  </div>
+                </summary>
+                <div className="mt-3 border-t border-border/70 pt-3 text-xs">
+                  <div className="text-muted-foreground">{reaction.visibility === 'internal' ? 'Signal interne' : reaction.visibility === 'secret' ? 'Signal clandestin' : 'Réaction publique'} · {reaction.relatedMeasureIds.length} mesure(s) associée(s)</div>
+                  <div className="mt-2"><b>Conséquences possibles</b><ul className="mt-1 space-y-1 text-muted-foreground">{reaction.likelyConsequences.map((item) => <li key={item}>— {item}</li>)}</ul></div>
+                  {group && <div className="mt-2 text-muted-foreground">La portée dépend de la cohésion et des moyens propres à ce groupe, conservés par le moteur sans jauges supplémentaires à l’écran.</div>}
+                </div>
+              </details>;
+            }) : <div className="border border-dashed border-border p-5 text-sm text-muted-foreground">Aucune défiance organisée significative n’est suivie pour le moment.</div>}</div>
+          </div>
         </div>
       </div>
 
@@ -470,7 +523,7 @@ export default function Home() {
     </header>
     <div className="border-b border-border bg-muted/20"><div className="mx-auto flex max-w-[1600px] items-center justify-between gap-4 px-4 py-2 text-xs text-muted-foreground lg:px-6"><span>{notice}</span><span className="hidden font-mono sm:block">{autonomousCount} acteurs autonomes · seed {world.seed} · séquence {world.sequence}</span></div></div>
     <div className="mx-auto max-w-[1600px] p-4 lg:p-6">
-      {panel === 'world' && <WorldPanel world={world} />}
+      {panel === 'world' && <WorldPanel world={world} onWorldChange={setWorld} onNotice={setNotice} />}
       {panel === 'economy' && <EconomyPanel world={world} />}
       {panel === 'energy' && <EnergyPanel world={world} />}
       {panel === 'industry' && <IndustryPanel world={world} />}
