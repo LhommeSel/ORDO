@@ -28,9 +28,11 @@ export function nodeAvailableExport(state: WorldState, nodeId: string, date = st
 export function energyBalance(state: WorldState, countryId: CountryId, resource: EnergyResource) {
   const energy = state.countryEnergy[countryId];
   if (!energy) return null;
-  const imports = Object.values(state.energyContracts)
+  const contractualImports = Object.values(state.energyContracts)
     .filter((contract) => contract.buyerId === countryId && contract.resource === resource && activeOn(contract, state.currentDate))
     .reduce((sum, contract) => sum + contract.annualVolume, 0);
+  const legacyImports = energy.legacyImports?.[resource] ?? 0;
+  const imports = legacyImports + contractualImports;
   const exports = Object.values(state.energyContracts)
     .filter((contract) => contract.sellerId === countryId && contract.resource === resource && activeOn(contract, state.currentDate))
     .reduce((sum, contract) => sum + contract.annualVolume, 0);
@@ -40,7 +42,7 @@ export function energyBalance(state: WorldState, countryId: CountryId, resource:
   const coverageMonths = energy.annualDemand[resource] > 0
     ? (energy.strategicStocks[resource] / energy.annualDemand[resource]) * 12
     : 12;
-  return { imports, exports, available, deficit, surplus, coverageMonths };
+  return { imports, contractualImports, legacyImports, exports, available, deficit, surplus, coverageMonths };
 }
 
 export function proposeEnergyContract(

@@ -181,9 +181,45 @@ export type CountryEnergyState = {
   countryId: CountryId;
   annualDemand: Record<EnergyResource, number>;
   domesticProduction: Record<EnergyResource, number>;
+  legacyImports: Record<EnergyResource, number>;
   strategicStocks: Record<EnergyResource, number>;
   storageCapacity: Record<EnergyResource, number>;
   desiredCoverageMonths: Record<EnergyResource, number>;
+};
+
+export type MacroSource = {
+  provider: string;
+  observationYear: number;
+  indicatorCodes: string[];
+  estimatedIndicatorCodes?: string[];
+  confidence: number;
+};
+
+export type MacroeconomicState = {
+  countryId: CountryId;
+  realGdpBillion2000Usd: number;
+  realGrowthAnnualPct: number;
+  potentialGrowthAnnualPct: number;
+  populationMillions: number;
+  populationGrowthAnnualPct: number;
+  inflationAnnualPct: number;
+  unemploymentPct: number;
+  investmentSharePctGdp: number;
+  exportSharePctGdp: number;
+  importSharePctGdp: number;
+  tradeBalancePctGdp: number;
+  industrySharePctGdp: number;
+  productivityIndex: number;
+  source: MacroSource;
+  lastUpdatedAt: ISODate;
+};
+
+export type WorldEconomyState = {
+  globalGrowthAnnualPct: number;
+  globalInflationAnnualPct: number;
+  demandIndex: number;
+  cycle: 'recession' | 'slowdown' | 'balanced' | 'expansion' | 'overheating';
+  lastUpdatedAt: ISODate;
 };
 
 export type StrategicSectorId =
@@ -287,7 +323,9 @@ export type WorldEffect =
   | { kind: 'armament_patch'; productId: string; patch: Partial<ArmamentProduct>; reason: string; visibility?: Visibility }
   | { kind: 'dossier_add'; dossier: StrategicDossier; reason: string; visibility?: Visibility }
   | { kind: 'dossier_patch'; dossierId: string; patch: Partial<StrategicDossier>; reason: string; visibility?: Visibility }
-  | { kind: 'dossier_entry_add'; dossierId: string; entry: DossierEntry; reason: string; visibility?: Visibility };
+  | { kind: 'dossier_entry_add'; dossierId: string; entry: DossierEntry; reason: string; visibility?: Visibility }
+  | { kind: 'macro_patch'; countryId: CountryId; patch: Partial<MacroeconomicState>; reason: string; visibility?: Visibility }
+  | { kind: 'world_economy_patch'; patch: Partial<WorldEconomyState>; reason: string; visibility?: Visibility };
 
 export type ActionDraft = {
   kind: ActionKind;
@@ -383,6 +421,8 @@ export type WorldState = {
   energyNodes: Record<string, EnergyNode>;
   energyContracts: Record<string, EnergyContract>;
   countryEnergy: Record<CountryId, CountryEnergyState>;
+  macroEconomies: Record<CountryId, MacroeconomicState>;
+  worldEconomy: WorldEconomyState;
   sectors: Record<string, StrategicSectorState>;
   armamentProducts: Record<string, ArmamentProduct>;
   strategicDossiers: Record<string, StrategicDossier>;

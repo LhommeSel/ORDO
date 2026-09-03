@@ -3,6 +3,7 @@ import { advanceEnergySystem } from './energy';
 import { advanceHistoricalCurrents, type HistoricalManifestation } from './history';
 import { advanceIndustrySystem } from './industry';
 import { commitWorldAction } from './ledger';
+import { advanceMacroeconomy } from './macro-economy';
 import type { ISODate, SimulationStop, WorldEffect, WorldState } from './types';
 
 export type AdvanceResult = {
@@ -113,6 +114,7 @@ export function advanceWorld(
     const historical = advanceHistoricalCurrents(next, chunkMonths, chunkEnd);
     next = historical.state;
     manifestations.push(...historical.manifestations);
+    next = advanceMacroeconomy(next, chunkMonths);
 
     if (chunkEnd === boundary) {
       const autonomy = runAutonomyCycle(next, 2);

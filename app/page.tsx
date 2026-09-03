@@ -5,6 +5,7 @@ import {
   Activity, Archive, BrainCircuit, ChevronRight, Database, Factory,
   BellRing, CheckCircle2, Eye, FlaskConical, Fuel, History, Landmark, Pin,
   PinOff, RotateCcw, Save, Send, Shield, SlidersHorizontal, Swords, X,
+  TrendingUp,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -21,10 +22,11 @@ import {
   type EnergyOfferAdjustment, type ISODate, type StrategicDossier, type StrategicPlan, type WorldState,
 } from '@/lib/simulation';
 
-type Panel = 'world' | 'energy' | 'industry' | 'dossiers' | 'advisor' | 'ledger';
+type Panel = 'world' | 'economy' | 'energy' | 'industry' | 'dossiers' | 'advisor' | 'ledger';
 
 const panels: Array<{ id: Panel; label: string; icon: typeof Activity }> = [
   { id: 'world', label: 'Monde', icon: Activity },
+  { id: 'economy', label: 'Économie', icon: TrendingUp },
   { id: 'energy', label: 'Énergie', icon: Fuel },
   { id: 'industry', label: 'Industrie', icon: Factory },
   { id: 'dossiers', label: 'Dossiers', icon: Swords },
@@ -113,6 +115,37 @@ function WorldPanel({ world }: { world: WorldState }) {
         <ul className="mt-3 space-y-1 text-xs text-muted-foreground">{politicalTest.obstacles.map((item) => <li key={item}>— {item}</li>)}</ul>
       </div>
     </aside>
+  </div>;
+}
+
+function EconomyPanel({ world }: { world: WorldState }) {
+  const economies = Object.values(world.macroEconomies).sort((a, b) => b.realGdpBillion2000Usd - a.realGdpBillion2000Usd);
+  return <div className="space-y-4">
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <Stat label="Cycle mondial" value={world.worldEconomy.cycle} detail={`mis à jour au ${world.worldEconomy.lastUpdatedAt}`} />
+      <Stat label="Croissance mondiale" value={`${world.worldEconomy.globalGrowthAnnualPct.toFixed(2)} %`} detail="rythme annuel simulé" />
+      <Stat label="Inflation mondiale" value={`${world.worldEconomy.globalInflationAnnualPct.toFixed(2)} %`} detail="référence agrégée" />
+      <Stat label="Demande mondiale" value={world.worldEconomy.demandIndex.toFixed(2)} detail="indice 100 au 1er janvier 2000" />
+    </div>
+    <div className="border border-border bg-card/70 p-4">
+      <div className="flex items-center gap-2 font-semibold"><TrendingUp className="size-4 text-primary" /> Premier noyau macroéconomique</div>
+      <p className="mt-1 max-w-4xl text-sm text-muted-foreground">Le PIB est ancré en milliards de dollars de 2000 puis évolue en volume. Chaque mois, la croissance converge vers un potentiel influencé par l’investissement, le commerce, la conjoncture mondiale, la stabilité et les pénuries énergétiques. La dette et la politique budgétaire seront ajoutées dans un lot ultérieur.</p>
+    </div>
+    <div className="overflow-x-auto border border-border bg-card/70">
+      <table className="w-full min-w-[980px] text-left text-sm">
+        <thead className="border-b border-border bg-muted/30 font-mono text-[10px] uppercase tracking-wider text-muted-foreground"><tr><th className="p-3">Pays</th><th>PIB réel</th><th>Croissance</th><th>Potentiel</th><th>Inflation</th><th>Chômage</th><th>Commerce</th><th>Investissement</th><th>Confiance</th></tr></thead>
+        <tbody>{economies.map((economy) => <tr key={economy.countryId} className="border-b border-border/60">
+          <td className="p-3 font-medium">{world.countries[economy.countryId]?.flag} {world.countries[economy.countryId]?.name}</td>
+          <td>{economy.realGdpBillion2000Usd.toLocaleString('fr-FR', { maximumFractionDigits: 1 })} Md$</td>
+          <td className={economy.realGrowthAnnualPct < 0 ? 'text-red-300' : 'text-emerald-300'}>{economy.realGrowthAnnualPct.toFixed(2)} %</td>
+          <td>{economy.potentialGrowthAnnualPct.toFixed(2)} %</td><td>{economy.inflationAnnualPct.toFixed(2)} %</td><td>{economy.unemploymentPct.toFixed(2)} %</td>
+          <td className={economy.tradeBalancePctGdp < 0 ? 'text-amber-300' : ''}>{economy.tradeBalancePctGdp > 0 ? '+' : ''}{economy.tradeBalancePctGdp.toFixed(2)} % PIB</td>
+          <td>{economy.investmentSharePctGdp.toFixed(1)} % PIB</td>
+          <td title={`${economy.source.provider} · ${economy.source.indicatorCodes.join(', ')}`}>{economy.source.confidence} %</td>
+        </tr>)}</tbody>
+      </table>
+    </div>
+    <div className="text-xs text-muted-foreground">Base 2000 : World Development Indicators. Les données absentes ou estimées sont signalées dans la provenance et abaissent la confiance statistique.</div>
   </div>;
 }
 
@@ -367,6 +400,7 @@ export default function Home() {
     <div className="border-b border-border bg-muted/20"><div className="mx-auto flex max-w-[1600px] items-center justify-between gap-4 px-4 py-2 text-xs text-muted-foreground lg:px-6"><span>{notice}</span><span className="hidden font-mono sm:block">{autonomousCount} acteurs autonomes · seed {world.seed} · séquence {world.sequence}</span></div></div>
     <div className="mx-auto max-w-[1600px] p-4 lg:p-6">
       {panel === 'world' && <WorldPanel world={world} />}
+      {panel === 'economy' && <EconomyPanel world={world} />}
       {panel === 'energy' && <EnergyPanel world={world} />}
       {panel === 'industry' && <IndustryPanel world={world} />}
       {panel === 'dossiers' && <DossiersPanel world={world} selectedId={selectedDossierId} onSelect={setSelectedDossierId} onWorldChange={setWorld} />}

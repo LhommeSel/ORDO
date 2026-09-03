@@ -8,6 +8,8 @@ export * from './engine';
 export * from './history';
 export * from './industry';
 export * from './ledger';
+export * from './macro-data-2000';
+export * from './macro-economy';
 export * from './persistence';
 export * from './politics';
 export * from './scenario-2000';

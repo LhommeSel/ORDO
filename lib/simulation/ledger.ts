@@ -263,6 +263,24 @@ function applyEffect(state: WorldState, action: WorldAction, effect: WorldEffect
     return appendChange(next, action, effect, `strategicDossiers.${effect.dossierId}.entries.${entry.id}`, null, entry);
   }
 
+  if (effect.kind === 'macro_patch') {
+    const economy = state.macroEconomies[effect.countryId];
+    if (!economy) return state;
+    const before = Object.fromEntries(Object.keys(effect.patch).map((key) => [key, economy[key as keyof typeof economy]]));
+    const afterEconomy = { ...economy, ...effect.patch };
+    const after = Object.fromEntries(Object.keys(effect.patch).map((key) => [key, afterEconomy[key as keyof typeof afterEconomy]]));
+    const next = { ...state, macroEconomies: { ...state.macroEconomies, [effect.countryId]: afterEconomy } };
+    return appendChange(next, action, effect, `macroEconomies.${effect.countryId}`, before, after);
+  }
+
+  if (effect.kind === 'world_economy_patch') {
+    const before = Object.fromEntries(Object.keys(effect.patch).map((key) => [key, state.worldEconomy[key as keyof typeof state.worldEconomy]]));
+    const afterEconomy = { ...state.worldEconomy, ...effect.patch };
+    const after = Object.fromEntries(Object.keys(effect.patch).map((key) => [key, afterEconomy[key as keyof typeof afterEconomy]]));
+    const next = { ...state, worldEconomy: afterEconomy };
+    return appendChange(next, action, effect, 'worldEconomy', before, after);
+  }
+
   const product = state.armamentProducts[effect.productId];
   if (!product) return state;
   const after = { ...product, ...effect.patch };
