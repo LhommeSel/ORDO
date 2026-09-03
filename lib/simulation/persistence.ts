@@ -24,7 +24,8 @@ export function deserializeWorld(raw: string): WorldState {
   if (envelope.state.version !== 1 || !envelope.state.scenarioId || !envelope.state.currentDate) {
     throw new Error('État du monde incomplet.');
   }
-  return structuredClone(envelope.state);
+  const restored = structuredClone(envelope.state);
+  return { ...restored, strategicDossiers: restored.strategicDossiers ?? {} };
 }
 
 export function cloneWorld(state: WorldState) {

@@ -1,4 +1,5 @@
 import { energyBalance, nodeAvailableExport, activateEnergyContract, proposeEnergyContract } from './energy';
+import { createDossier, recordDossierUpdate } from './dossiers';
 import { commitWorldAction, relationBetween } from './ledger';
 import type { CountryId, EnergyResource, ISODate, WorldState } from './types';
 
@@ -42,6 +43,7 @@ const addYears = (date: ISODate, years: number) => {
 };
 
 const round = (value: number) => Number(value.toFixed(2));
+const energyDossierId = (offer: EnergyAdministrativeOffer) => `energy-${offer.buyerId}-${offer.supplierId}-${offer.resource}`;
 
 export function createAdministrativeEnergyOffer(
   state: WorldState,
@@ -144,10 +146,38 @@ export function sendEnergyOffer(state: WorldState, offer: EnergyAdministrativeOf
     reasons.push('Le volume reste compatible avec les engagements existants et la durée sécurise les recettes du fournisseur.');
     message = `${supplier.name} accepte la proposition administrative : ${offer.coverageShare.toFixed(1)} % des besoins couverts sur ${offer.durationYears} ans.`;
   }
-  const next = commitWorldAction(state, {
+  const dossierId = energyDossierId(offer);
+  const buyer = state.countries[offer.buyerId];
+  let prepared = createDossier(state, {
+    id: dossierId,
+    title: `Approvisionnement ${offer.resource === 'gas' ? 'gazier' : 'pétrolier'} ${buyer?.name ?? offer.buyerId}–${supplier.name}`,
+    kind: 'economic', status: 'active', importance: 'moderate',
+    actorIds: [offer.buyerId, offer.supplierId], regionTags: [],
+    startedAt: state.currentDate, updatedAt: state.currentDate,
+    phase: 'Préparation de l’offre', trend: 'stable',
+    publicSummary: `Une négociation de long terme porte sur ${offer.coverageShare.toFixed(1)} % des besoins du pays acheteur.`,
+    followed: true, autoTracked: false,
+    playerStance: 'Sécuriser les approvisionnements sans monopoliser la capacité du fournisseur.',
+    commitments: [], pendingDecisions: [], relatedCurrentIds: [], relatedActionIds: [], entries: [],
+  }, offer.buyerId, 'player');
+  prepared = commitWorldAction(prepared, {
     kind: 'diplomatic', actorId: offer.buyerId, targetIds: [offer.supplierId], origin: 'player',
     intent: `Transmettre une proposition de contrat ${offer.resource === 'gas' ? 'gazier' : 'pétrolier'} à ${supplier.name}`,
     effects: [], assumptions: [`Offre administrative, révision ${offer.revision}.`],
+  });
+  const pendingDecisions = status === 'accepted'
+    ? ['Signer ou abandonner l’accord accepté par le fournisseur.']
+    : status === 'countered' ? ['Accepter, modifier ou refuser la contre-proposition.'] : [];
+  const next = recordDossierUpdate(prepared, dossierId, {
+    id: `response-${offer.revision}-${state.currentDate}-${state.sequence + 1}`,
+    title: status === 'accepted' ? 'Proposition acceptée' : status === 'countered' ? 'Contre-proposition reçue' : 'Proposition refusée',
+    summary: message, importance: 'moderate', actorIds: [offer.supplierId],
+    requiresDecision: status !== 'refused', actorId: offer.supplierId, origin: 'local_rule',
+    patch: {
+      phase: status === 'accepted' ? 'Accord en attente de signature' : status === 'countered' ? 'Contre-proposition à arbitrer' : 'Négociation interrompue',
+      status: status === 'refused' ? 'deescalating' : 'active', pendingDecisions,
+      publicSummary: message,
+    },
   });
   return { ok: true as const, state: next, response: { status, offer: responseOffer, message, reasons } satisfies EnergyCounterpartResponse };
 }
@@ -163,5 +193,16 @@ export function acceptEnergyOffer(state: WorldState, offer: EnergyAdministrative
   if (!proposed.ok) return proposed;
   const activated = activateEnergyContract(proposed.state, contractId, offer.buyerId, 'player');
   if (!activated.ok) return activated;
-  return { ok: true as const, state: activated.state, contractId };
+  const dossierId = energyDossierId(offer);
+  const next = recordDossierUpdate(activated.state, dossierId, {
+    id: `signature-${contractId}`, title: 'Accord signé et activé',
+    summary: `Le contrat réserve ${offer.annualVolume.toFixed(2)} unités par an jusqu’au ${offer.endDate}.`,
+    importance: 'major', actorIds: [offer.buyerId, offer.supplierId], actorId: offer.buyerId, origin: 'player',
+    patch: {
+      phase: 'Exécution du contrat', trend: 'stable', pendingDecisions: [],
+      commitments: [`${offer.annualVolume.toFixed(2)} unités/an jusqu’au ${offer.endDate} · ${offer.priceSummary}`],
+      publicSummary: 'L’accord est ratifié ; les volumes sont intégrés au registre énergétique mondial.',
+    },
+  });
+  return { ok: true as const, state: next, contractId };
 }

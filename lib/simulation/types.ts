@@ -284,7 +284,10 @@ export type WorldEffect =
   | { kind: 'energy_node_patch'; nodeId: string; patch: Partial<EnergyNode>; reason: string; visibility?: Visibility }
   | { kind: 'energy_stock_delta'; countryId: CountryId; resource: EnergyResource; delta: number; reason: string; visibility?: Visibility }
   | { kind: 'sector_patch'; sectorId: string; patch: Partial<StrategicSectorState>; reason: string; visibility?: Visibility }
-  | { kind: 'armament_patch'; productId: string; patch: Partial<ArmamentProduct>; reason: string; visibility?: Visibility };
+  | { kind: 'armament_patch'; productId: string; patch: Partial<ArmamentProduct>; reason: string; visibility?: Visibility }
+  | { kind: 'dossier_add'; dossier: StrategicDossier; reason: string; visibility?: Visibility }
+  | { kind: 'dossier_patch'; dossierId: string; patch: Partial<StrategicDossier>; reason: string; visibility?: Visibility }
+  | { kind: 'dossier_entry_add'; dossierId: string; entry: DossierEntry; reason: string; visibility?: Visibility };
 
 export type ActionDraft = {
   kind: ActionKind;
@@ -324,6 +327,45 @@ export type SimulationStop = {
   kind: 'major' | 'diplomatic' | 'political';
 };
 
+export type DossierImportance = 'minor' | 'moderate' | 'major' | 'critical';
+export type DossierKind = 'conflict' | 'diplomatic_crisis' | 'economic' | 'security' | 'cooperation' | 'historical';
+
+export type DossierEntry = {
+  id: string;
+  date: ISODate;
+  title: string;
+  summary: string;
+  importance: DossierImportance;
+  actorIds: EntityId[];
+  requiresDecision: boolean;
+  visibility: Visibility;
+  sourceActionId?: string;
+};
+
+export type StrategicDossier = {
+  id: string;
+  title: string;
+  kind: DossierKind;
+  status: 'emerging' | 'active' | 'deescalating' | 'resolved';
+  importance: DossierImportance;
+  actorIds: EntityId[];
+  regionTags: string[];
+  startedAt: ISODate;
+  updatedAt: ISODate;
+  phase: string;
+  trend: 'escalating' | 'stable' | 'deescalating';
+  publicSummary: string;
+  followed: boolean;
+  autoTracked: boolean;
+  lastViewedEntryId?: string;
+  playerStance?: string;
+  commitments: string[];
+  pendingDecisions: string[];
+  relatedCurrentIds: string[];
+  relatedActionIds: string[];
+  entries: DossierEntry[];
+};
+
 export type WorldState = {
   version: 1;
   scenarioId: string;
@@ -343,6 +385,7 @@ export type WorldState = {
   countryEnergy: Record<CountryId, CountryEnergyState>;
   sectors: Record<string, StrategicSectorState>;
   armamentProducts: Record<string, ArmamentProduct>;
+  strategicDossiers: Record<string, StrategicDossier>;
   actions: WorldAction[];
   ledger: WorldChange[];
   processedStopIds: string[];

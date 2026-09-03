@@ -1,5 +1,6 @@
 export * from './advisor';
 export * from './autonomy';
+export * from './dossiers';
 export * from './energy';
 export * from './energy-negotiation';
 export * from './intent';

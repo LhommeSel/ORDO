@@ -3,8 +3,8 @@
 import { useMemo, useState } from 'react';
 import {
   Activity, Archive, BrainCircuit, ChevronRight, Database, Factory,
-  CheckCircle2, FlaskConical, Fuel, History, Landmark, RotateCcw, Save,
-  Send, Shield, SlidersHorizontal, X,
+  BellRing, CheckCircle2, Eye, FlaskConical, Fuel, History, Landmark, Pin,
+  PinOff, RotateCcw, Save, Send, Shield, SlidersHorizontal, Swords, X,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -13,18 +13,21 @@ import {
   advanceWorld, answerAdvisorQuestion, armamentAdvisorFacts,
   acceptEnergyOffer, adjustEnergyOffer, assessStrategicPlan,
   createAdministrativeEnergyOffer, createFrance2000World, deserializeWorld,
-  energyBalance, evaluatePoliticalPathway, productEvidenceSummary,
+  dossierUnreadCount, dossiersRequiringAttention, dossierUpdatesSinceView, energyBalance,
+  evaluatePoliticalPathway, markDossierViewed, productEvidenceSummary,
   sendEnergyOffer, serializeWorld, visibleLedger,
+  setDossierFollowed,
   type AdvisorAnswer, type EnergyAdministrativeOffer, type EnergyCounterpartResponse,
-  type EnergyOfferAdjustment, type ISODate, type StrategicPlan, type WorldState,
+  type EnergyOfferAdjustment, type ISODate, type StrategicDossier, type StrategicPlan, type WorldState,
 } from '@/lib/simulation';
 
-type Panel = 'world' | 'energy' | 'industry' | 'advisor' | 'ledger';
+type Panel = 'world' | 'energy' | 'industry' | 'dossiers' | 'advisor' | 'ledger';
 
 const panels: Array<{ id: Panel; label: string; icon: typeof Activity }> = [
   { id: 'world', label: 'Monde', icon: Activity },
   { id: 'energy', label: 'Énergie', icon: Fuel },
   { id: 'industry', label: 'Industrie', icon: Factory },
+  { id: 'dossiers', label: 'Dossiers', icon: Swords },
   { id: 'advisor', label: 'Conseiller', icon: BrainCircuit },
   { id: 'ledger', label: 'Registre', icon: Database },
 ];
@@ -279,6 +282,49 @@ function AdvisorPanel({ world, onWorldChange, onNotice }: { world: WorldState; o
   </div>;
 }
 
+const dossierImportanceTone: Record<StrategicDossier['importance'], string> = {
+  minor: 'text-slate-300', moderate: 'text-sky-300', major: 'text-amber-300', critical: 'text-red-300',
+};
+
+function DossiersPanel({ world, selectedId, onSelect, onWorldChange }: {
+  world: WorldState; selectedId: string | null; onSelect: (id: string) => void; onWorldChange: (world: WorldState) => void;
+}) {
+  const rank = { minor: 0, moderate: 1, major: 2, critical: 3 } as const;
+  const dossiers = Object.values(world.strategicDossiers).sort((a, b) => rank[b.importance] - rank[a.importance] || b.updatedAt.localeCompare(a.updatedAt));
+  const selected = dossiers.find((dossier) => dossier.id === selectedId) ?? dossiers[0];
+  const updates = selected ? dossierUpdatesSinceView(world, selected.id) : [];
+  if (!selected) return <div className="border border-border bg-card/70 p-8 text-center text-sm text-muted-foreground">Aucun dossier stratégique connu.</div>;
+  return <div className="grid gap-4 xl:grid-cols-[.72fr_1.28fr]">
+    <section className="border border-border bg-card/70">
+      <div className="border-b border-border p-4"><div className="flex items-center gap-2 font-semibold"><Swords className="size-4 text-primary" /> Situations suivies</div><p className="mt-1 text-xs text-muted-foreground">Un dossier conserve sa chronologie, même lorsqu’aucune notification n’interrompt le tour.</p></div>
+      <div className="divide-y divide-border/60">{dossiers.map((dossier) => {
+        const unread = dossierUnreadCount(world, dossier.id);
+        return <button key={dossier.id} onClick={() => onSelect(dossier.id)} className={`w-full p-4 text-left transition-colors hover:bg-muted/30 ${selected.id === dossier.id ? 'bg-muted/30' : ''}`}>
+          <div className="flex items-start justify-between gap-3"><div className="font-medium">{dossier.title}</div><span className={`font-mono text-[10px] uppercase ${dossierImportanceTone[dossier.importance]}`}>{dossier.importance}</span></div>
+          <div className="mt-1 text-xs text-muted-foreground">{dossier.phase} · {dossier.updatedAt}</div>
+          <div className="mt-2 flex items-center gap-2 text-[11px]">{dossier.followed && <span className="text-primary">Épinglé</span>}{dossier.autoTracked && <span className="text-amber-300">Suivi majeur</span>}{unread > 0 && <span className="ml-auto bg-primary/15 px-2 py-0.5 text-primary">{unread} nouveau{unread > 1 ? 'x' : ''}</span>}</div>
+        </button>;
+      })}</div>
+    </section>
+    <section className="space-y-4">
+      <div className="border border-border bg-card/70 p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3"><div><div className={`font-mono text-[10px] uppercase tracking-wider ${dossierImportanceTone[selected.importance]}`}>{selected.kind} · {selected.status}</div><h2 className="mt-1 text-xl font-semibold">{selected.title}</h2></div><Button variant="outline" onClick={() => onWorldChange(setDossierFollowed(world, selected.id, !selected.followed))}>{selected.followed ? <PinOff className="size-4" /> : <Pin className="size-4" />}{selected.followed ? 'Ne plus épingler' : 'Épingler'}</Button></div>
+        <p className="mt-3 text-sm text-muted-foreground">{selected.publicSummary}</p>
+        <div className="mt-4 grid gap-2 sm:grid-cols-3"><Stat label="Phase" value={selected.phase} /><Stat label="Tendance" value={selected.trend} /><Stat label="Acteurs" value={selected.actorIds.map((id) => world.countries[id]?.flag ?? id).join(' ')} /></div>
+        {selected.playerStance && <div className="mt-3 border-l-2 border-primary pl-3 text-sm"><b>Position du joueur :</b> {selected.playerStance}</div>}
+      </div>
+      {(selected.pendingDecisions.length > 0 || selected.commitments.length > 0) && <div className="grid gap-3 lg:grid-cols-2">
+        <div className="border border-border bg-card/70 p-4"><div className="font-mono text-[10px] uppercase tracking-wider text-amber-300">Décisions attendues</div><ul className="mt-2 space-y-2 text-sm">{selected.pendingDecisions.length ? selected.pendingDecisions.map((item) => <li key={item}>— {item}</li>) : <li className="text-muted-foreground">Aucun arbitrage immédiat.</li>}</ul></div>
+        <div className="border border-border bg-card/70 p-4"><div className="font-mono text-[10px] uppercase tracking-wider text-emerald-300">Engagements mémorisés</div><ul className="mt-2 space-y-2 text-sm">{selected.commitments.length ? selected.commitments.map((item) => <li key={item}>— {item}</li>) : <li className="text-muted-foreground">Aucun engagement formel.</li>}</ul></div>
+      </div>}
+      <div className="border border-border bg-card/70">
+        <div className="flex items-center justify-between gap-3 border-b border-border p-4"><div><div className="font-semibold">Chronologie du dossier</div><div className="text-xs text-muted-foreground">{updates.length} changement(s) depuis la dernière consultation</div></div>{updates.length > 0 && <Button size="sm" variant="outline" onClick={() => onWorldChange(markDossierViewed(world, selected.id))}><Eye className="size-4" /> Marquer comme consulté</Button>}</div>
+        <div className="divide-y divide-border/60">{selected.entries.slice().reverse().map((entry) => <div key={entry.id} className={`p-4 ${updates.some((update) => update.id === entry.id) ? 'bg-primary/5' : ''}`}><div className="flex items-center justify-between gap-3"><div className="font-medium">{entry.title}</div><span className="font-mono text-[10px] text-muted-foreground">{entry.date}</span></div><p className="mt-1 text-sm text-muted-foreground">{entry.summary}</p>{entry.requiresDecision && <div className="mt-2 text-xs text-amber-300">Décision du joueur requise</div>}</div>)}</div>
+      </div>
+    </section>
+  </div>;
+}
+
 function LedgerPanel({ world }: { world: WorldState }) {
   const entries = visibleLedger(world).slice(-120).reverse();
   return <div className="border border-border bg-card/70">
@@ -290,9 +336,12 @@ function LedgerPanel({ world }: { world: WorldState }) {
 export default function Home() {
   const [world, setWorld] = useState<WorldState>(() => createFrance2000World());
   const [panel, setPanel] = useState<Panel>('world');
+  const [selectedDossierId, setSelectedDossierId] = useState<string | null>(null);
   const [notice, setNotice] = useState('Scénario France · 1er janvier 2000 chargé.');
   const player = world.countries[world.playerCountryId];
   const autonomousCount = useMemo(() => new Set(world.actions.filter((action) => action.origin === 'local_rule').map((action) => action.actorId)).size, [world.actions]);
+  const dossierAlerts = useMemo(() => dossiersRequiringAttention(world), [world]);
+  const openDossier = (id: string) => { setSelectedDossierId(id); setPanel('dossiers'); };
 
   const advance = (months: number) => {
     const result = advanceWorld(world, addMonths(world.currentDate, months));
@@ -313,12 +362,14 @@ export default function Home() {
         <div className="flex gap-1"><Button size="icon" variant="ghost" title="Sauvegarder" onClick={save}><Save /></Button><Button size="icon" variant="ghost" title="Charger" onClick={load}><Archive /></Button><Button size="icon" variant="ghost" title="Réinitialiser" onClick={reset}><RotateCcw /></Button></div>
       </div>
       <div className="mx-auto flex max-w-[1600px] gap-1 overflow-x-auto px-4 lg:px-6">{panels.map(({ id, label, icon: Icon }) => <button key={id} onClick={() => setPanel(id)} className={`flex items-center gap-2 border-b-2 px-3 py-2 text-sm ${panel === id ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}><Icon className="size-4" />{label}</button>)}</div>
+      {dossierAlerts.length > 0 && <div className="border-t border-border bg-card/60"><div className="mx-auto flex max-w-[1600px] items-center gap-2 overflow-x-auto px-4 py-2 lg:px-6"><BellRing className="size-4 shrink-0 text-amber-300" /><span className="shrink-0 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Dossiers actifs</span>{dossierAlerts.slice(0, 4).map((dossier) => <button key={dossier.id} onClick={() => openDossier(dossier.id)} className="shrink-0 border border-border bg-background px-2 py-1 text-xs hover:border-primary"><span className={dossierImportanceTone[dossier.importance]}>●</span> {dossier.title}{dossier.pendingDecisions.length > 0 ? ' · décision attendue' : ` · ${dossierUnreadCount(world, dossier.id)} nouveau(x)`}</button>)}</div></div>}
     </header>
     <div className="border-b border-border bg-muted/20"><div className="mx-auto flex max-w-[1600px] items-center justify-between gap-4 px-4 py-2 text-xs text-muted-foreground lg:px-6"><span>{notice}</span><span className="hidden font-mono sm:block">{autonomousCount} acteurs autonomes · seed {world.seed} · séquence {world.sequence}</span></div></div>
     <div className="mx-auto max-w-[1600px] p-4 lg:p-6">
       {panel === 'world' && <WorldPanel world={world} />}
       {panel === 'energy' && <EnergyPanel world={world} />}
       {panel === 'industry' && <IndustryPanel world={world} />}
+      {panel === 'dossiers' && <DossiersPanel world={world} selectedId={selectedDossierId} onSelect={setSelectedDossierId} onWorldChange={setWorld} />}
       {panel === 'advisor' && <AdvisorPanel world={world} onWorldChange={setWorld} onNotice={setNotice} />}
       {panel === 'ledger' && <LedgerPanel world={world} />}
     </div>

@@ -233,6 +233,36 @@ function applyEffect(state: WorldState, action: WorldAction, effect: WorldEffect
     return appendChange(next, action, effect, `sectors.${effect.sectorId}`, sector, after);
   }
 
+  if (effect.kind === 'dossier_add') {
+    const dossiers = state.strategicDossiers ?? {};
+    const before = dossiers[effect.dossier.id] ?? null;
+    const after = before ?? effect.dossier;
+    const next = { ...state, strategicDossiers: { ...dossiers, [effect.dossier.id]: after } };
+    return appendChange(next, action, effect, `strategicDossiers.${effect.dossier.id}`, before, after);
+  }
+
+  if (effect.kind === 'dossier_patch') {
+    const dossier = state.strategicDossiers?.[effect.dossierId];
+    if (!dossier) return state;
+    const after = { ...dossier, ...effect.patch };
+    const next = { ...state, strategicDossiers: { ...state.strategicDossiers, [effect.dossierId]: after } };
+    return appendChange(next, action, effect, `strategicDossiers.${effect.dossierId}`, dossier, after);
+  }
+
+  if (effect.kind === 'dossier_entry_add') {
+    const dossier = state.strategicDossiers?.[effect.dossierId];
+    if (!dossier || dossier.entries.some((entry) => entry.id === effect.entry.id)) return state;
+    const entry = { ...effect.entry, sourceActionId: effect.entry.sourceActionId ?? action.id };
+    const after = {
+      ...dossier,
+      updatedAt: entry.date,
+      relatedActionIds: dossier.relatedActionIds.includes(action.id) ? dossier.relatedActionIds : [...dossier.relatedActionIds, action.id],
+      entries: [...dossier.entries, entry],
+    };
+    const next = { ...state, strategicDossiers: { ...state.strategicDossiers, [effect.dossierId]: after } };
+    return appendChange(next, action, effect, `strategicDossiers.${effect.dossierId}.entries.${entry.id}`, null, entry);
+  }
+
   const product = state.armamentProducts[effect.productId];
   if (!product) return state;
   const after = { ...product, ...effect.patch };

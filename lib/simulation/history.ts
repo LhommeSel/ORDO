@@ -1,6 +1,6 @@
 import { commitWorldAction } from './ledger';
 import { pickSeeded } from './random';
-import type { ActionDraft, ISODate, WorldState } from './types';
+import type { ActionDraft, ISODate, WorldEffect, WorldState } from './types';
 
 export type HistoricalManifestation = {
   currentId: string;
@@ -67,14 +67,30 @@ export function advanceHistoricalCurrents(
       date: reachedDate,
       confidence: Math.round((current.pressure + process.capability) / 2),
     });
+    const dossierId = `current-${current.id}`;
+    const effects: WorldEffect[] = [{
+      kind: 'latent_process_patch', processId: process.id,
+      patch: { status: 'manifested' },
+      reason: `Le processus latent se concrétise sous la forme : ${outcome}.`, visibility: 'public',
+    }];
+    if (next.strategicDossiers[dossierId]) {
+      effects.push(
+        {
+          kind: 'dossier_patch', dossierId,
+          patch: { phase: outcome, trend: 'escalating', publicSummary: `${current.name} se manifeste désormais sous la forme : ${outcome}.` },
+          reason: 'La manifestation historique modifie la phase du dossier suivi.', visibility: 'public',
+        },
+        {
+          kind: 'dossier_entry_add', dossierId,
+          entry: { id: `manifestation-${process.id}-${reachedDate}`, date: reachedDate, title: outcome, summary: `Le courant « ${current.name} » franchit un seuil et produit une manifestation observable.`, importance: 'major', actorIds: current.affectedActors, requiresDecision: current.affectedActors.includes(next.playerCountryId), visibility: 'public' },
+          reason: 'La manifestation rejoint la chronologie permanente du dossier.', visibility: 'public',
+        },
+      );
+    }
     next = commitWorldAction(next, {
       kind: 'historical', actorId: next.playerCountryId, origin: 'historical',
       intent: `Manifestation du courant : ${outcome}`,
-      effects: [{
-        kind: 'latent_process_patch', processId: process.id,
-        patch: { status: 'manifested' },
-        reason: `Le processus latent se concrétise sous la forme : ${outcome}.`, visibility: 'public',
-      }],
+      effects,
     });
   }
 

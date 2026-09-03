@@ -5,6 +5,7 @@ import type {
   EnergyNode,
   HistoricalCurrent,
   LatentProcess,
+  StrategicDossier,
   StrategicSectorState,
   WorldState,
 } from './types';
@@ -236,6 +237,28 @@ const latentProcesses: Record<string, LatentProcess> = {
   'major-external-operation': { id: 'major-external-operation', currentId: 'transnational-jihadism', actorId: 'AL_QAEDA_NETWORK', objective: 'Organiser une opération extérieure majeure contre les États-Unis', progress: 42, capability: 58, secrecy: 91, window: { start: '2001-01-01', end: '2003-12-31' }, possibleOutcomes: ['Attentat majeur', 'Tentative déjouée', 'Opération retardée'], status: 'preparing' },
 };
 
+const strategicDossiers: Record<string, StrategicDossier> = {
+  'current-dotcom-exuberance': {
+    id: 'current-dotcom-exuberance', title: 'Surchauffe des valeurs technologiques', kind: 'economic',
+    status: 'active', importance: 'major', actorIds: ['USA', 'FRA', 'DEU', 'GBR'], regionTags: ['Amérique du Nord', 'Europe'],
+    startedAt: '2000-01-01', updatedAt: '2000-01-01', phase: 'Accumulation des vulnérabilités', trend: 'escalating',
+    publicSummary: 'Les valorisations technologiques et les flux de capitaux s’éloignent des revenus observables.',
+    followed: false, autoTracked: true, commitments: [],
+    pendingDecisions: ['Déterminer si la France prépare un dispositif de prévention financière.'],
+    relatedCurrentIds: ['dotcom-exuberance'], relatedActionIds: [],
+    entries: [{ id: 'dotcom-opening', date: '2000-01-01', title: 'Valorisations sous tension', summary: 'L’exposition des marchés occidentaux au secteur technologique devient un sujet stratégique durable.', importance: 'moderate', actorIds: ['USA', 'FRA', 'DEU', 'GBR'], requiresDecision: false, visibility: 'public' }],
+  },
+  'current-lisbon-convergence': {
+    id: 'current-lisbon-convergence', title: 'Stratégie économique européenne', kind: 'cooperation',
+    status: 'active', importance: 'moderate', actorIds: ['FRA', 'DEU', 'ITA', 'GBR'], regionTags: ['Europe'],
+    startedAt: '2000-01-01', updatedAt: '2000-01-01', phase: 'Préparation de l’agenda commun', trend: 'stable',
+    publicSummary: 'Les gouvernements européens cherchent un compromis sur l’économie de la connaissance et l’emploi.',
+    followed: false, autoTracked: false, commitments: [], pendingDecisions: [],
+    relatedCurrentIds: ['lisbon-convergence'], relatedActionIds: [],
+    entries: [{ id: 'lisbon-opening', date: '2000-01-01', title: 'Agenda européen en préparation', summary: 'Les capitales commencent à consolider leurs priorités avant les prochaines échéances.', importance: 'minor', actorIds: ['FRA', 'DEU', 'ITA', 'GBR'], requiresDecision: false, visibility: 'public' }],
+  },
+};
+
 const energyNodes: Record<string, EnergyNode> = {
   'nor-oil': { id: 'nor-oil', countryId: 'NOR', resource: 'oil', label: 'Plateau continental norvégien', provenReserves: 920, probableReserves: 320, annualProduction: 150, annualCapacity: 164, domesticConsumption: 10, storageCapacity: 18, stocks: 11, extractionCost: 18, declineRate: 0.02, developmentLeadMonths: 42, infrastructure: ['Terminaux de la mer du Nord', 'Oléoducs offshore'] },
   'nor-gas': { id: 'nor-gas', countryId: 'NOR', resource: 'gas', label: 'Gaz de la mer du Nord', provenReserves: 1180, probableReserves: 410, annualProduction: 62, annualCapacity: 72, domesticConsumption: 5, storageCapacity: 10, stocks: 5, extractionCost: 15, declineRate: 0.01, developmentLeadMonths: 48, infrastructure: ['Europipe', 'Zeepipe'] },
@@ -307,6 +330,7 @@ export function createFrance2000World(): WorldState {
     },
     sectors: structuredClone(sectors),
     armamentProducts: structuredClone(armamentProducts),
+    strategicDossiers: structuredClone(strategicDossiers),
     actions: [], ledger: [], processedStopIds: [],
   };
 }

@@ -11,6 +11,9 @@ import { deserializeWorld, serializeWorld } from './persistence';
 import { evaluatePoliticalPathway } from './politics';
 import { createFrance2000World } from './scenario-2000';
 import { interpretPlayerIntent, rankEnergySuppliers } from './intent';
+import {
+  dossierUnreadCount, dossiersRequiringAttention, markDossierViewed, setDossierFollowed,
+} from './dossiers';
 
 test('le scénario 2000 charge un monde cohérent et jouable', () => {
   const state = createFrance2000World();
@@ -19,6 +22,7 @@ test('le scénario 2000 charge un monde cohérent et jouable', () => {
   assert.ok(Object.keys(state.countries).length >= 10);
   assert.ok(Object.keys(state.historicalCurrents).length >= 3);
   assert.ok(Object.keys(state.armamentProducts).length >= 6);
+  assert.ok(Object.keys(state.strategicDossiers).length >= 2);
 });
 
 test('un contrat énergétique ne peut pas dépasser la capacité physique restante', () => {
@@ -59,6 +63,11 @@ test('une négociation acceptée devient un contrat physique actif', () => {
   assert.equal(signed.state.energyContracts[signed.contractId].status, 'active');
   assert.ok(signed.state.actions.some((action) => action.origin === 'player' && action.intent.includes(signed.contractId)));
   assert.ok((energyBalance(signed.state, 'FRA', 'gas')?.imports ?? 0) > (energyBalance(initial, 'FRA', 'gas')?.imports ?? 0));
+  const dossier = signed.state.strategicDossiers['energy-FRA-DZA-gas'];
+  assert.equal(dossier.followed, true);
+  assert.equal(dossier.phase, 'Exécution du contrat');
+  assert.equal(dossier.pendingDecisions.length, 0);
+  assert.ok(dossier.commitments.length >= 1);
 });
 
 test('durcir une offre reste facultatif et provoque une vraie contre-réaction', () => {
@@ -151,6 +160,34 @@ test('un pays absent est identifié sans inventer de capacité', () => {
   assert.equal(intent.targetStatus, 'unmodeled');
   assert.equal(answer.plans.length, 0);
   assert.ok(answer.synthesis.includes('ne fabrique donc pas'));
+});
+
+test('un dossier conserve ses nouveautés jusqu’à leur consultation', () => {
+  const state = createFrance2000World();
+  const dossierId = 'current-dotcom-exuberance';
+  assert.equal(dossierUnreadCount(state, dossierId), 1);
+  assert.ok(dossiersRequiringAttention(state).some((dossier) => dossier.id === dossierId));
+  const viewed = markDossierViewed(state, dossierId);
+  assert.equal(dossierUnreadCount(viewed, dossierId), 0);
+  assert.ok(dossiersRequiringAttention(viewed).some((dossier) => dossier.id === dossierId));
+});
+
+test('le joueur peut épingler un dossier modéré sans modifier la simulation', () => {
+  const state = createFrance2000World();
+  const dossierId = 'current-lisbon-convergence';
+  const followed = setDossierFollowed(state, dossierId, true);
+  assert.equal(followed.strategicDossiers[dossierId].followed, true);
+  assert.equal(followed.actions.length, state.actions.length);
+  assert.ok(dossiersRequiringAttention(followed).some((dossier) => dossier.id === dossierId));
+});
+
+test('une manifestation historique alimente le dossier au lieu de rester isolée', () => {
+  const state = createFrance2000World();
+  state.latentProcesses['dotcom-repricing'].progress = 99.9;
+  const advanced = advanceWorld(state, '2000-04-01').state;
+  const dossier = advanced.strategicDossiers['current-dotcom-exuberance'];
+  assert.ok(dossier.entries.some((entry) => entry.id.startsWith('manifestation-dotcom-repricing')));
+  assert.equal(dossier.trend, 'escalating');
 });
 
 test('la sauvegarde et le registre permettent de reconstruire exactement un état', () => {
