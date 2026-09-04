@@ -1,6 +1,7 @@
 import { activateEnergyContract, energyBalance, producerNodes, proposeEnergyContract } from './energy';
 import { commitWorldAction } from './ledger';
-import type { CountryId, ISODate, WorldState } from './types';
+import { selectStrategicAction } from './decision-making';
+import type { CountryId, DecisionSignal, ISODate, StrategicActionCandidate, WorldState } from './types';
 
 const daysBetween = (a: ISODate, b: ISODate) => Math.max(0, Math.round((new Date(`${b}T12:00:00Z`).getTime() - new Date(`${a}T12:00:00Z`).getTime()) / 86_400_000));
 
@@ -25,11 +26,43 @@ function reviewEnergy(state: WorldState, countryId: CountryId) {
   for (const resource of ['oil', 'gas'] as const) {
     const balance = energyBalance(next, countryId, resource);
     if (!balance || balance.deficit < Math.max(5, next.countryEnergy[countryId]?.annualDemand[resource] * 0.08)) continue;
-    const supplier = producerNodes(next, resource).find(({ node, available }) => node.countryId !== countryId && available >= Math.min(balance.deficit, 18));
+    const demand = next.countryEnergy[countryId]?.annualDemand[resource] ?? 1;
+    const suppliers = producerNodes(next, resource)
+      .filter(({ node, available }) => node.countryId !== countryId && available >= Math.min(balance.deficit, 18))
+      .slice(0, 5);
+    const candidates: StrategicActionCandidate[] = suppliers.map((supplier) => {
+      const partner = next.countries[countryId].strategy.partners.includes(supplier.node.countryId);
+      const rival = next.countries[countryId].strategy.rivals.includes(supplier.node.countryId);
+      const signals: DecisionSignal[] = ['foreign_dependency'];
+      if (partner) signals.push('alliance_cooperation');
+      if (rival) signals.push('rival_dependency');
+      return {
+        id: `secure-${resource}-${supplier.node.countryId}`, actorId: countryId,
+        label: `Sécuriser du ${resource === 'oil' ? 'pétrole' : 'gaz'} auprès de ${supplier.node.countryId}`,
+        kind: 'energy', signals,
+        outcomes: {
+          growth: 18, employment: 8, price_stability: 28, fiscal_sustainability: -6,
+          strategic_autonomy: rival ? -48 : -18, alliance_cohesion: partner ? 34 : rival ? -42 : 4,
+          social_cohesion: 12, regime_survival: 8,
+        },
+        requiredAuthority: 'executive', publicSalience: 32, administrativeComplexity: 24,
+        urgency: Math.min(98, 35 + balance.deficit / demand * 160), risk: rival ? 72 : partner ? 18 : 36,
+        resourceCost: 8,
+        metadata: { nodeId: supplier.node.id, supplierId: supplier.node.countryId, available: supplier.available },
+      };
+    });
+    const selected = selectStrategicAction(next, candidates, `energy:${resource}:${next.currentDate}`);
+    if (!selected) continue;
+    const supplier = suppliers.find((item) => item.node.id === selected.candidate.metadata?.nodeId);
     if (!supplier) continue;
     const volume = Math.min(balance.deficit, supplier.available, 18);
     const id = `auto-${countryId}-${supplier.node.countryId}-${resource}-${next.currentDate}`;
     if (next.energyContracts[id]) continue;
+    next = commitWorldAction(next, {
+      kind: 'political', actorId: countryId, origin: 'local_rule', visibility: 'debug',
+      intent: `Arbitrer l’approvisionnement en ${resource}`,
+      effects: [], metadata: { selectedCandidate: selected.candidate.id, evaluation: selected.evaluation },
+    });
     const proposed = proposeEnergyContract(next, {
       id, nodeId: supplier.node.id, buyerId: countryId, annualVolume: Number(volume.toFixed(2)),
       startDate: next.currentDate, endDate: `${Number(next.currentDate.slice(0, 4)) + 4}${next.currentDate.slice(4)}` as ISODate,
@@ -55,6 +88,21 @@ function reviewStrategicIndustry(state: WorldState, countryId: CountryId) {
   if (!vulnerable) return state;
   const country = state.countries[countryId];
   if (!country || country.metrics.budget < 4) return state;
+  const urgency = Math.min(95, 30 + vulnerable.foreignDependency * 0.45 + Math.max(0, 55 - vulnerable.health) * 0.8);
+  const candidate: StrategicActionCandidate = {
+    id: `industry-${vulnerable.id}`, actorId: countryId,
+    label: `Consolider la filière ${vulnerable.sector}`, kind: 'industrial',
+    outcomes: {
+      growth: 26, employment: 22, price_stability: 3, fiscal_sustainability: -24,
+      strategic_autonomy: 62, social_cohesion: 12, regime_survival: 8, elite_support: 14,
+      international_prestige: 18,
+    },
+    signals: ['strategic_autonomy', 'state_control', 'deficit_spending'],
+    requiredAuthority: 'executive', publicSalience: 46, administrativeComplexity: 58,
+    urgency, risk: 34, resourceCost: 42,
+  };
+  const selected = selectStrategicAction(state, [candidate], `industry:${vulnerable.id}:${state.currentDate}`);
+  if (!selected) return state;
   return commitWorldAction(state, {
     kind: 'industrial', actorId: countryId, origin: 'local_rule',
     intent: `Réduire la vulnérabilité de la filière ${vulnerable.sector}`,
@@ -63,6 +111,7 @@ function reviewStrategicIndustry(state: WorldState, countryId: CountryId) {
       { kind: 'capacity_commitment', countryId, domain: 'economy', delta: 4, reason: 'La conception du programme mobilise les services économiques.' },
       { kind: 'sector_patch', sectorId: vulnerable.id, patch: { workloadMonths: vulnerable.workloadMonths + 24, capacity: Math.min(100, vulnerable.capacity + 3), technology: Math.min(100, vulnerable.technology + 1), health: Math.min(100, vulnerable.health + 2) }, reason: 'Le pays lance un programme pluriannuel de consolidation de la filière.' },
     ],
+    metadata: { selectedCandidate: selected.candidate.id, evaluation: selected.evaluation },
   });
 }
 

@@ -75,6 +75,24 @@ function applyEffect(state: WorldState, action: WorldAction, effect: WorldEffect
     return appendChange(next, action, effect, `countries.${effect.countryId}.metrics.${effect.metric}`, before, Number(after.toFixed(3)));
   }
 
+  if (effect.kind === 'politics_patch') {
+    const country = state.countries[effect.countryId];
+    if (!country) return state;
+    const before = Object.fromEntries(Object.keys(effect.patch).map((key) => [key, country.politics[key as keyof typeof country.politics]]));
+    const rawPolitics = { ...country.politics, ...effect.patch };
+    const afterPolitics = {
+      ...rawPolitics,
+      publicApproval: Number(clamp(rawPolitics.publicApproval).toFixed(3)),
+      administrativeCompliance: Number(clamp(rawPolitics.administrativeCompliance).toFixed(3)),
+    };
+    const after = Object.fromEntries(Object.keys(effect.patch).map((key) => [key, afterPolitics[key as keyof typeof afterPolitics]]));
+    const next = {
+      ...state,
+      countries: { ...state.countries, [effect.countryId]: { ...country, politics: afterPolitics } },
+    };
+    return appendChange(next, action, effect, `countries.${effect.countryId}.politics`, before, after);
+  }
+
   if (effect.kind === 'country_strategy_patch') {
     const country = state.countries[effect.countryId];
     if (!country) return state;
@@ -311,6 +329,54 @@ function applyEffect(state: WorldState, action: WorldAction, effect: WorldEffect
     const after = { ...reaction, ...effect.patch };
     const next = { ...state, stakeholderReactions: { ...state.stakeholderReactions, [effect.reactionId]: after } };
     return appendChange(next, action, effect, `stakeholderReactions.${effect.reactionId}`, reaction, after);
+  }
+
+  if (effect.kind === 'power_actor_add') {
+    const actors = state.powerActors ?? {};
+    const before = actors[effect.actor.id] ?? null;
+    const after = before ?? effect.actor;
+    const next = { ...state, powerActors: { ...actors, [effect.actor.id]: after } };
+    return appendChange(next, action, effect, `powerActors.${effect.actor.id}`, before, after);
+  }
+
+  if (effect.kind === 'power_actor_patch') {
+    const actor = state.powerActors?.[effect.actorId];
+    if (!actor) return state;
+    const after = { ...actor, ...effect.patch };
+    const next = { ...state, powerActors: { ...state.powerActors, [effect.actorId]: after } };
+    return appendChange(next, action, effect, `powerActors.${effect.actorId}`, actor, after);
+  }
+
+  if (effect.kind === 'power_campaign_add') {
+    const campaigns = state.powerStruggleCampaigns ?? {};
+    const before = campaigns[effect.campaign.id] ?? null;
+    const after = before ?? effect.campaign;
+    const next = { ...state, powerStruggleCampaigns: { ...campaigns, [effect.campaign.id]: after } };
+    return appendChange(next, action, effect, `powerStruggleCampaigns.${effect.campaign.id}`, before, after);
+  }
+
+  if (effect.kind === 'power_campaign_patch') {
+    const campaign = state.powerStruggleCampaigns?.[effect.campaignId];
+    if (!campaign) return state;
+    const after = { ...campaign, ...effect.patch };
+    const next = { ...state, powerStruggleCampaigns: { ...state.powerStruggleCampaigns, [effect.campaignId]: after } };
+    return appendChange(next, action, effect, `powerStruggleCampaigns.${effect.campaignId}`, campaign, after);
+  }
+
+  if (effect.kind === 'ai_job_add') {
+    const jobs = state.aiJobs ?? {};
+    const before = jobs[effect.job.id] ?? null;
+    const after = before ?? effect.job;
+    const next = { ...state, aiJobs: { ...jobs, [effect.job.id]: after } };
+    return appendChange(next, action, effect, `aiJobs.${effect.job.id}`, before, after);
+  }
+
+  if (effect.kind === 'ai_job_patch') {
+    const job = state.aiJobs?.[effect.jobId];
+    if (!job) return state;
+    const after = { ...job, ...effect.patch } as typeof job;
+    const next = { ...state, aiJobs: { ...state.aiJobs, [effect.jobId]: after } };
+    return appendChange(next, action, effect, `aiJobs.${effect.jobId}`, job, after);
   }
 
   const product = state.armamentProducts[effect.productId];

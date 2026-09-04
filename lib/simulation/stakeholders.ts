@@ -40,7 +40,7 @@ function consequenceCount(level: ReactionLevel) {
   return level === 'critical' ? 3 : level === 'important' ? 2 : 1;
 }
 
-function reactionEffects(state: WorldState, measure: GovernmentMeasure): WorldEffect[] {
+export function stakeholderReactionEffects(state: WorldState, measure: GovernmentMeasure): WorldEffect[] {
   const effects: WorldEffect[] = [];
   for (const group of Object.values(state.stakeholderGroups).filter((item) => item.countryId === measure.countryId)) {
     const sensitivity = measure.signals.reduce((total, item) =>
@@ -113,10 +113,15 @@ export function prototypeGovernmentMeasure(state: WorldState, measureId: Prototy
 
 export function enactPrototypeGovernmentMeasure(state: WorldState, measureId: PrototypeMeasureId) {
   const measure = prototypeGovernmentMeasure(state, measureId);
+  return enactGovernmentMeasure(state, measure);
+}
+
+/** Point d'entrée commun aux mesures cadrées et aux décisions libres interprétées par IA. */
+export function enactGovernmentMeasure(state: WorldState, measure: GovernmentMeasure) {
   return commitWorldAction(state, {
     kind: 'political', actorId: measure.countryId, origin: 'player',
     intent: measure.title,
-    effects: [...measure.effects, ...reactionEffects(state, measure)],
+    effects: [...measure.effects, ...stakeholderReactionEffects(state, measure)],
     metadata: { measureId: measure.id, subjectId: measure.subjectId, signals: measure.signals },
   });
 }

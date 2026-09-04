@@ -2,6 +2,8 @@ import type { WorldState } from './types';
 import { createMacroEconomies2000, worldEconomy2000 } from './macro-data-2000';
 import { createStructuralProfiles2000 } from './structural-data-2000';
 import { createStakeholderGroups2000 } from './stakeholder-data-2000';
+import { createTradeFlows2000 } from './trade-data-2000';
+import { createDecisionProfiles2000 } from './decision-data-2000';
 
 export type SaveEnvelope = {
   format: 'ordo-world';
@@ -29,6 +31,24 @@ export function deserializeWorld(raw: string): WorldState {
   }
   const restored = structuredClone(envelope.state);
   const structuralProfiles = restored.structuralProfiles ?? createStructuralProfiles2000();
+  const defaultMacroEconomies = createMacroEconomies2000();
+  const macroEconomies = Object.fromEntries(Object.entries(defaultMacroEconomies).map(([countryId, fallback]) => {
+    const saved = restored.macroEconomies?.[countryId];
+    return [countryId, saved ? {
+      ...fallback, ...saved,
+      policy: { ...fallback.policy, ...saved.policy },
+      sectors: { ...fallback.sectors, ...saved.sectors },
+      products: { ...fallback.products, ...saved.products },
+    } : fallback];
+  }));
+  const worldEconomy = {
+    ...structuredClone(worldEconomy2000), ...restored.worldEconomy,
+    productMarkets: {
+      ...structuredClone(worldEconomy2000.productMarkets),
+      ...restored.worldEconomy?.productMarkets,
+    },
+    activeShocks: restored.worldEconomy?.activeShocks ?? [],
+  };
   const countryEnergy = Object.fromEntries(Object.entries(restored.countryEnergy).map(([countryId, energy]) => [countryId, {
     ...energy,
     legacyImports: energy.legacyImports ?? {
@@ -40,11 +60,16 @@ export function deserializeWorld(raw: string): WorldState {
     ...restored,
     countryEnergy,
     strategicDossiers: restored.strategicDossiers ?? {},
-    macroEconomies: restored.macroEconomies ?? createMacroEconomies2000(),
-    worldEconomy: restored.worldEconomy ?? structuredClone(worldEconomy2000),
+    macroEconomies,
+    worldEconomy,
+    tradeFlows: restored.tradeFlows ?? createTradeFlows2000(),
+    decisionProfiles: restored.decisionProfiles ?? createDecisionProfiles2000(restored.countries),
     structuralProfiles,
     stakeholderGroups: restored.stakeholderGroups ?? createStakeholderGroups2000(restored.countries, structuralProfiles),
     stakeholderReactions: restored.stakeholderReactions ?? {},
+    powerActors: restored.powerActors ?? {},
+    powerStruggleCampaigns: restored.powerStruggleCampaigns ?? {},
+    aiJobs: restored.aiJobs ?? (restored as unknown as { powerStruggleAIRequests?: WorldState['aiJobs'] }).powerStruggleAIRequests ?? {},
   };
 }
 

@@ -20,7 +20,10 @@ export function createStakeholderGroups2000(
         id: `${country.id}-military-command`, countryId: country.id,
         label: 'Haut commandement et cadres des armées', category: 'military',
         influence: clamp(45 + country.weight * 0.35), cohesion: clamp(48 + country.metrics.security * 0.35), baselineDefiance: 8,
-        sensitivities: { defense_cuts: 0.92, austerity: 0.18, administrative_reorganization: 0.08 },
+        sensitivities: {
+          defense_cuts: 0.92, alliance_disengagement: 0.86, military_doctrine_break: 0.72,
+          austerity: 0.18, administrative_reorganization: 0.08,
+        },
         influenceChannels: ['security_cohesion', 'political_support'],
         possibleResponses: ['Critiques internes et fuites', 'Ralentissement de l’exécution', 'Démissions ou refus d’obéissance dans une crise extrême'],
       },

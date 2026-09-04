@@ -1,9 +1,11 @@
 import { runAutonomyCycle } from './autonomy';
+import { runSimulationPipeline, type SimulationPhase } from './core';
 import { advanceEnergySystem } from './energy';
 import { advanceHistoricalCurrents, type HistoricalManifestation } from './history';
 import { advanceIndustrySystem } from './industry';
 import { commitWorldAction } from './ledger';
 import { advanceMacroeconomy } from './macro-economy';
+import { advancePowerStruggles, detectPowerStruggleOpportunities } from './power-struggles';
 import { advanceStakeholderReactions } from './stakeholders';
 import type { ISODate, SimulationStop, WorldEffect, WorldState } from './types';
 
@@ -75,6 +77,39 @@ function advanceInstitutions(state: WorldState, elapsedMonths: number) {
   return next;
 }
 
+function simulationPhases(
+  manifestations: HistoricalManifestation[],
+  reviewedCountryIds: string[],
+): SimulationPhase[] {
+  return [
+    { id: 'treaties', advance: (state, context) => advanceTreaties(state, context.elapsedMonths) },
+    { id: 'institutions', advance: (state, context) => advanceInstitutions(state, context.elapsedMonths) },
+    { id: 'stakeholders', advance: (state, context) => advanceStakeholderReactions(state, context.elapsedMonths) },
+    { id: 'power-opportunities', advance: (state) => detectPowerStruggleOpportunities(state) },
+    { id: 'power-struggles', advance: (state, context) => advancePowerStruggles(state, context.elapsedMonths) },
+    { id: 'energy', advance: (state, context) => advanceEnergySystem(state, context.elapsedMonths) },
+    { id: 'industry', advance: (state, context) => advanceIndustrySystem(state, context.elapsedMonths) },
+    {
+      id: 'history',
+      advance: (state, context) => {
+        const historical = advanceHistoricalCurrents(state, context.elapsedMonths, context.chunkEnd);
+        manifestations.push(...historical.manifestations);
+        return historical.state;
+      },
+    },
+    { id: 'macroeconomy', advance: (state, context) => advanceMacroeconomy(state, context.elapsedMonths) },
+    {
+      id: 'country-autonomy',
+      advance: (state, context) => {
+        if (!context.reachedMonthBoundary) return state;
+        const autonomy = runAutonomyCycle(state, 2);
+        reviewedCountryIds.push(...autonomy.reviewedCountryIds);
+        return autonomy.state;
+      },
+    },
+  ];
+}
+
 export function advanceWorld(
   state: WorldState,
   requestedDate: ISODate,
@@ -91,6 +126,7 @@ export function advanceWorld(
   const elapsedMonths = elapsedDays / 30.4375;
   const manifestations: HistoricalManifestation[] = [];
   const reviewedCountryIds: string[] = [];
+  const phases = simulationPhases(manifestations, reviewedCountryIds);
   let next = state;
   let cursor = state.currentDate;
 
@@ -108,21 +144,12 @@ export function advanceWorld(
       kind: 'time_advance', actorId: state.playerCountryId, origin: 'time',
       intent: `Avancer la simulation jusqu’au ${chunkEnd}`, effects: dateEffects,
     });
-    next = advanceTreaties(next, chunkMonths);
-    next = advanceInstitutions(next, chunkMonths);
-    next = advanceStakeholderReactions(next, chunkMonths);
-    next = advanceEnergySystem(next, chunkMonths);
-    next = advanceIndustrySystem(next, chunkMonths);
-    const historical = advanceHistoricalCurrents(next, chunkMonths, chunkEnd);
-    next = historical.state;
-    manifestations.push(...historical.manifestations);
-    next = advanceMacroeconomy(next, chunkMonths);
-
-    if (chunkEnd === boundary) {
-      const autonomy = runAutonomyCycle(next, 2);
-      next = autonomy.state;
-      reviewedCountryIds.push(...autonomy.reviewedCountryIds);
-    }
+    next = runSimulationPipeline(next, {
+      chunkStart: cursor,
+      chunkEnd,
+      elapsedMonths: chunkMonths,
+      reachedMonthBoundary: chunkEnd === boundary,
+    }, phases);
     cursor = chunkEnd;
   }
   return {

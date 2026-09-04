@@ -195,21 +195,168 @@ export type MacroSource = {
   confidence: number;
 };
 
+export type EconomicProductFamily =
+  | 'food'
+  | 'energy'
+  | 'raw_materials'
+  | 'industrial_inputs'
+  | 'manufactured_goods'
+  | 'strategic_technology';
+
+export type ProductFamilyState = {
+  productionIndex: number;
+  capacityIndex: number;
+  demandIndex: number;
+  inventoryMonths: number;
+  importDependencyPct: number;
+  exportOrientationPct: number;
+  domesticPriceIndex: number;
+};
+
+export type AggregateSectorId =
+  | 'agriculture'
+  | 'extractive'
+  | 'manufacturing'
+  | 'construction'
+  | 'market_services'
+  | 'public_services';
+
+export type AggregateSectorState = {
+  valueAddedSharePct: number;
+  capacityIndex: number;
+  utilizationPct: number;
+  productivityIndex: number;
+  employmentSharePct: number;
+};
+
+export type EconomicPolicyState = {
+  fiscalStance: number;
+  publicInvestmentPctGdp: number;
+  socialProtection: number;
+  industrialSupport: number;
+  tradeOpenness: number;
+  capitalControls: number;
+  laborFlexibility: number;
+};
+
+export type EconomicShockChannel = 'demand' | 'supply' | 'financial' | 'trade' | 'energy' | 'confidence';
+
+export type EconomicShock = {
+  id: string;
+  label: string;
+  channel: EconomicShockChannel;
+  intensity: number;
+  remainingMonths: number;
+  decayPerMonth: number;
+  affectedCountryIds: CountryId[];
+  productFamily?: EconomicProductFamily;
+  source: 'historical' | 'player' | 'local_rule' | 'ai';
+};
+
+export type SovereignDebtStatus =
+  | 'stable'
+  | 'watch'
+  | 'stressed'
+  | 'refinancing_crisis'
+  | 'default'
+  | 'restructuring';
+
+export type SovereignDebtState = {
+  effectiveInterestRatePct: number;
+  sovereignSpreadBps: number;
+  averageMaturityYears: number;
+  annualMaturingDebtPctGdp: number;
+  foreignHeldSharePct: number;
+  foreignCurrencySharePct: number;
+  domesticBankExposurePctAssets: number;
+  centralBankBackstop: number;
+  marketAccess: number;
+  refinancingNeedPctGdp: number;
+  fundingGapPctGdp: number;
+  debtServicePctRevenue: number;
+  missedPaymentsPctGdp: number;
+  monthsUnderStress: number;
+  status: SovereignDebtStatus;
+};
+
+export type BankingSystemState = {
+  capitalAdequacyPct: number;
+  nonPerformingLoansPct: number;
+  liquidityStress: number;
+  sovereignExposureStress: number;
+  creditAvailability: number;
+};
+
+export type DebtCrisisResponse =
+  | 'emergency_austerity'
+  | 'central_bank_backstop'
+  | 'international_assistance'
+  | 'capital_controls'
+  | 'restructure';
+
+export type WorldProductMarket = {
+  family: EconomicProductFamily;
+  priceIndex: number;
+  demandIndex: number;
+  supplyIndex: number;
+  inventoryMonths: number;
+  volatility: number;
+};
+
+export type BilateralTradeFlow = {
+  id: string;
+  exporterId: CountryId;
+  importerId: CountryId;
+  annualValueBillion2000Usd: number;
+  productMix: Record<EconomicProductFamily, number>;
+  friction: number;
+  reliability: number;
+};
+
 export type MacroeconomicState = {
   countryId: CountryId;
   realGdpBillion2000Usd: number;
+  potentialGdpBillion2000Usd: number;
   realGrowthAnnualPct: number;
   potentialGrowthAnnualPct: number;
+  outputGapPct: number;
   populationMillions: number;
   populationGrowthAnnualPct: number;
+  workingAgeSharePct: number;
+  laborForceParticipationPct: number;
+  dependencyRatioPct: number;
+  netMigrationRatePerThousand: number;
   inflationAnnualPct: number;
   unemploymentPct: number;
+  wageGrowthAnnualPct: number;
   investmentSharePctGdp: number;
+  householdConsumptionSharePctGdp: number;
+  governmentConsumptionSharePctGdp: number;
+  domesticDemandGrowthAnnualPct: number;
   exportSharePctGdp: number;
   importSharePctGdp: number;
   tradeBalancePctGdp: number;
+  currentAccountPctGdp: number;
+  publicRevenuePctGdp: number;
+  publicSpendingPctGdp: number;
+  fiscalBalancePctGdp: number;
+  publicDebtPctGdp: number;
+  policyRatePct: number;
+  creditGrowthAnnualPct: number;
+  privateDebtPctGdp: number;
+  financialStress: number;
+  exchangeRateIndex: number;
+  foreignReserveMonthsImports: number;
   industrySharePctGdp: number;
   productivityIndex: number;
+  capitalStockIndex: number;
+  humanCapitalIndex: number;
+  confidenceIndex: number;
+  sovereignDebt: SovereignDebtState;
+  bankingSystem: BankingSystemState;
+  policy: EconomicPolicyState;
+  sectors: Record<AggregateSectorId, AggregateSectorState>;
+  products: Record<EconomicProductFamily, ProductFamilyState>;
   source: MacroSource;
   lastUpdatedAt: ISODate;
 };
@@ -218,6 +365,11 @@ export type WorldEconomyState = {
   globalGrowthAnnualPct: number;
   globalInflationAnnualPct: number;
   demandIndex: number;
+  tradeVolumeIndex: number;
+  financialStress: number;
+  neutralInterestRatePct: number;
+  productMarkets: Record<EconomicProductFamily, WorldProductMarket>;
+  activeShocks: EconomicShock[];
   cycle: 'recession' | 'slowdown' | 'balanced' | 'expansion' | 'overheating';
   lastUpdatedAt: ISODate;
 };
@@ -281,6 +433,8 @@ export type ReactionLevel = 'low' | 'moderate' | 'important' | 'critical';
 export type ReactionTrend = 'falling' | 'stable' | 'rising' | 'rising_fast';
 export type PolicySignal =
   | 'defense_cuts'
+  | 'alliance_disengagement'
+  | 'military_doctrine_break'
   | 'labor_deregulation'
   | 'capital_controls'
   | 'administrative_reorganization'
@@ -331,6 +485,194 @@ export type GovernmentMeasure = {
   intensity: number;
   signals: Array<{ signal: PolicySignal; weight: number }>;
   effects: WorldEffect[];
+};
+
+export type PowerActorRole =
+  | 'military_officer'
+  | 'union_leader'
+  | 'business_leader'
+  | 'senior_official'
+  | 'civic_figure';
+
+export type PowerActorVisibility = 'unknown' | 'suspected' | 'identified' | 'public';
+
+/** Un individu n'est matérialisé que lorsqu'une tendance institutionnelle a besoin d'un visage. */
+export type EmergentPowerActor = {
+  id: string;
+  countryId: CountryId;
+  stakeholderGroupId: string;
+  name: string;
+  role: PowerActorRole;
+  position: string;
+  fictionalAlternateHistory: boolean;
+  ideologyTags: string[];
+  personalityTags: string[];
+  deepObjective: string;
+  immediateObjective: string;
+  influence: number;
+  legitimacy: number;
+  loyaltyToRegime: number;
+  loyaltyToGovernment: number;
+  riskTolerance: number;
+  visibility: PowerActorVisibility;
+  status: 'active' | 'removed' | 'retired' | 'detained' | 'deceased';
+  campaignIds: string[];
+  createdAt: ISODate;
+  updatedAt: ISODate;
+};
+
+export type PowerStruggleTactic =
+  | 'private_lobbying'
+  | 'administrative_obstruction'
+  | 'public_criticism'
+  | 'media_campaign'
+  | 'organized_resignation'
+  | 'social_mobilization'
+  | 'strike'
+  | 'investment_freeze'
+  | 'capital_flight'
+  | 'opposition_funding'
+  | 'information_leak'
+  | 'security_disobedience'
+  | 'extra_constitutional_preparation'
+  | 'negotiation'
+  | 'deescalation';
+
+export type PowerStruggleAIPlan = {
+  revision: number;
+  generatedAt: ISODate;
+  strategy: string;
+  immediateObjective: string;
+  acceptableCompromise: string;
+  personalRedLine: string;
+  currentTactic: PowerStruggleTactic;
+  publicMove: string;
+  reassessmentTriggers: Array<
+    'player_response' | 'pressure_shift' | 'government_crisis' | 'deadline' | 'external_shock'
+  >;
+  reviewAfterMonths: number;
+};
+
+export type PowerStruggleCampaign = {
+  id: string;
+  countryId: CountryId;
+  subjectId: string;
+  stakeholderReactionId: string;
+  instigatorActorIds: string[];
+  targetId: EntityId;
+  dossierId: string;
+  status: 'emerging' | 'active' | 'deescalating' | 'resolved';
+  pressure: number;
+  momentum: number;
+  escalation: number;
+  phase: string;
+  deepObjective: string;
+  aiPlan: PowerStruggleAIPlan;
+  nextAIReviewAt: ISODate;
+  lastAdvancedAt: ISODate;
+  createdAt: ISODate;
+  updatedAt: ISODate;
+};
+
+export type PowerStruggleAIRequestPurpose =
+  | 'materialize_actor'
+  | 'reassess_campaign'
+  | 'react_to_player';
+
+/** Contexte volontairement compact : le LLM n'a jamais besoin de recevoir toute la sauvegarde. */
+export type AIJobKind =
+  | 'power_struggle'
+  | 'diplomacy'
+  | 'historical_interpretation'
+  | 'advisor'
+  | 'free_action_interpretation';
+
+export type AIJobPriority = 'background' | 'normal' | 'urgent';
+export type AIJobBudgetTier = 'economy' | 'standard' | 'deep';
+
+export type AIJobBase = {
+  id: string;
+  kind: AIJobKind;
+  schemaVersion: 1;
+  priority: AIJobPriority;
+  budgetTier: AIJobBudgetTier;
+  status: 'pending' | 'resolved' | 'cancelled' | 'failed';
+  requestedAt: ISODate;
+  resolvedAt?: ISODate;
+  attempts: number;
+  error?: string;
+};
+
+export type AIJobPatch = Partial<Omit<AIJobBase, 'id' | 'kind' | 'schemaVersion'>>;
+
+export type PowerStruggleAIJob = AIJobBase & {
+  kind: 'power_struggle';
+  purpose: PowerStruggleAIRequestPurpose;
+  countryId: CountryId;
+  reactionId: string;
+  campaignId?: string;
+  reasons: string[];
+  context: {
+    countryName: string;
+    governmentLabel: string;
+    stakeholderLabel: string;
+    stakeholderCategory: StakeholderCategory;
+    subjectId: string;
+    defiance: number;
+    mobilization: number;
+    influence: number;
+    cohesion: number;
+    causes: string[];
+    plausibleResponses: string[];
+    existingActorIds: string[];
+    currentCampaign?: {
+      phase: string;
+      pressure: number;
+      momentum: number;
+      escalation: number;
+      lastStrategy: string;
+    };
+    playerResponse?: string;
+  };
+};
+
+export type GeneralAIJob = AIJobBase & {
+  kind: Exclude<AIJobKind, 'power_struggle'>;
+  purpose: string;
+  actorId: EntityId;
+  reasons: string[];
+  context: Record<string, unknown>;
+};
+
+export type AIJob = PowerStruggleAIJob | GeneralAIJob;
+
+/** Alias conservé pour les intégrations déjà écrites. */
+export type PowerStruggleAIRequest = PowerStruggleAIJob;
+
+export type PowerStruggleAIProposal = {
+  actor?: {
+    name: string;
+    role: PowerActorRole;
+    position: string;
+    ideologyTags: string[];
+    personalityTags: string[];
+    deepObjective: string;
+    immediateObjective: string;
+    influence: number;
+    legitimacy: number;
+    loyaltyToRegime: number;
+    loyaltyToGovernment: number;
+    riskTolerance: number;
+    initialVisibility: PowerActorVisibility;
+  };
+  strategy: string;
+  immediateObjective: string;
+  acceptableCompromise: string;
+  personalRedLine: string;
+  currentTactic: PowerStruggleTactic;
+  publicMove: string;
+  reassessmentTriggers: PowerStruggleAIPlan['reassessmentTriggers'];
+  reviewAfterMonths: number;
 };
 
 export type StrategicSectorId =
@@ -417,6 +759,7 @@ export type WorldEffect =
   | { kind: 'date_set'; date: ISODate; reason: string; visibility?: Visibility }
   | { kind: 'processed_stop_add'; stopId: string; reason: string; visibility?: Visibility }
   | { kind: 'metric_delta'; countryId: CountryId; metric: WorldMetric; delta: number; reason: string; visibility?: Visibility }
+  | { kind: 'politics_patch'; countryId: CountryId; patch: Partial<PoliticalSystem>; reason: string; visibility?: Visibility }
   | { kind: 'country_strategy_patch'; countryId: CountryId; patch: Partial<CountryStrategy>; reason: string; visibility?: Visibility }
   | { kind: 'capacity_commitment'; countryId: CountryId; domain: CapacityDomainId; delta: number; reason: string; visibility?: Visibility }
   | { kind: 'capacity_maximum'; countryId: CountryId; domain: CapacityDomainId; delta: number; reason: string; visibility?: Visibility }
@@ -440,7 +783,13 @@ export type WorldEffect =
   | { kind: 'structural_profile_patch'; countryId: CountryId; patch: Partial<CountryStructuralProfile>; reason: string; visibility?: Visibility }
   | { kind: 'stakeholder_group_add'; group: StakeholderGroup; reason: string; visibility?: Visibility }
   | { kind: 'stakeholder_reaction_add'; reaction: StakeholderReaction; reason: string; visibility?: Visibility }
-  | { kind: 'stakeholder_reaction_patch'; reactionId: string; patch: Partial<StakeholderReaction>; reason: string; visibility?: Visibility };
+  | { kind: 'stakeholder_reaction_patch'; reactionId: string; patch: Partial<StakeholderReaction>; reason: string; visibility?: Visibility }
+  | { kind: 'power_actor_add'; actor: EmergentPowerActor; reason: string; visibility?: Visibility }
+  | { kind: 'power_actor_patch'; actorId: string; patch: Partial<EmergentPowerActor>; reason: string; visibility?: Visibility }
+  | { kind: 'power_campaign_add'; campaign: PowerStruggleCampaign; reason: string; visibility?: Visibility }
+  | { kind: 'power_campaign_patch'; campaignId: string; patch: Partial<PowerStruggleCampaign>; reason: string; visibility?: Visibility }
+  | { kind: 'ai_job_add'; job: AIJob; reason: string; visibility?: Visibility }
+  | { kind: 'ai_job_patch'; jobId: string; patch: AIJobPatch; reason: string; visibility?: Visibility };
 
 export type ActionDraft = {
   kind: ActionKind;
@@ -481,7 +830,7 @@ export type SimulationStop = {
 };
 
 export type DossierImportance = 'minor' | 'moderate' | 'major' | 'critical';
-export type DossierKind = 'conflict' | 'diplomatic_crisis' | 'economic' | 'security' | 'cooperation' | 'historical';
+export type DossierKind = 'conflict' | 'diplomatic_crisis' | 'economic' | 'security' | 'cooperation' | 'historical' | 'power_struggle';
 
 export type DossierEntry = {
   id: string;
@@ -538,9 +887,14 @@ export type WorldState = {
   countryEnergy: Record<CountryId, CountryEnergyState>;
   macroEconomies: Record<CountryId, MacroeconomicState>;
   worldEconomy: WorldEconomyState;
+  tradeFlows: Record<string, BilateralTradeFlow>;
+  decisionProfiles: Record<CountryId, CountryDecisionProfile>;
   structuralProfiles: Record<CountryId, CountryStructuralProfile>;
   stakeholderGroups: Record<string, StakeholderGroup>;
   stakeholderReactions: Record<string, StakeholderReaction>;
+  powerActors: Record<string, EmergentPowerActor>;
+  powerStruggleCampaigns: Record<string, PowerStruggleCampaign>;
+  aiJobs: Record<string, AIJob>;
   sectors: Record<string, StrategicSectorState>;
   armamentProducts: Record<string, ArmamentProduct>;
   strategicDossiers: Record<string, StrategicDossier>;
@@ -564,6 +918,86 @@ export type PoliticalPathway = {
   administrativeFeasibility: number;
   obstacles: string[];
   routes: string[];
+};
+
+export type DecisionCriterion =
+  | 'growth'
+  | 'employment'
+  | 'price_stability'
+  | 'fiscal_sustainability'
+  | 'strategic_autonomy'
+  | 'alliance_cohesion'
+  | 'social_cohesion'
+  | 'redistribution'
+  | 'regime_survival'
+  | 'elite_support'
+  | 'international_prestige';
+
+export type DecisionSignal =
+  | 'deficit_spending'
+  | 'austerity'
+  | 'foreign_dependency'
+  | 'rival_dependency'
+  | 'strategic_autonomy'
+  | 'alliance_cooperation'
+  | 'alliance_breach'
+  | 'market_liberalization'
+  | 'state_control'
+  | 'redistribution'
+  | 'labor_deregulation'
+  | 'monetary_financing'
+  | 'military_escalation'
+  | 'political_opening'
+  | 'elite_displacement';
+
+export type PoliticalConstraint = {
+  id: string;
+  label: string;
+  level: 'preference' | 'taboo' | 'red_line';
+  signals: DecisionSignal[];
+  penalty: number;
+  overridePressure: number;
+  active: boolean;
+};
+
+export type CountryDecisionProfile = {
+  countryId: CountryId;
+  criterionWeights: Record<DecisionCriterion, number>;
+  riskTolerance: number;
+  adaptability: number;
+  satisficingThreshold: number;
+  choiceNoise: number;
+  constraints: PoliticalConstraint[];
+  source: string;
+};
+
+export type StrategicActionCandidate = {
+  id: string;
+  actorId: CountryId;
+  label: string;
+  kind: ActionKind;
+  outcomes: Partial<Record<DecisionCriterion, number>>;
+  signals: DecisionSignal[];
+  doctrine?: Partial<GovernmentDoctrine>;
+  requiredAuthority: PoliticalActionProfile['requiredAuthority'];
+  publicSalience: number;
+  administrativeComplexity: number;
+  urgency: number;
+  risk: number;
+  resourceCost: number;
+  metadata?: Record<string, unknown>;
+};
+
+export type StrategicActionEvaluation = {
+  candidateId: string;
+  objectiveScore: number;
+  governingScore: number;
+  doctrineCompatibility: number;
+  institutionalFeasibility: number;
+  finalScore: number;
+  blocked: boolean;
+  reasons: string[];
+  constraints: Array<{ id: string; level: PoliticalConstraint['level']; appliedPenalty: number; overridden: boolean }>;
 };
 
 export type StrategicPlan = {
