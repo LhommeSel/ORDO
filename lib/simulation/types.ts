@@ -590,6 +590,38 @@ export type AIJobKind =
 export type AIJobPriority = 'background' | 'normal' | 'urgent';
 export type AIJobBudgetTier = 'economy' | 'standard' | 'deep';
 
+export type AIJobEffectHint = {
+  kind:
+    | 'relation_shift'
+    | 'capacity_pressure'
+    | 'stakeholder_reaction'
+    | 'dossier_update'
+    | 'actor_materialization'
+    | 'historical_manifestation'
+    | 'interpreted_action';
+  targetIds: EntityId[];
+  magnitude: 'minor' | 'moderate' | 'major';
+  direction: 'positive' | 'negative' | 'mixed';
+  reason: string;
+};
+
+/** Résultat consultatif conservé avec la tâche. Aucun effet n'est appliqué sans adaptateur métier. */
+export type AIJobOutcome = {
+  headline: string;
+  assessment: string;
+  proposals: Array<{
+    label: string;
+    action: string;
+    rationale: string;
+    likelyReactions: string[];
+    uncertainties: string[];
+    effectHints: AIJobEffectHint[];
+  }>;
+  requestedFacts: string[];
+  contextFactIds: string[];
+  approximateInputTokens: number;
+};
+
 export type AIJobBase = {
   id: string;
   kind: AIJobKind;
@@ -601,6 +633,7 @@ export type AIJobBase = {
   resolvedAt?: ISODate;
   attempts: number;
   error?: string;
+  outcome?: AIJobOutcome;
 };
 
 export type AIJobPatch = Partial<Omit<AIJobBase, 'id' | 'kind' | 'schemaVersion'>>;
