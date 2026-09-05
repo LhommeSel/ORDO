@@ -1,6 +1,7 @@
 import { createAIJobAIRequest, toAIJobOutcome, type AIJobAIResponse } from '../../ai/job-contracts';
 import { commitWorldAction } from '../ledger';
 import { applyPowerStruggleAIProposal } from '../power-struggles';
+import { applyEnergyDiplomacyAIAnswer } from '../energy-negotiation';
 import type { AIJob, ActionKind, WorldState } from '../types';
 import { compileContextForAIJob } from './context';
 
@@ -53,6 +54,11 @@ export async function executeAIJob(
     return { ok: true, state: applied.state, response: payload };
   }
   const outcome = toAIJobOutcome(payload.answer, context);
+  if (job.kind === 'diplomacy') {
+    const applied = applyEnergyDiplomacyAIAnswer(state, job.id, payload.answer, outcome);
+    if (!applied.ok) return { ok: false, state, response: { ok: false, code: 'upstream_error', message: `Le moteur diplomatique a refusé la réponse : ${applied.errors.join(' ')}` } };
+    return { ok: true, state: applied.state, response: payload };
+  }
   const next = commitWorldAction(state, {
     kind: actionKindByJob[job.kind],
     actorId: state.countries[job.actorId] ? job.actorId : state.playerCountryId,

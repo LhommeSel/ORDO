@@ -40,6 +40,15 @@ export type AIJobAIAnswer = {
   proposals: AIJobAIProposal[];
   requestedFacts: string[];
   powerStrugglePlan: PowerStruggleAIProposal | null;
+  diplomaticMove: AIDiplomaticMove | null;
+};
+
+export type AIDiplomaticMove = {
+  kind: 'accept' | 'counter' | 'refuse' | 'message';
+  annualVolume: number | null;
+  durationYears: number | null;
+  pricePosture: 'market' | 'supplier_premium' | 'buyer_discount' | null;
+  clauses: Array<'delivery_priority' | 'infrastructure_investment' | 'local_content' | 'technology_cooperation' | 'diplomatic_consultation'>;
 };
 
 export type AIPrivateDecision = {
@@ -199,16 +208,31 @@ function isPrivateDecision(value: unknown): value is AIPrivateDecision | null {
     && isString(value.confidentialRationale, 1_200, 1));
 }
 
+function isDiplomaticMove(value: unknown): value is AIDiplomaticMove | null {
+  if (value === null) return true;
+  if (!isRecord(value)
+    || typeof value.kind !== 'string' || !['accept', 'counter', 'refuse', 'message'].includes(value.kind)
+    || !(value.annualVolume === null || isNumber(value.annualVolume, 0.01, 100_000))
+    || !(value.durationYears === null || isNumber(value.durationYears, 1, 30))
+    || !(value.pricePosture === null || ['market', 'supplier_premium', 'buyer_discount'].includes(String(value.pricePosture)))
+    || !Array.isArray(value.clauses) || value.clauses.length > 3
+    || !value.clauses.every((item) => typeof item === 'string' && ['delivery_priority', 'infrastructure_investment', 'local_content', 'technology_cooperation', 'diplomatic_consultation'].includes(item))) return false;
+  return value.kind !== 'counter' || (value.annualVolume !== null && value.durationYears !== null && value.pricePosture !== null);
+}
+
 export function isAIJobAIModelAnswer(value: unknown, kind?: AIJobKind): value is AIJobAIModelAnswer {
   if (!isRecord(value) || !isString(value.headline, 180, 1) || !isString(value.assessment, 1_500, 1)
     || !isString(value.publicMessage, 1_200, 1)
     || !Array.isArray(value.proposals) || value.proposals.length < 1 || value.proposals.length > 3
     || !isStringArray(value.requestedFacts, 5, 240) || !isPowerStrugglePlan(value.powerStrugglePlan)
+    || !isDiplomaticMove(value.diplomaticMove)
     || !isPrivateDecision(value.privateDecision)) return false;
   if (kind === 'power_struggle' && value.powerStrugglePlan === null) return false;
   if (kind && kind !== 'power_struggle' && value.powerStrugglePlan !== null) return false;
   if (kind === 'diplomacy' && value.privateDecision === null) return false;
   if (kind && kind !== 'diplomacy' && value.privateDecision !== null) return false;
+  if (kind === 'diplomacy' && value.diplomaticMove === null) return false;
+  if (kind && kind !== 'diplomacy' && value.diplomaticMove !== null) return false;
   return value.proposals.every((proposal) => isRecord(proposal)
     && isString(proposal.label, 160, 1) && isString(proposal.action, 900, 1)
     && isString(proposal.rationale, 900, 1) && isStringArray(proposal.likelyReactions, 5, 400)
@@ -269,9 +293,21 @@ const privateDecisionSchema = {
   },
 } as const;
 
+const diplomaticMoveSchema = {
+  type: 'object', additionalProperties: false,
+  required: ['kind', 'annualVolume', 'durationYears', 'pricePosture', 'clauses'],
+  properties: {
+    kind: { type: 'string', enum: ['accept', 'counter', 'refuse', 'message'] },
+    annualVolume: { anyOf: [{ type: 'number', minimum: 0.01, maximum: 100000 }, { type: 'null' }] },
+    durationYears: { anyOf: [{ type: 'number', minimum: 1, maximum: 30 }, { type: 'null' }] },
+    pricePosture: { anyOf: [{ type: 'string', enum: ['market', 'supplier_premium', 'buyer_discount'] }, { type: 'null' }] },
+    clauses: { type: 'array', maxItems: 3, items: { type: 'string', enum: ['delivery_priority', 'infrastructure_investment', 'local_content', 'technology_cooperation', 'diplomatic_consultation'] } },
+  },
+} as const;
+
 export const aiJobAIJsonSchema = {
   type: 'object', additionalProperties: false,
-  required: ['headline', 'assessment', 'publicMessage', 'proposals', 'requestedFacts', 'powerStrugglePlan', 'privateDecision'],
+  required: ['headline', 'assessment', 'publicMessage', 'proposals', 'requestedFacts', 'powerStrugglePlan', 'diplomaticMove', 'privateDecision'],
   properties: {
     headline: { type: 'string', maxLength: 180 },
     assessment: { type: 'string', maxLength: 1500 },
@@ -288,6 +324,7 @@ export const aiJobAIJsonSchema = {
     } },
     requestedFacts: { type: 'array', maxItems: 5, items: { type: 'string', maxLength: 240 } },
     powerStrugglePlan: { anyOf: [powerPlanSchema, { type: 'null' }] },
+    diplomaticMove: { anyOf: [diplomaticMoveSchema, { type: 'null' }] },
     privateDecision: { anyOf: [privateDecisionSchema, { type: 'null' }] },
   },
 } as const;

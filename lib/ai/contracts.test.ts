@@ -4,27 +4,21 @@ import { createAIJobAIRequest, parseAIJobAIRequest, type AIJobAIResponse } from 
 import { compileContextForAIJob, selectSupplementalFacts } from '../simulation/ai/context';
 import { executeAIJob } from '../simulation/ai/executor';
 import { createFrance2000World } from '../simulation/scenario-2000';
+import { createAdministrativeEnergyOffer, startEnergyNegotiationAI } from '../simulation/energy-negotiation';
 import type { GeneralAIJob } from '../simulation/types';
 
 test('le pipeline IA compile un contexte visible, valide le contrat et conserve une réponse sans effet libre', async () => {
   const initial = createFrance2000World();
   const longIntent = `Négocier un contrat gazier de long terme avec l’Algérie.\n${'Clause détaillée à examiner avec prudence. '.repeat(450)}`;
-  const job: GeneralAIJob = {
-    id: 'diplomacy:test-algeria-gas',
-    kind: 'diplomacy',
-    schemaVersion: 1,
-    priority: 'normal',
-    budgetTier: 'economy',
-    status: 'pending',
-    requestedAt: initial.currentDate,
-    attempts: 0,
-    inputText: longIntent,
-    purpose: 'Négocier un contrat gazier avec DZA',
-    actorId: 'FRA',
-    reasons: ['Diversifier les approvisionnements français.'],
-    context: { targetCountryId: 'DZA', resource: 'gas' },
-  };
-  const world = { ...initial, aiJobs: { ...initial.aiJobs, [job.id]: job } };
+  const draft = createAdministrativeEnergyOffer(initial, 'DZA', 'gas');
+  assert.equal(draft.ok, true);
+  if (!draft.ok) return;
+  const started = startEnergyNegotiationAI(initial, draft.offer);
+  assert.equal(started.ok, true);
+  if (!started.ok) return;
+  const baseJob = started.state.aiJobs[started.jobId] as GeneralAIJob;
+  const job: GeneralAIJob = { ...baseJob, budgetTier: 'economy', inputText: longIntent };
+  const world = { ...started.state, aiJobs: { ...started.state.aiJobs, [job.id]: job } };
   const context = compileContextForAIJob(world, job);
   const visible = [...context.knownFacts, ...context.privateDecisionFacts];
   assert.ok(context.knownFacts.some((item) => item.id === 'country:FRA:strategy'));
@@ -57,6 +51,10 @@ test('le pipeline IA compile un contexte visible, valide le contrat et conserve 
       }],
       requestedFacts: ['Capacité ferme de transit vers la France'],
       powerStrugglePlan: null,
+      diplomaticMove: {
+        kind: 'counter', annualVolume: draft.offer.annualVolume * 0.9,
+        durationYears: 15, pricePosture: 'supplier_premium', clauses: ['infrastructure_investment'],
+      },
     },
     usage: { model: 'gpt-5.6-luna', inputTokens: 800, outputTokens: 180, estimatedCostUsd: 0.000376, remainingSessionRequestsToday: 19 },
   };
@@ -65,5 +63,8 @@ test('le pipeline IA compile un contexte visible, valide le contrat et conserve 
   assert.equal(result.ok, true);
   assert.equal(result.state.aiJobs[job.id].status, 'resolved');
   assert.equal(result.state.aiJobs[job.id].outcome?.headline, successful.answer.headline);
+  assert.equal(result.state.diplomaticSessions[draft.offer.id].status, 'countered');
+  assert.equal(result.state.diplomaticSessions[draft.offer.id].turns.length, 2);
+  assert.match(result.state.diplomaticSessions[draft.offer.id].terms.priceSummary, /prime de sécurité/);
   assert.equal(result.state.relations['FRA:DZA'], undefined, 'un effectHint ne doit jamais modifier directement le monde');
 });

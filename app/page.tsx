@@ -13,11 +13,11 @@ import { Textarea } from '@/components/ui/textarea';
 import {
   advanceWorld, answerAdvisorQuestion, armamentAdvisorFacts,
   acceptEnergyOffer, adjustEnergyOffer, assessStrategicPlan,
-  createAdministrativeEnergyOffer, createFrance2000World, deserializeWorld,
+  continueEnergyNegotiationAI, createAdministrativeEnergyOffer, createFrance2000World, deserializeWorld,
   dossierUnreadCount, dossiersRequiringAttention, dossierUpdatesSinceView, energyBalance,
-  evaluatePoliticalPathway, markDossierViewed, productEvidenceSummary,
+  energyCounterpartResponseFromSession, evaluatePoliticalPathway, executeAIJob, markDossierViewed, productEvidenceSummary,
   enactPrototypeGovernmentMeasure, reactionLevelLabels, reactionTrendLabels,
-  sendEnergyOffer, serializeWorld, visibleLedger, visibleStakeholderReactions,
+  sendEnergyOffer, serializeWorld, startEnergyNegotiationAI, visibleLedger, visibleStakeholderReactions,
   structuralDiagnosisGroups,
   setDossierFollowed,
   type AdvisorAnswer, type EnergyAdministrativeOffer, type EnergyCounterpartResponse,
@@ -345,12 +345,16 @@ const adjustmentLabels: Record<EnergyOfferAdjustment, string> = {
 };
 
 function EnergyNegotiationPanel({
-  world, offer, response, signedContractId, showAdjustments, onSend, onAdjust, onSign, onToggleAdjustments, onClose,
+  world, offer, response, signedContractId, showAdjustments, onSend, onSendAI, onReplyAI, onAdjust, onSign, onToggleAdjustments, onClose,
+  aiNegotiationStatus, aiNegotiationMessage, playerReply, onPlayerReplyChange,
 }: {
   world: WorldState; offer: EnergyAdministrativeOffer; response: EnergyCounterpartResponse | null;
   signedContractId: string | null; showAdjustments: boolean; onSend: () => void;
+  onSendAI: () => void; onReplyAI: () => void;
   onAdjust: (kind: EnergyOfferAdjustment) => void; onSign: () => void;
   onToggleAdjustments: () => void; onClose: () => void;
+  aiNegotiationStatus: 'idle' | 'loading' | 'ready' | 'unavailable'; aiNegotiationMessage: string;
+  playerReply: string; onPlayerReplyChange: (value: string) => void;
 }) {
   const supplier = world.countries[offer.supplierId];
   const leadership = world.leadership[offer.supplierId];
@@ -364,7 +368,7 @@ function EnergyNegotiationPanel({
       <div className="grid gap-px bg-border sm:grid-cols-2 lg:grid-cols-4">
         <Stat label="Couverture" value={`${offer.coverageShare.toFixed(1)} %`} detail="des besoins annuels" />
         <Stat label="Durée" value={`${offer.durationYears} ans`} detail="accord de long terme" />
-        <Stat label="Prix" value={offer.pricePosture === 'market' ? 'Marché' : 'Décote'} detail={offer.priceSummary} />
+        <Stat label="Prix" value={offer.pricePosture === 'market' ? 'Marché' : offer.pricePosture === 'seller_premium' ? 'Prime fournisseur' : 'Décote'} detail={offer.priceSummary} />
         <Stat label="Moyens" value={offer.diplomaticEffort} detail={`${offer.adjustments.length} ajustement(s)`} />
       </div>
       <p className="text-sm text-muted-foreground">L’administration a dimensionné l’offre selon les <b className="text-foreground">besoins français</b> et la <b className="text-foreground">capacité réellement disponible</b> du fournisseur. Vous pouvez l’envoyer telle quelle.</p>
@@ -380,8 +384,15 @@ function EnergyNegotiationPanel({
         <p className="mt-2 text-sm">{response.message}</p>
         <ul className="mt-2 text-xs text-muted-foreground">{response.reasons.map((reason) => <li key={reason}>— {reason}</li>)}</ul>
       </div>}
+      {aiNegotiationStatus !== 'idle' && <div className={`border p-3 text-xs ${aiNegotiationStatus === 'unavailable' ? 'border-amber-400/50 text-amber-200' : 'border-primary/30 text-muted-foreground'}`}>{aiNegotiationStatus === 'loading' && <LoaderCircle className="mr-2 inline size-3 animate-spin" />}{aiNegotiationMessage}</div>}
+      {response && response.status !== 'refused' && !signedContractId && world.diplomaticSessions[offer.id]?.aiMode === 'ai' && <div className="border border-border bg-muted/20 p-3">
+        <label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Répondre à l’interlocuteur</label>
+        <Textarea value={playerReply} onChange={(event) => onPlayerReplyChange(event.target.value)} placeholder="Ex. Nous acceptons la prime si vous garantissez la priorité de livraison et un réexamen après cinq ans." className="mt-2 min-h-24" />
+        <Button className="mt-2" variant="outline" disabled={playerReply.trim().length < 3 || aiNegotiationStatus === 'loading'} onClick={onReplyAI}><Send className="size-4" /> Poursuivre avec Luna</Button>
+      </div>}
       {signedContractId ? <div className="flex items-center gap-3 border border-emerald-400/50 bg-emerald-400/5 p-4 text-sm"><CheckCircle2 className="size-5 text-emerald-300" /><div><b>Accord signé et activé.</b><div className="font-mono text-[10px] text-muted-foreground">{signedContractId}</div></div></div> : <div className="flex flex-wrap gap-2">
-        {!response && <Button onClick={onSend}><Send className="size-4" /> Envoyer la proposition</Button>}
+        {!response && <Button onClick={onSend}><Send className="size-4" /> Résolution locale</Button>}
+        {!response && <Button variant="outline" disabled={aiNegotiationStatus === 'loading'} onClick={onSendAI}>{aiNegotiationStatus === 'loading' ? <LoaderCircle className="size-4 animate-spin" /> : <BrainCircuit className="size-4" />} Négocier avec Luna</Button>}
         {response && response.status !== 'refused' && <Button onClick={onSign}><CheckCircle2 className="size-4" /> {response.status === 'countered' ? 'Accepter la contre-proposition' : 'Signer l’accord'}</Button>}
         <Button variant="outline" onClick={onToggleAdjustments}><SlidersHorizontal className="size-4" /> Ajuster</Button>
         <Button variant="ghost" onClick={onClose}>Abandonner</Button>
@@ -401,8 +412,11 @@ function AdvisorPanel({ world, onWorldChange, onNotice }: { world: WorldState; o
   const [response, setResponse] = useState<EnergyCounterpartResponse | null>(null);
   const [showAdjustments, setShowAdjustments] = useState(false);
   const [signedContractId, setSignedContractId] = useState<string | null>(null);
+  const [aiNegotiationStatus, setAiNegotiationStatus] = useState<'idle' | 'loading' | 'ready' | 'unavailable'>('idle');
+  const [aiNegotiationMessage, setAiNegotiationMessage] = useState('');
+  const [playerReply, setPlayerReply] = useState('');
   const resetNegotiation = () => {
-    setOffer(null); setResponse(null); setSignedContractId(null);
+    setOffer(null); setResponse(null); setSignedContractId(null); setPlayerReply(''); setAiNegotiationStatus('idle'); setAiNegotiationMessage('');
   };
   const prepareLocalAnswer = () => {
     if (question.trim().length < 3) return;
@@ -460,6 +474,41 @@ function AdvisorPanel({ world, onWorldChange, onNotice }: { world: WorldState; o
     onWorldChange(result.state); setResponse(result.response); setOffer(result.response.offer);
     onNotice(`Réponse reçue de ${world.countries[offer.supplierId]?.name}.`);
   };
+  const aiSessionId = () => {
+    const storageKey = 'ordo-ai-session-v1';
+    let sessionId = localStorage.getItem(storageKey);
+    if (!sessionId) { sessionId = crypto.randomUUID(); localStorage.setItem(storageKey, sessionId); }
+    return sessionId;
+  };
+  const resolveDiplomacyJob = async (pendingWorld: WorldState, jobId: string, diplomaticSessionId: string) => {
+    setAiNegotiationStatus('loading'); setAiNegotiationMessage('Luna prépare la réponse du pays à partir de ses intérêts privés…');
+    onWorldChange(pendingWorld);
+    const result = await executeAIJob(pendingWorld, jobId, aiSessionId());
+    if (!result.ok) {
+      setAiNegotiationStatus('unavailable'); setAiNegotiationMessage(result.response.message);
+      return;
+    }
+    const session = result.state.diplomaticSessions[diplomaticSessionId];
+    const answer = result.response.answer;
+    onWorldChange(result.state);
+    setOffer(energyCounterpartResponseFromSession(session).offer);
+    setResponse(energyCounterpartResponseFromSession(session, [answer.assessment, ...answer.proposals.slice(0, 1).map((proposal) => proposal.rationale)]));
+    setAiNegotiationStatus('ready');
+    setAiNegotiationMessage(`Réponse Luna validée par le moteur · coût estimé $${result.response.usage.estimatedCostUsd.toFixed(4)}.`);
+  };
+  const sendWithAI = async () => {
+    if (!offer || aiNegotiationStatus === 'loading') return;
+    const started = startEnergyNegotiationAI(world, offer);
+    if (!started.ok) return onNotice(started.error);
+    await resolveDiplomacyJob(started.state, started.jobId, started.sessionId);
+  };
+  const replyWithAI = async () => {
+    if (!offer || playerReply.trim().length < 3 || aiNegotiationStatus === 'loading') return;
+    const continued = continueEnergyNegotiationAI(world, offer.id, playerReply);
+    if (!continued.ok) return onNotice(continued.error);
+    setPlayerReply(''); setResponse(null);
+    await resolveDiplomacyJob(continued.state, continued.jobId, offer.id);
+  };
   const sign = () => {
     if (!response) return;
     const result = acceptEnergyOffer(world, response.offer);
@@ -503,7 +552,7 @@ function AdvisorPanel({ world, onWorldChange, onNotice }: { world: WorldState; o
         {answer.interpretation.kind === 'energy_contract' && <div className="mt-4 border-l-2 border-primary bg-muted/20 p-3 text-xs"><b>Demande comprise :</b> négociation énergétique · {answer.interpretation.resource === 'gas' ? 'gaz' : answer.interpretation.resource === 'oil' ? 'pétrole' : 'ressource à préciser'} · {answer.interpretation.targetLabel ?? 'fournisseur à recommander'} <span className="text-muted-foreground">· confiance {answer.interpretation.confidence}%</span>{answer.interpretation.warnings.map((warning) => <div key={warning} className="mt-2 text-amber-300">⚠ {warning}</div>)}</div>}
         <div className="mt-4 flex flex-wrap gap-2">{answer.facts.map((fact) => <span key={fact.id} title={`${fact.sourcePath} · confiance ${fact.confidence}%`} className="border border-border bg-muted/30 px-2 py-1 text-xs"><b>{fact.label}</b> · {fact.value}</span>)}</div>
       </div>
-      {offer && <EnergyNegotiationPanel world={world} offer={offer} response={response} signedContractId={signedContractId} showAdjustments={showAdjustments} onSend={send} onAdjust={adjust} onSign={sign} onToggleAdjustments={() => setShowAdjustments((value) => !value)} onClose={() => { setOffer(null); setResponse(null); setSignedContractId(null); }} />}
+      {offer && <EnergyNegotiationPanel world={world} offer={offer} response={response} signedContractId={signedContractId} showAdjustments={showAdjustments} onSend={send} onSendAI={sendWithAI} onReplyAI={replyWithAI} onAdjust={adjust} onSign={sign} onToggleAdjustments={() => setShowAdjustments((value) => !value)} onClose={resetNegotiation} aiNegotiationStatus={aiNegotiationStatus} aiNegotiationMessage={aiNegotiationMessage} playerReply={playerReply} onPlayerReplyChange={setPlayerReply} />}
       {answer.plans.map((plan) => <PlanCard key={plan.id} world={world} plan={plan} onPrepare={prepare} />)}
     </section>
   </div>;
