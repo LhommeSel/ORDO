@@ -63,6 +63,8 @@ test('une demande simple produit une proposition gazière administrativement ré
 
 test('une négociation acceptée devient un contrat physique actif', () => {
   const initial = createFrance2000World();
+  assert.equal(initial.leadership.FRA.figures.length, 2);
+  assert.equal(initial.leadership.DZA.figures[0].name, 'Abdelaziz Bouteflika');
   const draft = createAdministrativeEnergyOffer(initial, 'DZA', 'gas');
   assert.equal(draft.ok, true);
   if (!draft.ok) return;
@@ -70,10 +72,16 @@ test('une négociation acceptée devient un contrat physique actif', () => {
   assert.equal(sent.ok, true);
   if (!sent.ok) return;
   assert.equal(sent.response.status, 'accepted');
+  const openSession = sent.state.diplomaticSessions[draft.offer.id];
+  assert.equal(openSession.status, 'awaiting_signature');
+  assert.equal(openSession.turns.length, 2);
+  assert.equal(openSession.privatePosition.ownerCountryId, 'DZA');
   const signed = acceptEnergyOffer(sent.state, sent.response.offer);
   assert.equal(signed.ok, true);
   if (!signed.ok) return;
   assert.equal(signed.state.energyContracts[signed.contractId].status, 'active');
+  assert.equal(signed.state.diplomaticSessions[draft.offer.id].status, 'active');
+  assert.equal(signed.state.diplomaticSessions[draft.offer.id].linkedContractId, signed.contractId);
   assert.ok(signed.state.actions.some((action) => action.origin === 'player' && action.intent.includes(signed.contractId)));
   assert.ok((energyBalance(signed.state, 'FRA', 'gas')?.imports ?? 0) > (energyBalance(initial, 'FRA', 'gas')?.imports ?? 0));
   const dossier = signed.state.strategicDossiers['energy-FRA-DZA-gas'];

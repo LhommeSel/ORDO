@@ -353,6 +353,7 @@ function EnergyNegotiationPanel({
   onToggleAdjustments: () => void; onClose: () => void;
 }) {
   const supplier = world.countries[offer.supplierId];
+  const leadership = world.leadership[offer.supplierId];
   const resource = offer.resource === 'gas' ? 'gaz' : 'pétrole';
   return <section className="border border-primary/50 bg-card/90">
     <div className="flex items-start justify-between gap-4 border-b border-border p-4">
@@ -367,6 +368,7 @@ function EnergyNegotiationPanel({
         <Stat label="Moyens" value={offer.diplomaticEffort} detail={`${offer.adjustments.length} ajustement(s)`} />
       </div>
       <p className="text-sm text-muted-foreground">L’administration a dimensionné l’offre selon les <b className="text-foreground">besoins français</b> et la <b className="text-foreground">capacité réellement disponible</b> du fournisseur. Vous pouvez l’envoyer telle quelle.</p>
+      {leadership && <div className="border-l-2 border-primary bg-primary/5 p-3 text-xs"><b>Décision effective :</b> {leadership.figures.map((figure) => `${figure.name} (${figure.authorityShare} % d’autorité)`).join(' · ')}<span className="mt-1 block text-muted-foreground">Le moteur combine leurs orientations avec les contraintes de l’appareil politique du pays.</span></div>}
       {showAdjustments && !signedContractId && <div className="border border-border bg-muted/20 p-3">
         <div className="mb-2 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Ajustements facultatifs</div>
         <div className="flex flex-wrap gap-2">{(Object.keys(adjustmentLabels) as EnergyOfferAdjustment[]).map((kind) => <Button key={kind} size="sm" variant={offer.adjustments.includes(kind) ? 'default' : 'outline'} disabled={offer.adjustments.includes(kind)} onClick={() => onAdjust(kind)}>{adjustmentLabels[kind]}</Button>)}</div>
@@ -518,6 +520,7 @@ function DossiersPanel({ world, selectedId, onSelect, onWorldChange }: {
   const dossiers = Object.values(world.strategicDossiers).sort((a, b) => rank[b.importance] - rank[a.importance] || b.updatedAt.localeCompare(a.updatedAt));
   const selected = dossiers.find((dossier) => dossier.id === selectedId) ?? dossiers[0];
   const updates = selected ? dossierUpdatesSinceView(world, selected.id) : [];
+  const diplomaticSession = selected ? Object.values(world.diplomaticSessions).find((session) => session.linkedDossierId === selected.id) : undefined;
   if (!selected) return <div className="border border-border bg-card/70 p-8 text-center text-sm text-muted-foreground">Aucun dossier stratégique connu.</div>;
   return <div className="grid gap-4 xl:grid-cols-[.72fr_1.28fr]">
     <section className="border border-border bg-card/70">
@@ -541,6 +544,10 @@ function DossiersPanel({ world, selectedId, onSelect, onWorldChange }: {
       {(selected.pendingDecisions.length > 0 || selected.commitments.length > 0) && <div className="grid gap-3 lg:grid-cols-2">
         <div className="border border-border bg-card/70 p-4"><div className="font-mono text-[10px] uppercase tracking-wider text-amber-300">Décisions attendues</div><ul className="mt-2 space-y-2 text-sm">{selected.pendingDecisions.length ? selected.pendingDecisions.map((item) => <li key={item}>— {item}</li>) : <li className="text-muted-foreground">Aucun arbitrage immédiat.</li>}</ul></div>
         <div className="border border-border bg-card/70 p-4"><div className="font-mono text-[10px] uppercase tracking-wider text-emerald-300">Engagements mémorisés</div><ul className="mt-2 space-y-2 text-sm">{selected.commitments.length ? selected.commitments.map((item) => <li key={item}>— {item}</li>) : <li className="text-muted-foreground">Aucun engagement formel.</li>}</ul></div>
+      </div>}
+      {diplomaticSession && <div className="border border-border bg-card/70">
+        <div className="border-b border-border p-4"><div className="font-semibold">Échanges diplomatiques conservés</div><div className="mt-1 text-xs text-muted-foreground">Statut : {diplomaticSession.status} · résolution {diplomaticSession.aiMode === 'ai' ? 'Luna' : 'moteur local'}</div></div>
+        <div className="divide-y divide-border/60">{diplomaticSession.turns.map((turn) => <div key={turn.id} className="p-4"><div className="text-xs font-semibold">{world.countries[turn.speakerId]?.flag} {world.countries[turn.speakerId]?.name ?? turn.speakerId}</div><p className="mt-1 text-sm text-muted-foreground">{turn.publicMessage}</p></div>)}</div>
       </div>}
       <div className="border border-border bg-card/70">
         <div className="flex items-center justify-between gap-3 border-b border-border p-4"><div><div className="font-semibold">Chronologie du dossier</div><div className="text-xs text-muted-foreground">{updates.length} changement(s) depuis la dernière consultation</div></div>{updates.length > 0 && <Button size="sm" variant="outline" onClick={() => onWorldChange(markDossierViewed(world, selected.id))}><Eye className="size-4" /> Marquer comme consulté</Button>}</div>

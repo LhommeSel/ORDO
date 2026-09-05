@@ -4,6 +4,7 @@ import { createStructuralProfiles2000 } from './structural-data-2000';
 import { createStakeholderGroups2000 } from './stakeholder-data-2000';
 import { createTradeFlows2000 } from './trade-data-2000';
 import { createDecisionProfiles2000 } from './decision-data-2000';
+import { createLeadership2000, createPoliticalApparatus2000 } from './political-identity-data-2000';
 
 export type SaveEnvelope = {
   format: 'ordo-world';
@@ -64,12 +65,15 @@ export function deserializeWorld(raw: string): WorldState {
     worldEconomy,
     tradeFlows: restored.tradeFlows ?? createTradeFlows2000(),
     decisionProfiles: restored.decisionProfiles ?? createDecisionProfiles2000(restored.countries),
+    leadership: restored.leadership ?? createLeadership2000(restored.countries),
+    politicalApparatus: restored.politicalApparatus ?? createPoliticalApparatus2000(restored.countries),
     structuralProfiles,
     stakeholderGroups: restored.stakeholderGroups ?? createStakeholderGroups2000(restored.countries, structuralProfiles),
     stakeholderReactions: restored.stakeholderReactions ?? {},
     powerActors: restored.powerActors ?? {},
     powerStruggleCampaigns: restored.powerStruggleCampaigns ?? {},
     aiJobs: restored.aiJobs ?? (restored as unknown as { powerStruggleAIRequests?: WorldState['aiJobs'] }).powerStruggleAIRequests ?? {},
+    diplomaticSessions: restored.diplomaticSessions ?? {},
   };
 }
 

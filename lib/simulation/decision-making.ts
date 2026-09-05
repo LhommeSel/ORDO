@@ -39,6 +39,54 @@ function doctrineCompatibility(government: GovernmentDoctrine, requested?: Parti
   return clamp(100 - distance, 0, 100);
 }
 
+function leadershipDisposition(state: WorldState, candidate: StrategicActionCandidate, doctrineCompatibilityScore: number) {
+  const leadership = state.leadership?.[candidate.actorId];
+  if (!leadership?.figures.length) return 50;
+  const totalAuthority = leadership.figures.reduce((sum, figure) => sum + figure.authorityShare, 0) || 1;
+  const horizonYears = typeof candidate.metadata?.timeHorizonYears === 'number' ? candidate.metadata.timeHorizonYears : 1;
+  const disposition = leadership.figures.reduce((sum, figure) => {
+    const traits = figure.traits;
+    let score = 50;
+    score += (traits.riskAppetite - 50) * candidate.risk / 230;
+    if (candidate.signals.includes('military_escalation')) score += (traits.belligerence - 50) * 0.32;
+    if (candidate.signals.includes('commercial_deal')) score += (traits.transactionality - 50) * 0.28;
+    if (candidate.signals.includes('alliance_cooperation')) score += (traits.reliability - 50) * 0.18;
+    if (candidate.signals.includes('alliance_breach')) score -= (traits.reliability - 50) * 0.3;
+    score += (traits.patience - 50) * Math.min(1, horizonYears / 10) * 0.18;
+    score += (doctrineCompatibilityScore - 50) * traits.ideologicalCommitment / 500;
+    score += (traits.flexibility - 50) * candidate.urgency / 500;
+    return sum + clamp(score, 0, 100) * figure.authorityShare;
+  }, 0) / totalAuthority;
+  const coordinationPenalty = (100 - leadership.executiveCoordination) * Math.max(0, candidate.publicSalience - 35) / 260;
+  return clamp(disposition - coordinationPenalty, 0, 100);
+}
+
+function apparatusSupport(state: WorldState, candidate: StrategicActionCandidate) {
+  const apparatus = state.politicalApparatus?.[candidate.actorId];
+  if (!apparatus?.currents.length) return 50;
+  const totalWeight = apparatus.currents.reduce((sum, current) => sum + current.weight, 0) || 1;
+  const support = apparatus.currents.reduce((sum, current) => {
+    const supported = candidate.signals.filter((signal) => current.supportedSignals.includes(signal)).length;
+    const opposed = candidate.signals.filter((signal) => current.opposedSignals.includes(signal)).length;
+    const criterionEntries = Object.entries(candidate.outcomes) as Array<[DecisionCriterion, number]>;
+    let criterionScore = 0;
+    let criterionWeight = 0;
+    for (const [criterion, outcome] of criterionEntries) {
+      const preference = current.criterionPreferences[criterion] ?? 0;
+      criterionScore += clamp(outcome, -100, 100) * preference;
+      criterionWeight += preference;
+    }
+    const material = criterionWeight ? criterionScore / criterionWeight : 0;
+    const reach = current.institutionalReach / 100;
+    const score = 50 + supported * 11 - opposed * 18 + material * 0.22 * reach;
+    return sum + clamp(score, 0, 100) * current.weight;
+  }, 0) / totalWeight;
+  const inertiaPenalty = candidate.signals.some((signal) => apparatus.currents.some((current) => current.opposedSignals.includes(signal)))
+    ? apparatus.inertia * 0.08
+    : 0;
+  return clamp(support - inertiaPenalty, 0, 100);
+}
+
 export function evaluateStrategicAction(state: WorldState, candidate: StrategicActionCandidate): StrategicActionEvaluation {
   const country = state.countries[candidate.actorId];
   const profile = state.decisionProfiles[candidate.actorId];
@@ -46,6 +94,8 @@ export function evaluateStrategicAction(state: WorldState, candidate: StrategicA
   const objectiveScore = weightedOutcome(candidate, nationalWeights);
   const governingScore = weightedOutcome(candidate, profile.criterionWeights);
   const compatibility = doctrineCompatibility(country.politics.doctrine, candidate.doctrine);
+  const leaderScore = leadershipDisposition(state, candidate, compatibility);
+  const apparatusScore = apparatusSupport(state, candidate);
   const pathway = evaluatePoliticalPathway(state, candidate.actorId, {
     requiredAuthority: candidate.requiredAuthority, doctrine: candidate.doctrine ?? {},
     publicSalience: candidate.publicSalience, administrativeComplexity: candidate.administrativeComplexity,
@@ -55,6 +105,8 @@ export function evaluateStrategicAction(state: WorldState, candidate: StrategicA
   const reasons: string[] = [
     `Intérêt matériel estimé : ${round(objectiveScore)}`,
     `Compatibilité avec les priorités du pouvoir : ${round(governingScore)}`,
+    `Disposition de la direction effective : ${round(leaderScore)}`,
+    `Soutien de l’appareil politique : ${round(apparatusScore)}`,
   ];
   const constraintResults: StrategicActionEvaluation['constraints'] = [];
   let constraintPenalty = 0;
@@ -92,13 +144,15 @@ export function evaluateStrategicAction(state: WorldState, candidate: StrategicA
   const capacityPenalty = candidate.resourceCost * (110 - profile.adaptability) / 100 * 0.2;
   const doctrineContribution = (compatibility - 50) * 0.18;
   const institutionContribution = (institutionalFeasibility - 50) * 0.22;
-  const finalScore = governingScore * 0.5 + objectiveScore * 0.18 + doctrineContribution + institutionContribution
+  const finalScore = governingScore * 0.34 + objectiveScore * 0.16 + leaderScore * 0.14 + apparatusScore * 0.12
+    + doctrineContribution + institutionContribution
     + candidate.urgency * 0.13 - riskPenalty - capacityPenalty - constraintPenalty;
   if (riskPenalty >= 12) reasons.push('Le risque dépasse la tolérance habituelle du pouvoir.');
   if (constraintPenalty > 0) reasons.push(`Coût politique des préférences et interdits : ${round(constraintPenalty)}.`);
   return {
     candidateId: candidate.id, objectiveScore: round(objectiveScore), governingScore: round(governingScore),
     doctrineCompatibility: round(compatibility), institutionalFeasibility: round(institutionalFeasibility),
+    leaderDisposition: round(leaderScore), apparatusSupport: round(apparatusScore),
     finalScore: round(finalScore), blocked, reasons, constraints: constraintResults,
   };
 }

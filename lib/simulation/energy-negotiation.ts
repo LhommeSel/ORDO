@@ -1,7 +1,8 @@
 import { energyBalance, nodeAvailableExport, activateEnergyContract, proposeEnergyContract } from './energy';
 import { createDossier, recordDossierUpdate } from './dossiers';
+import { evaluateStrategicAction } from './decision-making';
 import { commitWorldAction, relationBetween } from './ledger';
-import type { CountryId, EnergyResource, ISODate, WorldState } from './types';
+import type { CountryId, DiplomaticEnergyTerms, DiplomaticSession, EnergyResource, ISODate, StrategicActionCandidate, WorldState } from './types';
 
 export type EnergyOfferAdjustment =
   | 'more_volume'
@@ -44,6 +45,13 @@ const addYears = (date: ISODate, years: number) => {
 
 const round = (value: number) => Number(value.toFixed(2));
 const energyDossierId = (offer: EnergyAdministrativeOffer) => `energy-${offer.buyerId}-${offer.supplierId}-${offer.resource}`;
+
+const diplomaticTerms = (offer: EnergyAdministrativeOffer): DiplomaticEnergyTerms => ({
+  resource: offer.resource, nodeId: offer.nodeId, annualVolume: offer.annualVolume,
+  coverageShare: offer.coverageShare, durationYears: offer.durationYears,
+  startDate: offer.startDate, endDate: offer.endDate, priceSummary: offer.priceSummary,
+  route: offer.route, politicalClauses: offer.politicalClauses,
+});
 
 export function createAdministrativeEnergyOffer(
   state: WorldState,
@@ -115,12 +123,40 @@ export function sendEnergyOffer(state: WorldState, offer: EnergyAdministrativeOf
   const relation = relationBetween(state, offer.buyerId, offer.supplierId);
   const fairVolume = Math.min(available * 0.22, demand * 0.2);
   const volumePressure = fairVolume > 0 ? Math.max(0, offer.annualVolume / fairVolume - 1) : 4;
+  const strategicCandidate: StrategicActionCandidate = {
+    id: `${offer.id}-supplier-decision`, actorId: offer.supplierId,
+    label: `Conclure un contrat ${offer.resource} avec ${offer.buyerId}`,
+    kind: 'diplomatic',
+    outcomes: {
+      growth: Math.min(52, 18 + offer.annualVolume / Math.max(1, available) * 70),
+      employment: 18,
+      fiscal_sustainability: offer.durationYears >= 10 ? 34 : 20,
+      strategic_autonomy: offer.annualVolume > available * 0.3 ? -24 : 8,
+      alliance_cohesion: relation && relation.relation >= 55 ? 22 : 4,
+      regime_survival: 8,
+      elite_support: 16,
+      international_prestige: 10,
+    },
+    signals: [
+      'commercial_deal',
+      ...(relation && relation.relation >= 55 ? ['alliance_cooperation' as const] : []),
+      ...(offer.annualVolume > available * 0.3 ? ['foreign_dependency' as const] : []),
+    ],
+    doctrine: { economic: 8, sovereignty: offer.annualVolume > available * 0.3 ? -18 : 10 },
+    requiredAuthority: 'executive', publicSalience: 38,
+    administrativeComplexity: 42 + offer.adjustments.length * 7,
+    urgency: 28, risk: 24 + offer.adjustments.length * 8,
+    resourceCost: Math.min(85, offer.annualVolume / Math.max(1, available) * 100),
+    metadata: { timeHorizonYears: offer.durationYears, counterpartId: offer.buyerId },
+  };
+  const strategicEvaluation = evaluateStrategicAction(state, strategicCandidate);
   let score = 55 + ((relation?.relation ?? 50) - 50) * 0.22 + ((relation?.trust ?? 45) - 45) * 0.12;
   if (offer.durationYears >= 10) score += 8;
   if (offer.durationYears <= 5) score -= 9;
   if (offer.pricePosture === 'buyer_favorable') score -= 11;
   if (offer.politicalClauses.length) score -= 3;
   score -= volumePressure * 34;
+  score += (strategicEvaluation.finalScore - 35) * 0.38;
 
   let responseOffer = offer;
   let status: EnergyCounterpartResponse['status'];
@@ -146,6 +182,8 @@ export function sendEnergyOffer(state: WorldState, offer: EnergyAdministrativeOf
     reasons.push('Le volume reste compatible avec les engagements existants et la durée sécurise les recettes du fournisseur.');
     message = `${supplier.name} accepte la proposition administrative : ${offer.coverageShare.toFixed(1)} % des besoins couverts sur ${offer.durationYears} ans.`;
   }
+  reasons.push(`La direction politique juge la proposition ${strategicEvaluation.leaderDisposition >= 58 ? 'compatible avec sa manière de gouverner' : strategicEvaluation.leaderDisposition < 42 ? 'contraire à ses préférences' : 'politiquement acceptable'}.`);
+  reasons.push(`L’appareil d’État offre un soutien ${strategicEvaluation.apparatusSupport >= 62 ? 'solide' : strategicEvaluation.apparatusSupport < 42 ? 'fragile' : 'mesuré'} à sa mise en œuvre.`);
   const dossierId = energyDossierId(offer);
   const buyer = state.countries[offer.buyerId];
   let prepared = createDossier(state, {
@@ -160,10 +198,32 @@ export function sendEnergyOffer(state: WorldState, offer: EnergyAdministrativeOf
     playerStance: 'Sécuriser les approvisionnements sans monopoliser la capacité du fournisseur.',
     commitments: [], pendingDecisions: [], relatedCurrentIds: [], relatedActionIds: [], entries: [],
   }, offer.buyerId, 'player');
+  const session: DiplomaticSession = {
+    id: offer.id, kind: 'energy_contract', initiatorId: offer.buyerId, counterpartId: offer.supplierId,
+    participantIds: [offer.buyerId, offer.supplierId],
+    status: status === 'accepted' ? 'awaiting_signature' : status === 'countered' ? 'countered' : 'refused',
+    aiMode: 'local', openedAt: state.currentDate, updatedAt: state.currentDate,
+    terms: diplomaticTerms(responseOffer), linkedDossierId: dossierId,
+    turns: [
+      { id: `${offer.id}-turn-proposal-${offer.revision}`, date: state.currentDate, speakerId: offer.buyerId, kind: 'proposal', publicMessage: `Proposition de ${offer.annualVolume.toFixed(2)} unités par an sur ${offer.durationYears} ans.`, proposalRevision: offer.revision },
+      { id: `${offer.id}-turn-response-${responseOffer.revision}`, date: state.currentDate, speakerId: offer.supplierId, kind: status === 'accepted' ? 'acceptance' : status === 'countered' ? 'counterproposal' : 'refusal', publicMessage: message, proposalRevision: responseOffer.revision },
+    ],
+    privatePosition: {
+      ownerCountryId: offer.supplierId,
+      willingness: Math.max(0, Math.min(100, round(score))),
+      motivations: [
+        'Sécuriser des recettes d’exportation compatibles avec la capacité physique.',
+        ...supplier.strategy.goals.filter((goal) => goal.status === 'active').map((goal) => goal.label),
+      ],
+      objections: strategicEvaluation.reasons.filter((reason) => /tabou|ligne rouge|risque|coût politique/i.test(reason)),
+      redLines: supplier.strategy.redLines,
+    },
+  };
   prepared = commitWorldAction(prepared, {
     kind: 'diplomatic', actorId: offer.buyerId, targetIds: [offer.supplierId], origin: 'player',
     intent: `Transmettre une proposition de contrat ${offer.resource === 'gas' ? 'gazier' : 'pétrolier'} à ${supplier.name}`,
-    effects: [], assumptions: [`Offre administrative, révision ${offer.revision}.`],
+    effects: [{ kind: 'diplomatic_session_add', session, reason: 'Ouverture et première réponse d’une négociation persistante.', visibility: 'player' }],
+    assumptions: [`Offre administrative, révision ${offer.revision}.`],
   });
   const pendingDecisions = status === 'accepted'
     ? ['Signer ou abandonner l’accord accepté par le fournisseur.']
@@ -194,7 +254,19 @@ export function acceptEnergyOffer(state: WorldState, offer: EnergyAdministrative
   const activated = activateEnergyContract(proposed.state, contractId, offer.buyerId, 'player');
   if (!activated.ok) return activated;
   const dossierId = energyDossierId(offer);
-  const next = recordDossierUpdate(activated.state, dossierId, {
+  const session = activated.state.diplomaticSessions[offer.id];
+  const withSession = session ? commitWorldAction(activated.state, {
+    kind: 'diplomatic', actorId: offer.buyerId, targetIds: [offer.supplierId], origin: 'player',
+    intent: `Signer l’accord négocié avec ${offer.supplierId}`,
+    effects: [
+      { kind: 'diplomatic_session_patch', sessionId: offer.id, patch: {
+        status: 'active', updatedAt: state.currentDate, linkedContractId: contractId,
+        turns: [...session.turns, { id: `${offer.id}-turn-signature`, date: state.currentDate, speakerId: offer.buyerId, kind: 'signature', publicMessage: 'L’accord est signé et entre en vigueur.', proposalRevision: offer.revision }],
+      }, reason: 'La signature clôt la négociation et transforme la proposition en engagement actif.', visibility: 'player' },
+      { kind: 'relation_delta', from: offer.buyerId, to: offer.supplierId, relation: 2, trust: 2, reason: 'La conclusion d’un accord énergétique renforce la relation bilatérale.', visibility: 'public' },
+    ],
+  }) : activated.state;
+  const next = recordDossierUpdate(withSession, dossierId, {
     id: `signature-${contractId}`, title: 'Accord signé et activé',
     summary: `Le contrat réserve ${offer.annualVolume.toFixed(2)} unités par an jusqu’au ${offer.endDate}.`,
     importance: 'major', actorIds: [offer.buyerId, offer.supplierId], actorId: offer.buyerId, origin: 'player',

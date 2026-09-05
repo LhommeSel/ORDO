@@ -14,6 +14,7 @@ import { createStructuralProfiles2000 } from './structural-data-2000';
 import { createStakeholderGroups2000 } from './stakeholder-data-2000';
 import { createTradeFlows2000 } from './trade-data-2000';
 import { createDecisionProfiles2000 } from './decision-data-2000';
+import { createLeadership2000, createPoliticalApparatus2000 } from './political-identity-data-2000';
 
 const capacities = (values: Partial<Record<keyof CapacityState, [number, number]>> = {}): CapacityState => ({
   government: { maximum: values.government?.[0] ?? 55, committed: values.government?.[1] ?? 25 },
@@ -338,12 +339,15 @@ export function createFrance2000World(): WorldState {
     worldEconomy: structuredClone(worldEconomy2000),
     tradeFlows: createTradeFlows2000(),
     decisionProfiles: createDecisionProfiles2000(countries),
+    leadership: createLeadership2000(countries),
+    politicalApparatus: createPoliticalApparatus2000(countries),
     structuralProfiles,
     stakeholderGroups: createStakeholderGroups2000(countries, structuralProfiles),
     stakeholderReactions: {},
     powerActors: {},
     powerStruggleCampaigns: {},
     aiJobs: {},
+    diplomaticSessions: {},
     sectors: structuredClone(sectors),
     armamentProducts: structuredClone(armamentProducts),
     strategicDossiers: structuredClone(strategicDossiers),

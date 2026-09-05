@@ -52,6 +52,52 @@ export type CountryStrategy = {
   lastReviewDate: ISODate;
 };
 
+export type LeadershipTraitProfile = {
+  riskAppetite: number;
+  belligerence: number;
+  flexibility: number;
+  transactionality: number;
+  patience: number;
+  ideologicalCommitment: number;
+  reliability: number;
+};
+
+export type LeadershipFigure = {
+  id: string;
+  name: string;
+  role: string;
+  authorityShare: number;
+  ideologyTags: string[];
+  traits: LeadershipTraitProfile;
+};
+
+/** Les détenteurs effectifs de l'autorité, y compris en cohabitation ou direction collective. */
+export type CountryLeadership = {
+  countryId: CountryId;
+  figures: LeadershipFigure[];
+  executiveCoordination: number;
+  sourceBasis: string;
+};
+
+export type ApparatusCurrent = {
+  id: string;
+  label: string;
+  weight: number;
+  institutionalReach: number;
+  supportedSignals: DecisionSignal[];
+  opposedSignals: DecisionSignal[];
+  criterionPreferences: Partial<Record<DecisionCriterion, number>>;
+};
+
+/** Lignes idéologiques durables de l'administration, du parlement et des élites organisées. */
+export type PoliticalApparatusProfile = {
+  countryId: CountryId;
+  currents: ApparatusCurrent[];
+  pluralism: number;
+  inertia: number;
+  sourceBasis: string;
+};
+
 export type CountryState = {
   id: CountryId;
   name: string;
@@ -175,6 +221,51 @@ export type EnergyContract = {
   politicalClauses: string[];
   breachPenalty: number;
   status: 'proposed' | 'active' | 'suspended' | 'expired' | 'broken';
+};
+
+export type DiplomaticEnergyTerms = {
+  resource: EnergyResource;
+  nodeId: string;
+  annualVolume: number;
+  coverageShare: number;
+  durationYears: number;
+  startDate: ISODate;
+  endDate: ISODate;
+  priceSummary: string;
+  route: string;
+  politicalClauses: string[];
+};
+
+export type DiplomaticTurn = {
+  id: string;
+  date: ISODate;
+  speakerId: EntityId;
+  kind: 'proposal' | 'counterproposal' | 'acceptance' | 'refusal' | 'signature' | 'message';
+  publicMessage: string;
+  proposalRevision?: number;
+};
+
+export type DiplomaticSession = {
+  id: string;
+  kind: 'energy_contract';
+  initiatorId: CountryId;
+  counterpartId: CountryId;
+  participantIds: EntityId[];
+  status: 'awaiting_response' | 'countered' | 'awaiting_signature' | 'active' | 'refused' | 'closed';
+  aiMode: 'local' | 'ai';
+  openedAt: ISODate;
+  updatedAt: ISODate;
+  terms: DiplomaticEnergyTerms;
+  turns: DiplomaticTurn[];
+  privatePosition: {
+    ownerCountryId: CountryId;
+    willingness: number;
+    motivations: string[];
+    objections: string[];
+    redLines: string[];
+  };
+  linkedDossierId: string;
+  linkedContractId?: string;
 };
 
 export type CountryEnergyState = {
@@ -809,6 +900,8 @@ export type WorldEffect =
   | { kind: 'energy_contract_patch'; contractId: string; patch: Partial<EnergyContract>; reason: string; visibility?: Visibility }
   | { kind: 'energy_node_patch'; nodeId: string; patch: Partial<EnergyNode>; reason: string; visibility?: Visibility }
   | { kind: 'energy_stock_delta'; countryId: CountryId; resource: EnergyResource; delta: number; reason: string; visibility?: Visibility }
+  | { kind: 'diplomatic_session_add'; session: DiplomaticSession; reason: string; visibility?: Visibility }
+  | { kind: 'diplomatic_session_patch'; sessionId: string; patch: Partial<DiplomaticSession>; reason: string; visibility?: Visibility }
   | { kind: 'sector_patch'; sectorId: string; patch: Partial<StrategicSectorState>; reason: string; visibility?: Visibility }
   | { kind: 'armament_patch'; productId: string; patch: Partial<ArmamentProduct>; reason: string; visibility?: Visibility }
   | { kind: 'dossier_add'; dossier: StrategicDossier; reason: string; visibility?: Visibility }
@@ -925,12 +1018,15 @@ export type WorldState = {
   worldEconomy: WorldEconomyState;
   tradeFlows: Record<string, BilateralTradeFlow>;
   decisionProfiles: Record<CountryId, CountryDecisionProfile>;
+  leadership: Record<CountryId, CountryLeadership>;
+  politicalApparatus: Record<CountryId, PoliticalApparatusProfile>;
   structuralProfiles: Record<CountryId, CountryStructuralProfile>;
   stakeholderGroups: Record<string, StakeholderGroup>;
   stakeholderReactions: Record<string, StakeholderReaction>;
   powerActors: Record<string, EmergentPowerActor>;
   powerStruggleCampaigns: Record<string, PowerStruggleCampaign>;
   aiJobs: Record<string, AIJob>;
+  diplomaticSessions: Record<string, DiplomaticSession>;
   sectors: Record<string, StrategicSectorState>;
   armamentProducts: Record<string, ArmamentProduct>;
   strategicDossiers: Record<string, StrategicDossier>;
@@ -984,7 +1080,8 @@ export type DecisionSignal =
   | 'monetary_financing'
   | 'military_escalation'
   | 'political_opening'
-  | 'elite_displacement';
+  | 'elite_displacement'
+  | 'commercial_deal';
 
 export type PoliticalConstraint = {
   id: string;
@@ -1030,6 +1127,8 @@ export type StrategicActionEvaluation = {
   governingScore: number;
   doctrineCompatibility: number;
   institutionalFeasibility: number;
+  leaderDisposition: number;
+  apparatusSupport: number;
   finalScore: number;
   blocked: boolean;
   reasons: string[];

@@ -16,6 +16,7 @@ export * from './macro-data-2000';
 export * from './macro-economy';
 export * from './persistence';
 export * from './politics';
+export * from './political-identity-data-2000';
 export * from './power-struggles';
 export * from './power-tactics';
 export * from './scenario-2000';

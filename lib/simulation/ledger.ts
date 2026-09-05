@@ -243,6 +243,22 @@ function applyEffect(state: WorldState, action: WorldAction, effect: WorldEffect
     return appendChange(next, action, effect, `countryEnergy.${effect.countryId}.strategicStocks.${effect.resource}`, before, Number(after.toFixed(3)));
   }
 
+  if (effect.kind === 'diplomatic_session_add') {
+    const sessions = state.diplomaticSessions ?? {};
+    const before = sessions[effect.session.id] ?? null;
+    const after = before ?? effect.session;
+    const next = { ...state, diplomaticSessions: { ...sessions, [effect.session.id]: after } };
+    return appendChange(next, action, effect, `diplomaticSessions.${effect.session.id}`, before, after);
+  }
+
+  if (effect.kind === 'diplomatic_session_patch') {
+    const session = state.diplomaticSessions?.[effect.sessionId];
+    if (!session) return state;
+    const after = { ...session, ...effect.patch };
+    const next = { ...state, diplomaticSessions: { ...state.diplomaticSessions, [effect.sessionId]: after } };
+    return appendChange(next, action, effect, `diplomaticSessions.${effect.sessionId}`, session, after);
+  }
+
   if (effect.kind === 'sector_patch') {
     const sector = state.sectors[effect.sectorId];
     if (!sector) return state;
