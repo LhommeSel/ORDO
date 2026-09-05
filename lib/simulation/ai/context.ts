@@ -28,6 +28,8 @@ export type AIContextFact = {
   domain: AIContextDomain;
   entityIds: string[];
   topicTags: string[];
+  /** Concepts canoniques utilisés pour la proximité sémantique locale. */
+  concepts: string[];
   observedAt: ISODate;
   importance: number;
   confidence: number;
@@ -40,29 +42,41 @@ export type AIContextFact = {
 
 export type AIContextQuery = {
   jobKind: AIJobKind;
-  perspectiveCountryId: CountryId;
+  requestingCountryId: CountryId;
+  decisionCountryId: CountryId;
   actorId: string;
   targetIds: string[];
   domains: AIContextDomain[];
   topicTags: string[];
+  concepts: string[];
   purpose: string;
+  playerIntent: string;
+  approximateIntentTokens: number;
   tokenBudget: number;
 };
+
+export type AIContextReserveFact = AIContextFact & { accessScope: 'known' | 'private' };
 
 export type AIContextPacket = {
   schemaVersion: 1;
   compiledAt: ISODate;
   query: AIContextQuery;
   overview: string;
-  facts: AIContextFact[];
+  /** Ce que le pays demandeur est autorisé à connaître. */
+  knownFacts: AIContextFact[];
+  /** Vérité privée du pays qui prend la décision, jamais destinée à l'interface joueur. */
+  privateDecisionFacts: AIContextFact[];
+  /** Réserve non envoyée au premier passage, consultable une seule fois par outil. */
+  reserveFacts: AIContextReserveFact[];
   omittedFactCount: number;
   approximateInputTokens: number;
+  approximateTotalInputTokens: number;
 };
 
 const budgetTokens: Record<AIJobBudgetTier, number> = {
   economy: 3_500,
-  standard: 9_000,
-  deep: 18_000,
+  standard: 10_000,
+  deep: 25_000,
 };
 
 const domainsByKind: Record<AIJobKind, AIContextDomain[]> = {
@@ -80,17 +94,104 @@ const words = (value: string) => value
   .split(/[^a-z0-9]+/)
   .filter((word) => word.length > 2);
 
+const conceptLexicon: Record<string, string> = {
+  gaz: 'energy.gas', gas: 'energy.gas', gazier: 'energy.gas', gaziere: 'energy.gas',
+  petrole: 'energy.oil', petrolier: 'energy.oil', oil: 'energy.oil', hydrocarbure: 'energy.resource',
+  energie: 'energy.resource', energetique: 'energy.resource', production: 'production.capacity',
+  reserves: 'energy.reserves', stocks: 'energy.stock', stockage: 'energy.stock',
+  consommation: 'demand', demande: 'demand', route: 'logistics.route', transit: 'logistics.route', gazoduc: 'logistics.route', pipeline: 'logistics.route',
+  contrat: 'trade.contract', commercial: 'trade.contract', commerce: 'trade.contract', exportation: 'trade.export', importation: 'trade.import',
+  negocier: 'diplomacy.negotiation', negotiation: 'diplomacy.negotiation', diplomatie: 'diplomacy.negotiation',
+  relation: 'diplomacy.relation', confiance: 'diplomacy.relation', alliance: 'diplomacy.alliance', reddition: 'diplomacy.surrender',
+  strategie: 'politics.strategy', objectif: 'politics.strategy', objectifs: 'politics.strategy', vulnerabilites: 'politics.fear', crainte: 'politics.fear',
+  doctrine: 'politics.doctrine', ideologie: 'politics.doctrine', gouvernement: 'politics.government', parlement: 'politics.institution',
+  defiance: 'politics.stakeholder', groupe: 'politics.stakeholder', personnalite: 'politics.personality',
+  pib: 'economy.macro', croissance: 'economy.macro', inflation: 'economy.macro', chomage: 'economy.macro', dette: 'economy.debt', budget: 'economy.budget',
+  industrie: 'industry.capacity', industriel: 'industry.capacity', semiconductors: 'industry.semiconductors', nuclear: 'industry.nuclear',
+  armement: 'military.armament', defense: 'military.armament', militaire: 'military.armament', securite: 'military.security',
+  histoire: 'history.current', tendance: 'history.current', processus: 'history.latent', latent: 'history.latent',
+  dossier: 'dossier.current', conflit: 'dossier.conflict', crise: 'dossier.crisis',
+  administration: 'capacity.administration', intelligence: 'capacity.intelligence', government: 'capacity.government', diplomacy: 'capacity.diplomacy', economy: 'capacity.economy',
+};
+
+/** Petit graphe transversal : il décrit les relations entre concepts, jamais des cas pays par pays. */
+const conceptEdges: Record<string, string[]> = {
+  'energy.gas': ['energy.resource', 'production.capacity', 'demand', 'energy.stock', 'energy.reserves', 'logistics.route', 'trade.contract'],
+  'energy.oil': ['energy.resource', 'production.capacity', 'demand', 'energy.stock', 'energy.reserves', 'logistics.route', 'trade.contract'],
+  'energy.resource': ['energy.gas', 'energy.oil', 'trade.contract', 'economy.macro'],
+  'trade.contract': ['diplomacy.negotiation', 'diplomacy.relation', 'trade.export', 'trade.import', 'logistics.route'],
+  'diplomacy.negotiation': ['diplomacy.relation', 'politics.strategy', 'politics.doctrine', 'capacity.diplomacy', 'trade.contract'],
+  'diplomacy.alliance': ['diplomacy.negotiation', 'diplomacy.relation', 'military.security', 'politics.strategy'],
+  'diplomacy.surrender': ['diplomacy.negotiation', 'military.security', 'politics.strategy'],
+  'politics.strategy': ['politics.fear', 'politics.doctrine', 'diplomacy.relation'],
+  'politics.stakeholder': ['politics.government', 'politics.personality', 'dossier.current'],
+  'economy.macro': ['economy.debt', 'economy.budget', 'industry.capacity', 'trade.contract'],
+  'industry.capacity': ['production.capacity'],
+  'military.armament': ['military.security', 'production.capacity'],
+  'history.current': ['history.latent', 'dossier.current', 'dossier.crisis'],
+  'dossier.conflict': ['dossier.current', 'military.security', 'diplomacy.negotiation'],
+  'dossier.crisis': ['dossier.current', 'economy.macro', 'politics.stakeholder'],
+};
+
+const symmetricConceptEdges = (() => {
+  const graph = new Map<string, Set<string>>();
+  for (const [from, tos] of Object.entries(conceptEdges)) for (const to of tos) {
+    if (!graph.has(from)) graph.set(from, new Set());
+    if (!graph.has(to)) graph.set(to, new Set());
+    graph.get(from)!.add(to);
+    graph.get(to)!.add(from);
+  }
+  return graph;
+})();
+
+export function conceptsFromText(value: string) {
+  return [...new Set(words(value).map((word) => conceptLexicon[word]).filter((item): item is string => Boolean(item)))];
+}
+
+function conceptDistance(queryConcepts: string[], factConcepts: string[]) {
+  if (!queryConcepts.length || !factConcepts.length) return Number.POSITIVE_INFINITY;
+  const targets = new Set(factConcepts);
+  if (queryConcepts.some((item) => targets.has(item))) return 0;
+  let frontier = new Set(queryConcepts);
+  const visited = new Set(frontier);
+  for (let distance = 1; distance <= 2; distance += 1) {
+    const next = new Set<string>();
+    for (const item of frontier) for (const neighbor of symmetricConceptEdges.get(item) ?? []) {
+      if (targets.has(neighbor)) return distance;
+      if (!visited.has(neighbor)) { visited.add(neighbor); next.add(neighbor); }
+    }
+    frontier = next;
+  }
+  return Number.POSITIVE_INFINITY;
+}
+
+function domainCanParticipate(query: AIContextQuery, item: AIContextFact) {
+  const guardedNamespace: Partial<Record<AIContextDomain, string>> = {
+    energy: 'energy.',
+    industry: 'industry.',
+    military: 'military.',
+  };
+  const namespace = guardedNamespace[item.domain];
+  return !namespace || query.concepts.some((concept) => concept.startsWith(namespace));
+}
+
 const compact = (value: unknown, maximum = 600) => String(value).replace(/\s+/g, ' ').trim().slice(0, maximum);
 const approximateTokens = (value: unknown) => Math.ceil(JSON.stringify(value).length / 3.6);
 
+type AIContextFactInput = Omit<AIContextFact, 'observedAt' | 'concepts'> & { observedAt?: ISODate; concepts?: string[] };
+
 const fact = (
   state: WorldState,
-  input: Omit<AIContextFact, 'observedAt'> & { observedAt?: ISODate },
-): AIContextFact => ({ ...input, observedAt: input.observedAt ?? state.currentDate });
+  input: AIContextFactInput,
+): AIContextFact => ({
+  ...input,
+  concepts: [...new Set([...(input.concepts ?? []), ...conceptsFromText(`${input.domain} ${input.topicTags.join(' ')} ${input.statement}`)])],
+  observedAt: input.observedAt ?? state.currentDate,
+});
 
 function collectFacts(state: WorldState): AIContextFact[] {
   const facts: AIContextFact[] = [];
-  const add = (input: Omit<AIContextFact, 'observedAt'> & { observedAt?: ISODate }) => facts.push(fact(state, input));
+  const add = (input: AIContextFactInput) => facts.push(fact(state, input));
 
   add({ id: 'world:date', domain: 'overview', entityIds: [], topicTags: ['date', 'monde'], importance: 100, confidence: 100, visibility: 'public', sourcePath: 'currentDate', statement: `La date de simulation est le ${state.currentDate}.` });
   add({ id: 'world:economy', domain: 'economy', entityIds: [], topicTags: ['cycle', 'croissance', 'inflation'], importance: 86, confidence: 92, visibility: 'public', sourcePath: 'worldEconomy', statement: `Cycle mondial ${state.worldEconomy.cycle}; croissance ${state.worldEconomy.globalGrowthAnnualPct.toFixed(2)} %, inflation ${state.worldEconomy.globalInflationAnnualPct.toFixed(2)} %, stress financier ${state.worldEconomy.financialStress.toFixed(1)}/100.` });
@@ -123,7 +224,7 @@ function collectFacts(state: WorldState): AIContextFact[] {
   return facts;
 }
 
-function canSee(state: WorldState, viewer: CountryId, item: AIContextFact) {
+export function canCountrySeeFact(state: WorldState, viewer: CountryId, item: AIContextFact) {
   if (item.visibility === 'public') return true;
   if (item.ownerCountryId === viewer) return true;
   if (!item.ownerCountryId) return false;
@@ -138,52 +239,103 @@ function monthsBetween(from: ISODate, to: ISODate) {
 }
 
 function scoreFact(state: WorldState, query: AIContextQuery, item: AIContextFact) {
-  const entities = new Set([query.actorId, query.perspectiveCountryId, ...query.targetIds]);
-  const topics = new Set(query.topicTags);
+  const entities = new Set([query.actorId, query.requestingCountryId, query.decisionCountryId, ...query.targetIds]);
   const directEntities = item.entityIds.filter((id) => entities.has(id)).length;
-  const topicMatches = item.topicTags.flatMap(words).filter((word) => topics.has(word)).length;
+  const distance = conceptDistance(query.concepts, item.concepts);
   const age = monthsBetween(item.observedAt, state.currentDate);
-  return item.importance * 0.35
-    + item.confidence * 0.12
-    + (query.domains.includes(item.domain) ? 24 : 0)
-    + Math.min(36, directEntities * 18)
-    + Math.min(24, topicMatches * 6)
-    + Math.max(0, 14 - age * 0.5);
+  return item.importance * 0.14
+    + item.confidence * 0.07
+    + (query.domains.includes(item.domain) ? 4 : 0)
+    + Math.min(48, directEntities * 24)
+    + (distance === 0 ? 55 : distance === 1 ? 32 : distance === 2 ? 14 : 0)
+    + Math.max(0, 8 - age * 0.35);
+}
+
+const defaultConceptsByKind: Record<AIJobKind, string[]> = {
+  advisor: ['politics.strategy'],
+  diplomacy: ['diplomacy.negotiation', 'diplomacy.relation', 'politics.strategy'],
+  historical_interpretation: ['history.current', 'history.latent', 'dossier.current'],
+  power_struggle: ['politics.stakeholder', 'politics.personality', 'politics.strategy'],
+  free_action_interpretation: ['politics.strategy'],
+};
+
+function jobPlayerIntent(job: AIJob) {
+  if (job.inputText) return job.inputText;
+  if (job.kind === 'power_struggle' && job.context.playerResponse) return job.context.playerResponse;
+  if (job.kind !== 'power_struggle' && typeof job.context.playerIntent === 'string') return job.context.playerIntent;
+  return job.purpose;
+}
+
+function decisionCountryForJob(state: WorldState, job: AIJob, targets: CountryId[]) {
+  if (job.kind === 'power_struggle') return job.countryId;
+  if (job.kind === 'diplomacy') {
+    const explicit = typeof job.context.respondingCountryId === 'string'
+      ? job.context.respondingCountryId
+      : typeof job.context.targetCountryId === 'string' ? job.context.targetCountryId : undefined;
+    if (explicit && state.countries[explicit]) return explicit;
+    if (targets[0]) return targets[0];
+  }
+  return state.countries[job.actorId] ? job.actorId : state.playerCountryId;
+}
+
+function dynamicBudget(tier: AIJobBudgetTier, intentTokens: number, targetCount: number) {
+  const base = budgetTokens[tier];
+  if (base < budgetTokens.standard && (intentTokens >= 4_000 || targetCount >= 3)) return budgetTokens.standard;
+  if (base < budgetTokens.deep && intentTokens >= 9_000) return budgetTokens.deep;
+  return base;
 }
 
 export function queryForAIJob(state: WorldState, job: AIJob): AIContextQuery {
   const actorId = job.kind === 'power_struggle' ? job.countryId : job.actorId;
-  const perspectiveCountryId = state.countries[actorId] ? actorId : state.playerCountryId;
+  const requestingCountryId = state.countries[actorId] ? actorId : state.playerCountryId;
   const purpose = job.purpose;
-  const contextText = JSON.stringify(job.context);
-  const targetIds = Object.keys(state.countries).filter((id) => id !== perspectiveCountryId && contextText.includes(id));
+  const playerIntent = jobPlayerIntent(job);
+  const contextText = `${JSON.stringify(job.context)} ${playerIntent}`;
+  const normalizedContext = words(contextText).join(' ');
+  const targetIds = Object.values(state.countries)
+    .filter((country) => country.id !== requestingCountryId
+      && (contextText.includes(country.id) || normalizedContext.includes(words(country.name).join(' '))))
+    .map((country) => country.id);
+  const decisionCountryId = decisionCountryForJob(state, job, targetIds);
+  const approximateIntentTokens = approximateTokens(playerIntent);
   return {
     jobKind: job.kind,
-    perspectiveCountryId,
+    requestingCountryId,
+    decisionCountryId,
     actorId,
     targetIds,
     domains: domainsByKind[job.kind],
     topicTags: [...new Set(words(`${purpose} ${job.reasons.join(' ')} ${contextText}`))].slice(0, 40),
+    concepts: [...new Set([...defaultConceptsByKind[job.kind], ...conceptsFromText(`${purpose} ${job.reasons.join(' ')} ${contextText}`)])],
     purpose,
-    tokenBudget: budgetTokens[job.budgetTier],
+    playerIntent,
+    approximateIntentTokens,
+    tokenBudget: dynamicBudget(job.budgetTier, approximateIntentTokens, targetIds.length),
   };
 }
 
 /** Compile la vérité utile du moteur avant tout appel réseau. */
 export function compileAIContext(state: WorldState, query: AIContextQuery): AIContextPacket {
-  const visible = collectFacts(state).filter((item) => canSee(state, query.perspectiveCountryId, item));
-  const ranked = visible
-    .map((item) => ({ item, score: scoreFact(state, query, item) }))
-    .sort((a, b) => b.score - a.score || a.item.id.localeCompare(b.item.id));
-  const selected: AIContextFact[] = [];
-  let used = approximateTokens({ query, overview: state.currentDate });
+  const allFacts = collectFacts(state);
+  const scoped = allFacts.flatMap((item): AIContextReserveFact[] => {
+    if (canCountrySeeFact(state, query.requestingCountryId, item)) return [{ ...item, accessScope: 'known' }];
+    if (item.ownerCountryId === query.decisionCountryId && item.visibility !== 'public') return [{ ...item, accessScope: 'private' }];
+    return [];
+  });
   const anchorIds = new Set([
     'world:date',
-    'world:economy',
-    `country:${query.perspectiveCountryId}:identity`,
-    `country:${query.perspectiveCountryId}:strategy`,
+    `country:${query.requestingCountryId}:identity`,
+    `country:${query.requestingCountryId}:strategy`,
+    `country:${query.decisionCountryId}:identity`,
+    `country:${query.decisionCountryId}:strategy`,
     ...query.targetIds.map((id) => `country:${id}:identity`),
   ]);
+  const ranked = scoped
+    .map((item) => ({ item, score: scoreFact(state, query, item), distance: conceptDistance(query.concepts, item.concepts) }))
+    .filter(({ item, distance }) => anchorIds.has(item.id) || (domainCanParticipate(query, item) && Number.isFinite(distance)))
+    .sort((a, b) => b.score - a.score || a.item.id.localeCompare(b.item.id));
+  const selected: AIContextReserveFact[] = [];
+  let used = approximateTokens({ query: { ...query, playerIntent: undefined }, overview: state.currentDate });
   const ordered = [
     ...ranked.filter(({ item }) => anchorIds.has(item.id)),
     ...ranked.filter(({ item }) => !anchorIds.has(item.id)),
@@ -194,13 +346,53 @@ export function compileAIContext(state: WorldState, query: AIContextQuery): AICo
     selected.push(candidate.item);
     used += cost;
   }
+  const selectedIds = new Set(selected.map((item) => `${item.accessScope}:${item.id}`));
+  const reserveFacts = scoped
+    .filter((item) => !selectedIds.has(`${item.accessScope}:${item.id}`))
+    .sort((a, b) => scoreFact(state, query, b) - scoreFact(state, query, a))
+    .slice(0, 180);
+  const withoutScope = ({ accessScope: _scope, ...item }: AIContextReserveFact): AIContextFact => item;
+  const knownFacts = selected.filter((item) => item.accessScope === 'known').map(withoutScope);
+  const privateDecisionFacts = selected.filter((item) => item.accessScope === 'private').map(withoutScope);
   return {
     schemaVersion: 1,
     compiledAt: state.currentDate,
     query,
-    overview: `${state.countries[query.perspectiveCountryId]?.name ?? query.perspectiveCountryId} raisonne au ${state.currentDate} pour « ${compact(query.purpose, 240)} ».` ,
-    facts: selected,
-    omittedFactCount: visible.length - selected.length,
+    overview: `${state.countries[query.decisionCountryId]?.name ?? query.decisionCountryId} prend une décision au ${state.currentDate} à partir d'une demande de ${state.countries[query.requestingCountryId]?.name ?? query.requestingCountryId}.`,
+    knownFacts,
+    privateDecisionFacts,
+    reserveFacts,
+    omittedFactCount: scoped.length - selected.length,
+    approximateInputTokens: used,
+    approximateTotalInputTokens: used + query.approximateIntentTokens + 1_500,
+  };
+}
+
+export type SupplementalFactRequest = { concepts: string[]; entityIds: string[]; reason: string };
+
+/** Sert les compléments demandés par Luna depuis la réserve, avec un plafond indépendant. */
+export function selectSupplementalFacts(packet: AIContextPacket, requests: SupplementalFactRequest[], maximumTokens: number) {
+  const requestedConcepts = [...new Set(requests.flatMap((request) => request.concepts))];
+  const requestedEntities = new Set(requests.flatMap((request) => request.entityIds));
+  const ranked = packet.reserveFacts
+    .map((item) => {
+      const distance = conceptDistance(requestedConcepts, item.concepts);
+      const entityMatches = item.entityIds.filter((id) => requestedEntities.has(id)).length;
+      return { item, score: (distance === 0 ? 80 : distance === 1 ? 45 : distance === 2 ? 18 : 0) + entityMatches * 35 + item.importance * 0.1 };
+    })
+    .filter(({ score }) => score >= 30)
+    .sort((a, b) => b.score - a.score || a.item.id.localeCompare(b.item.id));
+  const selected: AIContextReserveFact[] = [];
+  let used = 0;
+  for (const candidate of ranked) {
+    const cost = approximateTokens(candidate.item);
+    if (used + cost > maximumTokens) continue;
+    selected.push(candidate.item);
+    used += cost;
+  }
+  return {
+    knownFacts: selected.filter((item) => item.accessScope === 'known').map(({ accessScope: _scope, ...item }) => item),
+    privateDecisionFacts: selected.filter((item) => item.accessScope === 'private').map(({ accessScope: _scope, ...item }) => item),
     approximateInputTokens: used,
   };
 }

@@ -37,7 +37,7 @@ const extractOutputText = (payload: Record<string, unknown>) => {
 export async function POST(request: Request) {
   if (!isSameOriginRequest(request)) return json({ ok: false, code: 'invalid_request', message: 'Origine de la demande refusée.' }, 403);
   const declaredSize = Number.parseInt(request.headers.get('content-length') ?? '0', 10);
-  if (declaredSize > 20_000) return json({ ok: false, code: 'invalid_request', message: 'Demande trop volumineuse.' }, 413);
+  if (declaredSize > 80_000) return json({ ok: false, code: 'invalid_request', message: 'Demande trop volumineuse.' }, 413);
 
   let body: unknown;
   try {
@@ -45,7 +45,7 @@ export async function POST(request: Request) {
   } catch {
     return json({ ok: false, code: 'invalid_request', message: 'Demande illisible.' }, 400);
   }
-  if (JSON.stringify(body).length > 20_000) return json({ ok: false, code: 'invalid_request', message: 'Demande trop volumineuse.' }, 413);
+  if (JSON.stringify(body).length > 80_000) return json({ ok: false, code: 'invalid_request', message: 'Demande trop volumineuse.' }, 413);
   const parsed = parseAdvisorAIRequest(body);
   if (!parsed) return json({ ok: false, code: 'invalid_request', message: 'Le contexte transmis ne respecte pas le contrat ORDO.' }, 400);
 

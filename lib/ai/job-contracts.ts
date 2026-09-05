@@ -15,6 +15,7 @@ export type AIJobDescriptor = {
   id: string;
   kind: AIJobKind;
   purpose: string;
+  playerIntent: string;
   actorId: string;
   priority: AIJobPriority;
   budgetTier: AIJobBudgetTier;
@@ -35,10 +36,21 @@ export type AIJobAIProposal = AIJobOutcome['proposals'][number];
 export type AIJobAIAnswer = {
   headline: string;
   assessment: string;
+  publicMessage: string;
   proposals: AIJobAIProposal[];
   requestedFacts: string[];
   powerStrugglePlan: PowerStruggleAIProposal | null;
 };
+
+export type AIPrivateDecision = {
+  actorId: string;
+  objectivesUsed: string[];
+  fearsUsed: string[];
+  redLinesUsed: string[];
+  confidentialRationale: string;
+};
+
+export type AIJobAIModelAnswer = AIJobAIAnswer & { privateDecision: AIPrivateDecision | null };
 
 export type AIJobAIResponse =
   | { ok: true; answer: AIJobAIAnswer; usage: AdvisorAIUsage }
@@ -61,15 +73,22 @@ const isString = (value: unknown, maximum: number, minimum = 0) => typeof value 
 const isStringArray = (value: unknown, maximumItems: number, maximumLength: number) => Array.isArray(value) && value.length <= maximumItems && value.every((item) => isString(item, maximumLength, 1));
 const isNumber = (value: unknown, minimum: number, maximum: number) => typeof value === 'number' && Number.isFinite(value) && value >= minimum && value <= maximum;
 
+export const AI_PLAYER_INTENT_MAX_CHARS = 30_000;
+
 function compactText(value: string, maximum: number) {
   return value.trim().slice(0, maximum);
 }
 
 function descriptorFromJob(job: AIJob): AIJobDescriptor {
+  const rawIntent = job.inputText
+    ?? (job.kind === 'power_struggle' ? job.context.playerResponse : typeof job.context.playerIntent === 'string' ? job.context.playerIntent : undefined)
+    ?? job.purpose;
+  if (rawIntent.length > AI_PLAYER_INTENT_MAX_CHARS) throw new RangeError('player_intent_too_large');
   return {
     id: compactText(job.id, 120),
     kind: job.kind,
     purpose: compactText(job.purpose, 500),
+    playerIntent: rawIntent,
     actorId: compactText(job.kind === 'power_struggle' ? job.countryId : job.actorId, 80),
     priority: job.priority,
     budgetTier: job.budgetTier,
@@ -94,6 +113,7 @@ function isFact(value: unknown): value is AIContextFact {
     && typeof value.domain === 'string' && domains.includes(value.domain)
     && isStringArray(value.entityIds, 20, 80)
     && isStringArray(value.topicTags, 30, 80)
+    && isStringArray(value.concepts, 30, 80)
     && isString(value.observedAt, 10, 10)
     && isNumber(value.importance, 0, 100)
     && isNumber(value.confidence, 0, 100)
@@ -111,6 +131,7 @@ export function parseAIJobAIRequest(value: unknown): AIJobAIRequest | null {
   if (!isString(job.id, 120, 1)
     || typeof job.kind !== 'string' || !kinds.includes(job.kind as AIJobKind)
     || !isString(job.purpose, 500, 1)
+    || !isString(job.playerIntent, AI_PLAYER_INTENT_MAX_CHARS, 1)
     || !isString(job.actorId, 80, 1)
     || typeof job.priority !== 'string' || !priorities.includes(job.priority as AIJobPriority)
     || typeof job.budgetTier !== 'string' || !tiers.includes(job.budgetTier as AIJobBudgetTier)
@@ -119,15 +140,22 @@ export function parseAIJobAIRequest(value: unknown): AIJobAIRequest | null {
     || JSON.stringify(job.domainContext).length > 14_000) return null;
   const context = value.context;
   if (context.schemaVersion !== 1 || !isString(context.compiledAt, 10, 10) || !isRecord(context.query)
-    || !isString(context.overview, 600, 1) || !Array.isArray(context.facts) || context.facts.length > 180
-    || !context.facts.every(isFact) || !isNumber(context.omittedFactCount, 0, 100_000)
-    || !isNumber(context.approximateInputTokens, 1, 18_000)) return null;
+    || !isString(context.overview, 600, 1)
+    || !Array.isArray(context.knownFacts) || context.knownFacts.length > 180 || !context.knownFacts.every(isFact)
+    || !Array.isArray(context.privateDecisionFacts) || context.privateDecisionFacts.length > 120 || !context.privateDecisionFacts.every(isFact)
+    || !Array.isArray(context.reserveFacts) || context.reserveFacts.length > 180
+    || !context.reserveFacts.every((fact) => isRecord(fact) && (fact.accessScope === 'known' || fact.accessScope === 'private') && isFact(fact))
+    || !isNumber(context.omittedFactCount, 0, 100_000)
+    || !isNumber(context.approximateInputTokens, 1, 25_000)
+    || !isNumber(context.approximateTotalInputTokens, 1, 45_000)) return null;
   const query = context.query;
-  if (query.jobKind !== job.kind || !isString(query.perspectiveCountryId, 80, 1)
+  if (query.jobKind !== job.kind || !isString(query.requestingCountryId, 80, 1) || !isString(query.decisionCountryId, 80, 1)
     || !isString(query.actorId, 80, 1) || !isStringArray(query.targetIds, 40, 80)
     || !Array.isArray(query.domains) || query.domains.length > domains.length || !query.domains.every((item) => typeof item === 'string' && domains.includes(item))
-    || !isStringArray(query.topicTags, 40, 80) || !isString(query.purpose, 500, 1)
-    || !isNumber(query.tokenBudget, 500, 18_000)) return null;
+    || !isStringArray(query.topicTags, 40, 80) || !isStringArray(query.concepts, 40, 80) || !isString(query.purpose, 500, 1)
+    || !isString(query.playerIntent, AI_PLAYER_INTENT_MAX_CHARS, 1) || query.playerIntent !== job.playerIntent
+    || !isNumber(query.approximateIntentTokens, 1, 10_000)
+    || !isNumber(query.tokenBudget, 500, 25_000)) return null;
   return value as AIJobAIRequest;
 }
 
@@ -162,17 +190,35 @@ function isPowerStrugglePlan(value: unknown): value is PowerStruggleAIProposal |
     && isNumber(value.reviewAfterMonths, 1, 24);
 }
 
-export function isAIJobAIAnswer(value: unknown, kind?: AIJobKind): value is AIJobAIAnswer {
+function isPrivateDecision(value: unknown): value is AIPrivateDecision | null {
+  return value === null || (isRecord(value)
+    && isString(value.actorId, 80, 1)
+    && isStringArray(value.objectivesUsed, 6, 300)
+    && isStringArray(value.fearsUsed, 6, 300)
+    && isStringArray(value.redLinesUsed, 6, 300)
+    && isString(value.confidentialRationale, 1_200, 1));
+}
+
+export function isAIJobAIModelAnswer(value: unknown, kind?: AIJobKind): value is AIJobAIModelAnswer {
   if (!isRecord(value) || !isString(value.headline, 180, 1) || !isString(value.assessment, 1_500, 1)
+    || !isString(value.publicMessage, 1_200, 1)
     || !Array.isArray(value.proposals) || value.proposals.length < 1 || value.proposals.length > 3
-    || !isStringArray(value.requestedFacts, 5, 240) || !isPowerStrugglePlan(value.powerStrugglePlan)) return false;
+    || !isStringArray(value.requestedFacts, 5, 240) || !isPowerStrugglePlan(value.powerStrugglePlan)
+    || !isPrivateDecision(value.privateDecision)) return false;
   if (kind === 'power_struggle' && value.powerStrugglePlan === null) return false;
   if (kind && kind !== 'power_struggle' && value.powerStrugglePlan !== null) return false;
+  if (kind === 'diplomacy' && value.privateDecision === null) return false;
+  if (kind && kind !== 'diplomacy' && value.privateDecision !== null) return false;
   return value.proposals.every((proposal) => isRecord(proposal)
     && isString(proposal.label, 160, 1) && isString(proposal.action, 900, 1)
     && isString(proposal.rationale, 900, 1) && isStringArray(proposal.likelyReactions, 5, 400)
     && isStringArray(proposal.uncertainties, 5, 400) && Array.isArray(proposal.effectHints)
     && proposal.effectHints.length <= 6 && proposal.effectHints.every(isEffectHint));
+}
+
+export function sanitizeAIJobAIAnswer(value: AIJobAIModelAnswer): AIJobAIAnswer {
+  const { privateDecision: _privateDecision, ...publicAnswer } = value;
+  return publicAnswer;
 }
 
 const effectHintSchema = {
@@ -211,12 +257,25 @@ const powerPlanSchema = {
   },
 } as const;
 
+const privateDecisionSchema = {
+  type: 'object', additionalProperties: false,
+  required: ['actorId', 'objectivesUsed', 'fearsUsed', 'redLinesUsed', 'confidentialRationale'],
+  properties: {
+    actorId: { type: 'string', maxLength: 80 },
+    objectivesUsed: { type: 'array', maxItems: 6, items: { type: 'string', maxLength: 300 } },
+    fearsUsed: { type: 'array', maxItems: 6, items: { type: 'string', maxLength: 300 } },
+    redLinesUsed: { type: 'array', maxItems: 6, items: { type: 'string', maxLength: 300 } },
+    confidentialRationale: { type: 'string', maxLength: 1200 },
+  },
+} as const;
+
 export const aiJobAIJsonSchema = {
   type: 'object', additionalProperties: false,
-  required: ['headline', 'assessment', 'proposals', 'requestedFacts', 'powerStrugglePlan'],
+  required: ['headline', 'assessment', 'publicMessage', 'proposals', 'requestedFacts', 'powerStrugglePlan', 'privateDecision'],
   properties: {
     headline: { type: 'string', maxLength: 180 },
     assessment: { type: 'string', maxLength: 1500 },
+    publicMessage: { type: 'string', maxLength: 1200 },
     proposals: { type: 'array', minItems: 1, maxItems: 3, items: {
       type: 'object', additionalProperties: false,
       required: ['label', 'action', 'rationale', 'likelyReactions', 'uncertainties', 'effectHints'],
@@ -229,6 +288,7 @@ export const aiJobAIJsonSchema = {
     } },
     requestedFacts: { type: 'array', maxItems: 5, items: { type: 'string', maxLength: 240 } },
     powerStrugglePlan: { anyOf: [powerPlanSchema, { type: 'null' }] },
+    privateDecision: { anyOf: [privateDecisionSchema, { type: 'null' }] },
   },
 } as const;
 
@@ -236,9 +296,10 @@ export function toAIJobOutcome(answer: AIJobAIAnswer, context: AIContextPacket):
   return {
     headline: answer.headline,
     assessment: answer.assessment,
+    publicMessage: answer.publicMessage,
     proposals: answer.proposals,
     requestedFacts: answer.requestedFacts,
-    contextFactIds: context.facts.map((item) => item.id),
+    contextFactIds: [...context.knownFacts, ...context.privateDecisionFacts].map((item) => item.id),
     approximateInputTokens: context.approximateInputTokens,
   };
 }

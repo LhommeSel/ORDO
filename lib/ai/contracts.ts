@@ -3,6 +3,7 @@ import type { WorldState } from '../simulation/types';
 
 export const ORDO_AI_MODEL = 'gpt-5.6-luna' as const;
 export const ORDO_AI_SCHEMA_VERSION = 1 as const;
+export const ORDO_ADVISOR_QUESTION_MAX_CHARS = 30_000;
 
 export type AdvisorAIRequest = {
   schemaVersion: typeof ORDO_AI_SCHEMA_VERSION;
@@ -68,12 +69,13 @@ export function createAdvisorAIRequest(
   localAnswer: AdvisorAnswer,
   sessionId: string,
 ): AdvisorAIRequest {
+  if (question.length > ORDO_ADVISOR_QUESTION_MAX_CHARS) throw new RangeError('advisor_question_too_large');
   const player = world.countries[world.playerCountryId];
   return {
     schemaVersion: ORDO_AI_SCHEMA_VERSION,
     requestId: crypto.randomUUID(),
     sessionId: compactText(sessionId, 80),
-    question: compactText(question, 2_000),
+    question: question.trim(),
     context: {
       currentDate: world.currentDate,
       playerCountry: {
@@ -115,7 +117,7 @@ const isStringArray = (value: unknown, maximumItems: number, maximumLength: numb
 export function parseAdvisorAIRequest(value: unknown): AdvisorAIRequest | null {
   if (!isRecord(value) || value.schemaVersion !== ORDO_AI_SCHEMA_VERSION) return null;
   if (!isShortString(value.requestId, 80, 8) || !isShortString(value.sessionId, 80, 8)) return null;
-  if (!isShortString(value.question, 2_000, 3) || !isRecord(value.context)) return null;
+  if (!isShortString(value.question, ORDO_ADVISOR_QUESTION_MAX_CHARS, 3) || !isRecord(value.context)) return null;
   const context = value.context;
   if (!isShortString(context.currentDate, 10, 10) || !isRecord(context.playerCountry)) return null;
   if (!isShortString(context.playerCountry.id, 80, 1)

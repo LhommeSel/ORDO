@@ -609,6 +609,7 @@ export type AIJobEffectHint = {
 export type AIJobOutcome = {
   headline: string;
   assessment: string;
+  publicMessage: string;
   proposals: Array<{
     label: string;
     action: string;
@@ -632,6 +633,8 @@ export type AIJobBase = {
   requestedAt: ISODate;
   resolvedAt?: ISODate;
   attempts: number;
+  /** Texte libre intégral du joueur. `purpose` reste un résumé court exploitable par le moteur. */
+  inputText?: string;
   error?: string;
   outcome?: AIJobOutcome;
 };
