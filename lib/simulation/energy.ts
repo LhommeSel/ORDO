@@ -1,6 +1,7 @@
 import { commitWorldAction } from './ledger';
 import type {
   CountryId,
+  BaselineEnergyFlow,
   EnergyContract,
   EnergyNode,
   EnergyResource,
@@ -12,37 +13,92 @@ import type {
 const activeOn = (contract: EnergyContract, date: ISODate) =>
   contract.status === 'active' && contract.startDate <= date && contract.endDate >= date;
 
-export function nodeCommittedVolume(state: WorldState, nodeId: string, date = state.currentDate) {
-  return Object.values(state.energyContracts)
-    .filter((contract) => contract.nodeId === nodeId && activeOn(contract, date))
+const bookedOn = (contract: EnergyContract, date: ISODate) =>
+  ['active', 'proposed'].includes(contract.status) && contract.startDate <= date && contract.endDate >= date;
+
+const baselineActiveOn = (flow: BaselineEnergyFlow, date: ISODate) =>
+  flow.startDate <= date && flow.endDate >= date;
+
+export function nodePhysicalExportCapacity(state: WorldState, nodeId: string) {
+  const node = state.energyNodes[nodeId];
+  if (!node) return 0;
+  return Math.max(0, Math.min(node.annualProduction, node.annualCapacity) - node.domesticConsumption);
+}
+
+export function nodeBookedVolume(state: WorldState, nodeId: string, date = state.currentDate) {
+  const baseline = Object.values(state.baselineEnergyFlows ?? {})
+    .filter((flow) => flow.sourceNodeId === nodeId && baselineActiveOn(flow, date))
+    .reduce((sum, flow) => sum + flow.annualVolume, 0);
+  const contracts = Object.values(state.energyContracts)
+    .filter((contract) => contract.nodeId === nodeId && bookedOn(contract, date))
     .reduce((sum, contract) => sum + contract.annualVolume, 0);
+  return baseline + contracts;
+}
+
+export function nodeCommittedVolume(state: WorldState, nodeId: string, date = state.currentDate) {
+  return nodeBookedVolume(state, nodeId, date);
 }
 
 export function nodeAvailableExport(state: WorldState, nodeId: string, date = state.currentDate) {
   const node = state.energyNodes[nodeId];
   if (!node) return 0;
-  const exportCapacity = Math.max(0, node.annualCapacity - node.domesticConsumption);
-  return Math.max(0, exportCapacity - nodeCommittedVolume(state, nodeId, date));
+  return Math.max(0, nodePhysicalExportCapacity(state, nodeId) - nodeBookedVolume(state, nodeId, date));
+}
+
+export function nodeExpansionPotential(state: WorldState, nodeId: string) {
+  const node = state.energyNodes[nodeId];
+  if (!node) return 0;
+  return Math.max(0, node.annualCapacity - node.annualProduction);
+}
+
+function nodeDeliveryRatio(state: WorldState, nodeId: string, date = state.currentDate) {
+  const booked = nodeBookedVolume(state, nodeId, date);
+  if (booked <= 0) return 1;
+  return Math.min(1, nodePhysicalExportCapacity(state, nodeId) / booked);
+}
+
+export function baselineFlowDeliveredVolume(state: WorldState, flow: BaselineEnergyFlow, date = state.currentDate) {
+  if (!baselineActiveOn(flow, date)) return 0;
+  return flow.sourceNodeId ? flow.annualVolume * nodeDeliveryRatio(state, flow.sourceNodeId, date) : flow.annualVolume;
+}
+
+export function contractDeliveredVolume(state: WorldState, contract: EnergyContract, date = state.currentDate) {
+  if (!activeOn(contract, date)) return 0;
+  return contract.annualVolume * nodeDeliveryRatio(state, contract.nodeId, date);
+}
+
+function domesticProductionAt(state: WorldState, countryId: CountryId, resource: EnergyResource) {
+  const nodes = Object.values(state.energyNodes).filter((node) => node.countryId === countryId && node.resource === resource);
+  if (!nodes.length) return state.countryEnergy[countryId]?.domesticProduction[resource] ?? 0;
+  return nodes.reduce((sum, node) => sum + Math.min(node.annualProduction, node.annualCapacity), 0);
 }
 
 export function energyBalance(state: WorldState, countryId: CountryId, resource: EnergyResource) {
   const energy = state.countryEnergy[countryId];
   if (!energy) return null;
+  const flows = Object.values(state.baselineEnergyFlows ?? {});
+  const hasRegistry = flows.length > 0;
+  const baselineImports = hasRegistry
+    ? flows.filter((flow) => flow.buyerId === countryId && flow.resource === resource).reduce((sum, flow) => sum + baselineFlowDeliveredVolume(state, flow), 0)
+    : energy.legacyImports?.[resource] ?? 0;
   const contractualImports = Object.values(state.energyContracts)
-    .filter((contract) => contract.buyerId === countryId && contract.resource === resource && activeOn(contract, state.currentDate))
-    .reduce((sum, contract) => sum + contract.annualVolume, 0);
-  const legacyImports = energy.legacyImports?.[resource] ?? 0;
-  const imports = legacyImports + contractualImports;
-  const exports = Object.values(state.energyContracts)
-    .filter((contract) => contract.sellerId === countryId && contract.resource === resource && activeOn(contract, state.currentDate))
-    .reduce((sum, contract) => sum + contract.annualVolume, 0);
-  const available = energy.domesticProduction[resource] + imports - exports;
+    .filter((contract) => contract.buyerId === countryId && contract.resource === resource)
+    .reduce((sum, contract) => sum + contractDeliveredVolume(state, contract), 0);
+  const baselineExports = flows
+    .filter((flow) => flow.resource === resource && flow.sourceNodeId && state.energyNodes[flow.sourceNodeId]?.countryId === countryId)
+    .reduce((sum, flow) => sum + baselineFlowDeliveredVolume(state, flow), 0);
+  const contractualExports = Object.values(state.energyContracts)
+    .filter((contract) => contract.sellerId === countryId && contract.resource === resource)
+    .reduce((sum, contract) => sum + contractDeliveredVolume(state, contract), 0);
+  const imports = baselineImports + contractualImports;
+  const exports = baselineExports + contractualExports;
+  const available = domesticProductionAt(state, countryId, resource) + imports - exports;
   const deficit = Math.max(0, energy.annualDemand[resource] - available);
   const surplus = Math.max(0, available - energy.annualDemand[resource]);
   const coverageMonths = energy.annualDemand[resource] > 0
     ? (energy.strategicStocks[resource] / energy.annualDemand[resource]) * 12
     : 12;
-  return { imports, contractualImports, legacyImports, exports, available, deficit, surplus, coverageMonths };
+  return { imports, contractualImports, legacyImports: baselineImports, exports, available, deficit, surplus, coverageMonths };
 }
 
 export function proposeEnergyContract(
@@ -97,7 +153,7 @@ export function proposeEnergyContract(
 export function activateEnergyContract(state: WorldState, contractId: string, actorId: CountryId, origin: ActionOrigin = 'player') {
   const contract = state.energyContracts[contractId];
   if (!contract) return { ok: false as const, state, error: 'Contrat inconnu.' };
-  const available = nodeAvailableExport(state, contract.nodeId, contract.startDate) + (contract.status === 'active' ? contract.annualVolume : 0);
+  const available = nodeAvailableExport(state, contract.nodeId, contract.startDate) + (contract.status === 'proposed' ? contract.annualVolume : 0);
   if (available < contract.annualVolume) return { ok: false as const, state, error: 'La capacité exportable a été attribuée entre-temps.' };
   const next = commitWorldAction(state, {
     kind: 'energy', actorId, targetIds: [contract.sellerId, contract.buyerId], origin,

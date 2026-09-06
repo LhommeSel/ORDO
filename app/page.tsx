@@ -19,6 +19,7 @@ import {
   energyCounterpartResponseFromSession, evaluatePoliticalPathway, executeAIJob, markDossierViewed, productEvidenceSummary,
   enactPrototypeGovernmentMeasure, reactionLevelLabels, reactionTrendLabels,
   launchCommonAction, prepareCommonAction,
+  nodeAvailableExport, nodeBookedVolume, nodeExpansionPotential, nodePhysicalExportCapacity,
   sendEnergyOffer, serializeWorld, startEnergyNegotiationAI, visibleLedger, visibleStakeholderReactions,
   structuralDiagnosisGroups,
   setDossierFollowed,
@@ -362,25 +363,53 @@ function EconomyPanel({ world }: { world: WorldState }) {
 
 function EnergyPanel({ world }: { world: WorldState }) {
   const countryIds = Object.keys(world.countryEnergy);
+  const resources = ['oil', 'gas'] as const;
+  const nodes = Object.values(world.energyNodes);
+  const baselineFlows = Object.values(world.baselineEnergyFlows ?? {});
+  const activeContracts = Object.values(world.energyContracts).filter((contract) => contract.status === 'active');
+  const registry = resources.map((resource) => {
+    const resourceNodes = nodes.filter((node) => node.resource === resource);
+    return {
+      resource,
+      production: resourceNodes.reduce((sum, node) => sum + Math.min(node.annualProduction, node.annualCapacity), 0),
+      booked: resourceNodes.reduce((sum, node) => sum + nodeBookedVolume(world, node.id), 0),
+      available: resourceNodes.reduce((sum, node) => sum + nodeAvailableExport(world, node.id), 0),
+      expandable: resourceNodes.reduce((sum, node) => sum + nodeExpansionPotential(world, node.id), 0),
+    };
+  });
   return <div className="space-y-4">
     <div className="border border-border bg-card/70 p-4">
       <div className="font-semibold">Registre physique mondial pétrole & gaz</div>
-      <p className="mt-1 max-w-3xl text-sm text-muted-foreground">La production, la capacité maximale, les contrats et les stocks existent indépendamment du texte. Une même unité ne peut pas être vendue deux fois.</p>
+      <p className="mt-1 max-w-3xl text-sm text-muted-foreground">Chaque flux de départ a désormais une origine. Les contrats et engagements existants débitent le même registre : un volume déjà réservé ne peut pas être revendu. La capacité non déployée est distincte du volume disponible immédiatement.</p>
     </div>
+    <div className="grid gap-3 md:grid-cols-2">{registry.map((item) => <div key={item.resource} className="border border-border bg-card/70 p-4">
+      <div className="flex items-center justify-between"><div className="font-semibold capitalize">{item.resource === 'oil' ? 'Pétrole' : 'Gaz'}</div><span className="font-mono text-[10px] text-primary">registre modélisé</span></div>
+      <div className="mt-4 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4"><Stat label="Production" value={item.production.toFixed(1)} /><Stat label="Déjà réservé" value={item.booked.toFixed(1)} /><Stat label="Libre maintenant" value={item.available.toFixed(1)} /><Stat label="Capacité à déployer" value={item.expandable.toFixed(1)} /></div>
+    </div>)}</div>
     <div className="overflow-x-auto border border-border bg-card/70">
       <table className="w-full min-w-[780px] text-left text-sm">
-        <thead className="border-b border-border bg-muted/30 font-mono text-[10px] uppercase tracking-wider text-muted-foreground"><tr><th className="p-3">Pays</th><th>Pétrole disponible</th><th>Stocks pétrole</th><th>Gaz disponible</th><th>Stocks gaz</th><th>Contrats actifs</th></tr></thead>
+        <thead className="border-b border-border bg-muted/30 font-mono text-[10px] uppercase tracking-wider text-muted-foreground"><tr><th className="p-3">Pays</th><th>Importations pétrole</th><th>Stocks pétrole</th><th>Importations gaz</th><th>Stocks gaz</th><th>Déficit restant</th></tr></thead>
         <tbody>{countryIds.map((id) => {
           const oil = energyBalance(world, id, 'oil'); const gas = energyBalance(world, id, 'gas');
-          const contracts = Object.values(world.energyContracts).filter((item) => item.status === 'active' && (item.buyerId === id || item.sellerId === id)).length;
-          return <tr key={id} className="border-b border-border/60"><td className="p-3 font-medium">{world.countries[id]?.flag} {world.countries[id]?.name}</td><td>{oil?.available.toFixed(1)}</td><td>{oil?.coverageMonths.toFixed(1)} mois</td><td>{gas?.available.toFixed(1)}</td><td>{gas?.coverageMonths.toFixed(1)} mois</td><td>{contracts}</td></tr>;
+          const deficit = (oil?.deficit ?? 0) + (gas?.deficit ?? 0);
+          return <tr key={id} className="border-b border-border/60"><td className="p-3 font-medium">{world.countries[id]?.flag} {world.countries[id]?.name}</td><td>{oil?.imports.toFixed(1)}</td><td>{oil?.coverageMonths.toFixed(1)} mois</td><td>{gas?.imports.toFixed(1)}</td><td>{gas?.coverageMonths.toFixed(1)} mois</td><td className={deficit > 0 ? 'text-amber-300' : 'text-emerald-300'}>{deficit > 0 ? deficit.toFixed(1) : 'équilibré'}</td></tr>;
         })}</tbody>
       </table>
     </div>
-    <div className="grid gap-3 lg:grid-cols-2">{Object.values(world.energyNodes).map((node) => <div key={node.id} className="border border-border bg-card/70 p-4">
-      <div className="flex justify-between"><div className="font-medium">{node.label}</div><span className="font-mono text-xs text-primary">{node.resource}</span></div>
-      <div className="mt-3 grid grid-cols-3 gap-2 text-xs"><div><span className="text-muted-foreground">Production</span><div>{node.annualProduction.toFixed(1)}</div></div><div><span className="text-muted-foreground">Capacité</span><div>{node.annualCapacity.toFixed(1)}</div></div><div><span className="text-muted-foreground">Réserves</span><div>{node.provenReserves.toFixed(0)}</div></div></div>
-    </div>)}</div>
+    <section className="border border-border bg-card/70">
+      <div className="border-b border-border p-4"><div className="font-semibold">Production et capacité des nœuds</div><p className="mt-1 text-xs text-muted-foreground">La colonne « libre » tient compte des engagements historiques et des contrats actifs ; « à déployer » nécessite un futur programme industriel ou extractif.</p></div>
+      <div className="overflow-x-auto"><table className="w-full min-w-[900px] text-left text-sm"><thead className="border-b border-border bg-muted/30 font-mono text-[10px] uppercase tracking-wider text-muted-foreground"><tr><th className="p-3">Système</th><th>Production</th><th>Capacité max.</th><th>Usage local</th><th>Réservé</th><th>Libre</th><th>À déployer</th></tr></thead><tbody>{nodes.map((node) => <tr key={node.id} className="border-b border-border/60"><td className="p-3"><div className="font-medium">{node.label}</div><div className="text-xs text-muted-foreground">{world.countries[node.countryId]?.flag} {world.countries[node.countryId]?.name} · {node.resource === 'oil' ? 'pétrole' : 'gaz'}</div></td><td>{node.annualProduction.toFixed(1)}</td><td>{node.annualCapacity.toFixed(1)}</td><td>{node.domesticConsumption.toFixed(1)}</td><td>{nodeBookedVolume(world, node.id).toFixed(1)}</td><td className={nodeAvailableExport(world, node.id) > 0 ? 'text-emerald-300' : 'text-muted-foreground'}>{nodeAvailableExport(world, node.id).toFixed(1)}</td><td>{nodeExpansionPotential(world, node.id).toFixed(1)}</td></tr>)}</tbody></table></div>
+    </section>
+    <section className="border border-border bg-card/70">
+      <div className="border-b border-border p-4"><div className="font-semibold">Flux énergétiques enregistrés</div><p className="mt-1 text-xs text-muted-foreground">{baselineFlows.length} flux initiaux et {activeContracts.length} contrat(s) signé(s). Les flux hors périmètre expliquent les importations provenant de pays pas encore jouables, sans offrir une ressource infinie au joueur.</p></div>
+      <div className="max-h-80 overflow-auto divide-y divide-border/60">{[...baselineFlows, ...activeContracts].map((flow) => {
+        const isContract = 'sellerId' in flow;
+        const nodeId = isContract ? flow.nodeId : flow.sourceNodeId;
+        const sourceNode = nodeId ? world.energyNodes[nodeId] : undefined;
+        const source = sourceNode ? `${world.countries[sourceNode.countryId]?.flag ?? ''} ${world.countries[sourceNode.countryId]?.name ?? sourceNode.label}` : !isContract ? flow.externalSourceLabel : 'Contrat';
+        return <div key={`${isContract ? 'contract' : 'baseline'}-${flow.id}`} className="flex flex-wrap items-center justify-between gap-3 p-3 text-xs"><div><b>{source}</b> → {world.countries[flow.buyerId]?.flag} {world.countries[flow.buyerId]?.name}<div className="mt-1 text-muted-foreground">{flow.route}</div></div><div className="font-mono text-primary">{flow.annualVolume.toFixed(1)} / an · {flow.resource === 'oil' ? 'pétrole' : 'gaz'}</div></div>;
+      })}</div>
+    </section>
   </div>;
 }
 

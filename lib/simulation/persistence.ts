@@ -60,6 +60,7 @@ export function deserializeWorld(raw: string): WorldState {
   return {
     ...restored,
     countryEnergy,
+    baselineEnergyFlows: restored.baselineEnergyFlows ?? {},
     strategicDossiers: restored.strategicDossiers ?? {},
     macroEconomies,
     worldEconomy,

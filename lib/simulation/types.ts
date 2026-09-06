@@ -223,6 +223,20 @@ export type EnergyContract = {
   status: 'proposed' | 'active' | 'suspended' | 'expired' | 'broken';
 };
 
+/** Flux présents au lancement : ils donnent une origine finie aux importations déjà existantes. */
+export type BaselineEnergyFlow = {
+  id: string;
+  buyerId: CountryId;
+  resource: EnergyResource;
+  annualVolume: number;
+  startDate: ISODate;
+  endDate: ISODate;
+  route: string;
+  /** Un nœud modélisé est physiquement débité ; une source externe reste fermée à la négociation. */
+  sourceNodeId?: string;
+  externalSourceLabel?: string;
+};
+
 export type DiplomaticEnergyTerms = {
   resource: EnergyResource;
   nodeId: string;
@@ -1055,6 +1069,7 @@ export type WorldState = {
   latentProcesses: Record<string, LatentProcess>;
   energyNodes: Record<string, EnergyNode>;
   energyContracts: Record<string, EnergyContract>;
+  baselineEnergyFlows: Record<string, BaselineEnergyFlow>;
   countryEnergy: Record<CountryId, CountryEnergyState>;
   macroEconomies: Record<CountryId, MacroeconomicState>;
   worldEconomy: WorldEconomyState;

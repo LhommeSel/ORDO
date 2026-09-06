@@ -1,5 +1,6 @@
 import type {
   ArmamentProduct,
+  BaselineEnergyFlow,
   CapacityState,
   CountryState,
   EnergyNode,
@@ -412,6 +413,35 @@ const energyNodes: Record<string, EnergyNode> = {
   'vnm-oil': { id: 'vnm-oil', countryId: 'VNM', resource: 'oil', label: 'Plateau continental vietnamien', provenReserves: 350, probableReserves: 180, annualProduction: 17, annualCapacity: 21, domesticConsumption: 8, storageCapacity: 3, stocks: 1, extractionCost: 17, declineRate: 0.012, developmentLeadMonths: 42, infrastructure: ['Bach Ho', 'Vung Tau'] },
 };
 
+const baselineFlow = (
+  id: string, buyerId: string, resource: 'oil' | 'gas', annualVolume: number, route: string, sourceNodeId?: string,
+): BaselineEnergyFlow => ({
+  id, buyerId, resource, annualVolume, route, sourceNodeId,
+  ...(sourceNodeId ? {} : { externalSourceLabel: 'Marché hors périmètre ORDO' }),
+  startDate: '2000-01-01', endDate: '2025-12-31',
+});
+
+/**
+ * Les importations de départ sont attribuées à une origine finie. Les volumes
+ * « hors périmètre » couvrent le reste du monde, mais ne constituent pas une
+ * source négociable tant que leurs pays ne sont pas ajoutés au moteur.
+ */
+const baselineEnergyFlows: Record<string, BaselineEnergyFlow> = Object.fromEntries([
+  baselineFlow('fra-oil-nor', 'FRA', 'oil', 20, 'Mer du Nord', 'nor-oil'), baselineFlow('fra-oil-rus', 'FRA', 'oil', 20, 'Terminaux baltes', 'rus-oil'), baselineFlow('fra-oil-dza', 'FRA', 'oil', 10, 'Méditerranée', 'dza-oil'), baselineFlow('fra-oil-sau', 'FRA', 'oil', 20, 'Canal de Suez', 'sau-oil'), baselineFlow('fra-oil-ext', 'FRA', 'oil', 20, 'Marché maritime mondial'),
+  baselineFlow('fra-gas-dza', 'FRA', 'gas', 14, 'Gazoduc Maghreb-Europe', 'dza-gas'), baselineFlow('fra-gas-nor', 'FRA', 'gas', 6, 'Interconnexions mer du Nord', 'nor-gas'), baselineFlow('fra-gas-rus', 'FRA', 'gas', 12, 'Corridor continental', 'rus-gas'), baselineFlow('fra-gas-ext', 'FRA', 'gas', 11, 'GNL mondial'),
+  baselineFlow('deu-oil-rus', 'DEU', 'oil', 20, 'Droujba', 'rus-oil'), baselineFlow('deu-oil-nor', 'DEU', 'oil', 8, 'Mer du Nord', 'nor-oil'), baselineFlow('deu-oil-sau', 'DEU', 'oil', 25, 'Canal de Suez', 'sau-oil'), baselineFlow('deu-oil-ext', 'DEU', 'oil', 71, 'Marché maritime mondial'),
+  baselineFlow('deu-gas-rus', 'DEU', 'gas', 30, 'Yamal-Europe', 'rus-gas'), baselineFlow('deu-gas-nor', 'DEU', 'gas', 8, 'Europipe', 'nor-gas'), baselineFlow('deu-gas-dza', 'DEU', 'gas', 4, 'Interconnexions européennes', 'dza-gas'), baselineFlow('deu-gas-ext', 'DEU', 'gas', 18, 'GNL mondial'),
+  baselineFlow('ita-oil-rus', 'ITA', 'oil', 10, 'Mer Noire–Méditerranée', 'rus-oil'), baselineFlow('ita-oil-lby', 'ITA', 'oil', 7, 'Méditerranée centrale', 'lby-oil'), baselineFlow('ita-oil-dza', 'ITA', 'oil', 5, 'Méditerranée', 'dza-oil'), baselineFlow('ita-oil-sau', 'ITA', 'oil', 15, 'Canal de Suez', 'sau-oil'), baselineFlow('ita-oil-ext', 'ITA', 'oil', 54, 'Marché maritime mondial'),
+  baselineFlow('ita-gas-rus', 'ITA', 'gas', 25, 'Corridor continental', 'rus-gas'), baselineFlow('ita-gas-dza', 'ITA', 'gas', 16, 'TransMed', 'dza-gas'), baselineFlow('ita-gas-ext', 'ITA', 'gas', 4, 'GNL mondial'),
+  baselineFlow('pol-oil-rus', 'POL', 'oil', 15, 'Droujba', 'rus-oil'), baselineFlow('pol-oil-ext', 'POL', 'oil', 8, 'Marché maritime mondial'), baselineFlow('pol-gas-rus', 'POL', 'gas', 9, 'Yamal-Europe', 'rus-gas'),
+  baselineFlow('usa-oil-sau', 'USA', 'oil', 80, 'Golfe–Atlantique', 'sau-oil'), baselineFlow('usa-oil-ext', 'USA', 'oil', 370, 'Marché continental et maritime'), baselineFlow('usa-gas-ext', 'USA', 'gas', 130, 'Marché continental'),
+  baselineFlow('chn-oil-rus', 'CHN', 'oil', 18, 'Livraisons ferroviaires', 'rus-oil'), baselineFlow('chn-oil-sau', 'CHN', 'oil', 12, 'Océan Indien', 'sau-oil'), baselineFlow('chn-oil-ext', 'CHN', 'oil', 20, 'Marché maritime mondial'), baselineFlow('chn-gas-ext', 'CHN', 'gas', 4, 'GNL mondial'),
+  baselineFlow('bra-oil-ext', 'BRA', 'oil', 32, 'Marché atlantique'), baselineFlow('bra-gas-ext', 'BRA', 'gas', 3, 'Gaz régional'), baselineFlow('zaf-oil-ext', 'ZAF', 'oil', 21, 'Marché maritime mondial'),
+  baselineFlow('ind-oil-sau', 'IND', 'oil', 25, 'Océan Indien', 'sau-oil'), baselineFlow('ind-oil-rus', 'IND', 'oil', 10, 'Mer Noire–océan Indien', 'rus-oil'), baselineFlow('ind-oil-ext', 'IND', 'oil', 40, 'Marché maritime mondial'),
+  baselineFlow('jpn-oil-sau', 'JPN', 'oil', 70, 'Golfe–Asie orientale', 'sau-oil'), baselineFlow('jpn-oil-ext', 'JPN', 'oil', 189, 'Marché maritime mondial'), baselineFlow('jpn-gas-aus', 'JPN', 'gas', 6, 'North West Shelf', 'aus-gas'), baselineFlow('jpn-gas-ext', 'JPN', 'gas', 72, 'GNL mondial'),
+  baselineFlow('tur-oil-rus', 'TUR', 'oil', 6, 'Mer Noire', 'rus-oil'), baselineFlow('tur-oil-sau', 'TUR', 'oil', 8, 'Méditerranée orientale', 'sau-oil'), baselineFlow('tur-oil-ext', 'TUR', 'oil', 16, 'Marché maritime mondial'), baselineFlow('tur-gas-rus', 'TUR', 'gas', 13, 'Blue Stream', 'rus-gas'),
+].map((flow) => [flow.id, flow]));
+
 const sectors: Record<string, StrategicSectorState> = {
   'FRA-defense': { id: 'FRA-defense', countryId: 'FRA', sector: 'defense', capacity: 82, utilization: 71, workloadMonths: 30, health: 78, foreignDependency: 22, technology: 86, expansionLeadMonths: 30 },
   'FRA-semiconductors': { id: 'FRA-semiconductors', countryId: 'FRA', sector: 'semiconductors', capacity: 48, utilization: 76, workloadMonths: 12, health: 61, foreignDependency: 64, technology: 66, expansionLeadMonths: 42, vulnerability: 'Dépendance aux procédés les plus avancés' },
@@ -457,6 +487,7 @@ export function createFrance2000World(): WorldState {
     latentProcesses: structuredClone(latentProcesses),
     energyNodes: structuredClone(energyNodes),
     energyContracts: {},
+    baselineEnergyFlows: structuredClone(baselineEnergyFlows),
     countryEnergy: {
       FRA: { countryId: 'FRA', annualDemand: { oil: 92, gas: 46 }, domesticProduction: { oil: 2, gas: 3 }, legacyImports: { oil: 90, gas: 43 }, strategicStocks: { oil: 24, gas: 3 }, storageCapacity: { oil: 34, gas: 12 }, desiredCoverageMonths: { oil: 3, gas: 1.5 } },
       DEU: { countryId: 'DEU', annualDemand: { oil: 128, gas: 78 }, domesticProduction: { oil: 4, gas: 18 }, legacyImports: { oil: 124, gas: 60 }, strategicStocks: { oil: 29, gas: 9 }, storageCapacity: { oil: 41, gas: 24 }, desiredCoverageMonths: { oil: 3, gas: 2 } },

@@ -67,6 +67,25 @@ test('un contrat énergétique ne peut pas dépasser la capacité physique resta
   assert.equal(result.state.actions.length, 0);
 });
 
+test('le registre énergétique réserve les flux historiques et empêche une double vente', () => {
+  const initial = createFrance2000World();
+  assert.ok(Object.keys(initial.baselineEnergyFlows).length > 40);
+  assert.equal(energyBalance(initial, 'FRA', 'gas')?.imports, 43);
+  const available = nodeAvailableExport(initial, 'dza-gas');
+  const proposal = proposeEnergyContract(initial, {
+    id: 'all-dza-gas', nodeId: 'dza-gas', buyerId: 'FRA', annualVolume: available,
+    startDate: '2000-01-01', endDate: '2005-01-01', priceFormula: 'Marché', route: 'Méditerranée',
+  });
+  assert.equal(proposal.ok, true);
+  if (!proposal.ok) return;
+  assert.equal(nodeAvailableExport(proposal.state, 'dza-gas'), 0);
+  const second = proposeEnergyContract(proposal.state, {
+    id: 'double-sale', nodeId: 'dza-gas', buyerId: 'ITA', annualVolume: 1,
+    startDate: '2000-01-01', endDate: '2005-01-01', priceFormula: 'Marché', route: 'Méditerranée',
+  });
+  assert.equal(second.ok, false);
+});
+
 test('une demande simple produit une proposition gazière administrativement réaliste', () => {
   const state = createFrance2000World();
   const result = createAdministrativeEnergyOffer(state, 'DZA', 'gas');
