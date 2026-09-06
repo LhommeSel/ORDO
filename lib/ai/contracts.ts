@@ -148,7 +148,7 @@ export function isAdvisorAIAnswer(value: unknown): value is AdvisorAIAnswer {
     || !isShortString(value.synthesis, 1_200, 1)
     || !isShortString(value.keyJudgment, 600, 1)
     || !Array.isArray(value.options)
-    || value.options.length < 2
+    || value.options.length < 1
     || value.options.length > 3
     || !isStringArray(value.blindSpots, 3, 300)) return false;
   return value.options.every((option) => isRecord(option)
@@ -170,7 +170,7 @@ export const advisorAIJsonSchema = {
     synthesis: { type: 'string', maxLength: 1200 },
     keyJudgment: { type: 'string', maxLength: 600 },
     options: {
-      type: 'array', minItems: 2, maxItems: 3,
+      type: 'array', minItems: 1, maxItems: 3,
       items: {
         type: 'object', additionalProperties: false,
         required: ['title', 'proposal', 'whyPlausible', 'whyRefused', 'estimatedConsequences', 'risks', 'factIds'],
