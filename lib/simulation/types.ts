@@ -882,6 +882,46 @@ export type ActionKind =
   | 'historical'
   | 'time_advance';
 
+/**
+ * Un programme est l'unité commune entre une intention du joueur et ses effets
+ * dans le monde : il consomme des moyens, prend du temps, puis est résolu par le
+ * moteur. Il évite que chaque domaine invente sa propre boucle de gameplay.
+ */
+export type CommonActionCategory =
+  | 'diplomacy'
+  | 'economic'
+  | 'institutional'
+  | 'defense'
+  | 'intelligence';
+
+export type ActionProgramStatus =
+  | 'active'
+  | 'succeeded'
+  | 'partially_succeeded'
+  | 'failed'
+  | 'cancelled';
+
+export type ActionProgram = {
+  id: string;
+  category: CommonActionCategory;
+  actorId: CountryId;
+  targetIds: EntityId[];
+  title: string;
+  intent: string;
+  startedAt: ISODate;
+  expectedCompletionAt: ISODate;
+  durationMonths: number;
+  progressMonths: number;
+  status: ActionProgramStatus;
+  requiredCapacities: Array<{ domain: CapacityDomainId; commitment: number }>;
+  budgetCost: number;
+  successProbability: number;
+  risks: string[];
+  successEffects: WorldEffect[];
+  partialEffects: WorldEffect[];
+  resolution?: string;
+};
+
 export type WorldEffect =
   | { kind: 'date_set'; date: ISODate; reason: string; visibility?: Visibility }
   | { kind: 'processed_stop_add'; stopId: string; reason: string; visibility?: Visibility }
@@ -918,7 +958,9 @@ export type WorldEffect =
   | { kind: 'power_campaign_add'; campaign: PowerStruggleCampaign; reason: string; visibility?: Visibility }
   | { kind: 'power_campaign_patch'; campaignId: string; patch: Partial<PowerStruggleCampaign>; reason: string; visibility?: Visibility }
   | { kind: 'ai_job_add'; job: AIJob; reason: string; visibility?: Visibility }
-  | { kind: 'ai_job_patch'; jobId: string; patch: AIJobPatch; reason: string; visibility?: Visibility };
+  | { kind: 'ai_job_patch'; jobId: string; patch: AIJobPatch; reason: string; visibility?: Visibility }
+  | { kind: 'action_program_add'; program: ActionProgram; reason: string; visibility?: Visibility }
+  | { kind: 'action_program_patch'; programId: string; patch: Partial<ActionProgram>; reason: string; visibility?: Visibility };
 
 export type ActionDraft = {
   kind: ActionKind;
@@ -1026,6 +1068,7 @@ export type WorldState = {
   powerActors: Record<string, EmergentPowerActor>;
   powerStruggleCampaigns: Record<string, PowerStruggleCampaign>;
   aiJobs: Record<string, AIJob>;
+  actionPrograms: Record<string, ActionProgram>;
   diplomaticSessions: Record<string, DiplomaticSession>;
   sectors: Record<string, StrategicSectorState>;
   armamentProducts: Record<string, ArmamentProduct>;

@@ -1,4 +1,5 @@
 import { runAutonomyCycle } from './autonomy';
+import { advanceCommonActionPrograms } from './action-programs';
 import { runSimulationPipeline, type SimulationPhase } from './core';
 import { advanceEnergySystem } from './energy';
 import { advanceHistoricalCurrents, type HistoricalManifestation } from './history';
@@ -84,6 +85,7 @@ function simulationPhases(
   return [
     { id: 'treaties', advance: (state, context) => advanceTreaties(state, context.elapsedMonths) },
     { id: 'institutions', advance: (state, context) => advanceInstitutions(state, context.elapsedMonths) },
+    { id: 'common-actions', advance: (state, context) => advanceCommonActionPrograms(state, context.elapsedMonths) },
     { id: 'stakeholders', advance: (state, context) => advanceStakeholderReactions(state, context.elapsedMonths) },
     { id: 'power-opportunities', advance: (state) => detectPowerStruggleOpportunities(state) },
     { id: 'power-struggles', advance: (state, context) => advancePowerStruggles(state, context.elapsedMonths) },

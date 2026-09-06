@@ -395,6 +395,22 @@ function applyEffect(state: WorldState, action: WorldAction, effect: WorldEffect
     return appendChange(next, action, effect, `aiJobs.${effect.jobId}`, job, after);
   }
 
+  if (effect.kind === 'action_program_add') {
+    const programs = state.actionPrograms ?? {};
+    const before = programs[effect.program.id] ?? null;
+    const after = before ?? effect.program;
+    const next = { ...state, actionPrograms: { ...programs, [effect.program.id]: after } };
+    return appendChange(next, action, effect, `actionPrograms.${effect.program.id}`, before, after);
+  }
+
+  if (effect.kind === 'action_program_patch') {
+    const program = state.actionPrograms?.[effect.programId];
+    if (!program) return state;
+    const after = { ...program, ...effect.patch };
+    const next = { ...state, actionPrograms: { ...state.actionPrograms, [effect.programId]: after } };
+    return appendChange(next, action, effect, `actionPrograms.${effect.programId}`, program, after);
+  }
+
   const product = state.armamentProducts[effect.productId];
   if (!product) return state;
   const after = { ...product, ...effect.patch };

@@ -18,12 +18,13 @@ import {
   dossierUnreadCount, dossiersRequiringAttention, dossierUpdatesSinceView, energyBalance,
   energyCounterpartResponseFromSession, evaluatePoliticalPathway, executeAIJob, markDossierViewed, productEvidenceSummary,
   enactPrototypeGovernmentMeasure, reactionLevelLabels, reactionTrendLabels,
+  launchCommonAction, prepareCommonAction,
   sendEnergyOffer, serializeWorld, startEnergyNegotiationAI, visibleLedger, visibleStakeholderReactions,
   structuralDiagnosisGroups,
   setDossierFollowed,
   type AdvisorAnswer, type EnergyAdministrativeOffer, type EnergyCounterpartResponse,
   type EnergyOfferAdjustment, type ISODate, type StrategicDossier, type StrategicPlan,
-  type PrototypeMeasureId, type StructuralDiagnosis, type WorldState,
+  type PreparedCommonAction, type PrototypeMeasureId, type StructuralDiagnosis, type WorldState,
 } from '@/lib/simulation';
 import {
   createAdvisorAIRequest,
@@ -111,6 +112,9 @@ function WorldPanel({ world, onWorldChange, onNotice }: {
   const autonomousReviews = world.actions.filter((action) =>
     action.intent === 'Révision périodique de la stratégie nationale',
   ).slice(-8).reverse();
+  const activePrograms = Object.values(world.actionPrograms ?? {})
+    .filter((program) => program.actorId === player.id && program.status === 'active')
+    .sort((a, b) => a.expectedCompletionAt.localeCompare(b.expectedCompletionAt));
   return <div className="grid gap-4 xl:grid-cols-[1.15fr_.85fr]">
     <section className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -178,6 +182,18 @@ function WorldPanel({ world, onWorldChange, onNotice }: {
             <div className="font-mono text-xs text-sky-300">pression {current.pressure.toFixed(1)}</div>
           </div>)}
         </div>
+      </div>
+
+      <div className="border border-border bg-card/70 p-4">
+        <div className="flex items-center gap-2 font-semibold"><CheckCircle2 className="size-4 text-primary" /> Programmes en cours</div>
+        <p className="mt-1 text-xs text-muted-foreground">Une intention engagée reste ici jusqu’à sa résolution. Ses moyens sont libérés automatiquement à l’issue du programme.</p>
+        <div className="mt-3 space-y-2">{activePrograms.length ? activePrograms.map((program) => {
+          const progress = program.durationMonths ? Math.min(100, program.progressMonths / program.durationMonths * 100) : 100;
+          return <div key={program.id} className="border border-border bg-background/35 p-3">
+            <div className="flex items-start justify-between gap-3"><div><div className="font-medium">{program.title}</div><div className="mt-1 text-xs text-muted-foreground">Fin estimée : {program.expectedCompletionAt} · issue initiale estimée : {program.successProbability}%</div></div><span className="font-mono text-[10px] text-primary">{program.category}</span></div>
+            <div className="mt-3 h-1.5 bg-muted"><div className="h-full bg-primary" style={{ width: `${progress}%` }} /></div>
+          </div>;
+        }) : <div className="border border-dashed border-border p-4 text-xs text-muted-foreground">Aucun programme gouvernemental n’est engagé. Préparez une action depuis le Conseiller.</div>}</div>
       </div>
     </section>
 
@@ -510,6 +526,8 @@ function AdvisorAIAuditPanel({ entries, onClear }: { entries: AdvisorAIAuditEntr
 function AdvisorPanel({ world, onWorldChange, onNotice }: { world: WorldState; onWorldChange: (world: WorldState) => void; onNotice: (message: string) => void }) {
   const [question, setQuestion] = useState('');
   const [answer, setAnswer] = useState<AdvisorAnswer>(() => answerAdvisorQuestion(world, ''));
+  const [preparedAction, setPreparedAction] = useState<PreparedCommonAction | null>(null);
+  const [actionWarnings, setActionWarnings] = useState<string[]>([]);
   const [aiAnswer, setAiAnswer] = useState<AdvisorAIAnswer | null>(null);
   const [aiUsage, setAiUsage] = useState<AdvisorAIUsage | null>(null);
   const [aiStatus, setAiStatus] = useState<'idle' | 'loading' | 'ready' | 'unavailable'>('idle');
@@ -544,6 +562,25 @@ function AdvisorPanel({ world, onWorldChange, onNotice }: { world: WorldState; o
     setAiMessage('Analyse locale terminée · aucun appel facturé.');
     resetNegotiation();
     return local;
+  };
+  const prepareAction = () => {
+    const result = prepareCommonAction(world, question);
+    if (!result.ok) {
+      setPreparedAction(null); setActionWarnings([result.error]);
+      return;
+    }
+    setPreparedAction(result.action); setActionWarnings(result.warnings);
+    setAiAnswer(null); setAiUsage(null); setAiStatus('idle');
+    setAiMessage('Programme préparé localement · aucun appel facturé.');
+    resetNegotiation();
+  };
+  const launchPreparedAction = () => {
+    if (!preparedAction) return;
+    const result = launchCommonAction(world, preparedAction);
+    if (!result.ok) return onNotice(result.error);
+    onWorldChange(result.state);
+    onNotice(`Programme lancé : il sera résolu automatiquement au fil du temps.`);
+    setPreparedAction(null); setActionWarnings([]);
   };
   const askAI = async () => {
     if (question.trim().length < 3 || aiStatus === 'loading') return;
@@ -645,8 +682,9 @@ function AdvisorPanel({ world, onWorldChange, onNotice }: { world: WorldState; o
       <p className="mt-1 text-sm text-muted-foreground">Écrivez votre intention comme vous la formuleriez à votre administration. Le pays, la ressource et l’objectif sont extraits de la phrase ; aucun partenaire n’est imposé par un menu.</p>
       <label className="mt-5 block font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Votre demande</label>
       <Textarea value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="Ex. Je veux sécuriser un contrat gazier de long terme avec l’Algérie afin de diversifier nos approvisionnements." className="mt-2 min-h-36" />
-      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+      <div className="mt-3 grid gap-2 sm:grid-cols-3">
         <Button variant="outline" disabled={question.trim().length < 3 || aiStatus === 'loading'} onClick={prepareLocalAnswer}>Préparer localement</Button>
+        <Button variant="outline" disabled={question.trim().length < 3 || aiStatus === 'loading'} onClick={prepareAction}><CheckCircle2 className="size-4" />Préparer une action</Button>
         <Button disabled={question.trim().length < 3 || aiStatus === 'loading'} onClick={askAI}>{aiStatus === 'loading' ? <LoaderCircle className="size-4 animate-spin" /> : <BrainCircuit className="size-4" />}Approfondir avec l’IA</Button>
       </div>
       <div className={`mt-4 border p-3 text-xs ${aiStatus === 'unavailable' ? 'border-amber-400/40 text-amber-200' : 'border-border bg-muted/20 text-muted-foreground'}`}>{aiMessage}{aiUsage && <div className="mt-2 font-mono text-[10px] text-muted-foreground">{aiUsage.inputTokens} jetons reçus · {aiUsage.outputTokens} produits · coût estimé ${aiUsage.estimatedCostUsd.toFixed(4)}</div>}</div>
@@ -677,6 +715,18 @@ function AdvisorPanel({ world, onWorldChange, onNotice }: { world: WorldState; o
         <div className="mt-4 flex flex-wrap gap-2">{answer.facts.map((fact) => <span key={fact.id} title={`${fact.sourcePath} · confiance ${fact.confidence}%`} className="border border-border bg-muted/30 px-2 py-1 text-xs"><b>{fact.label}</b> · {fact.value}</span>)}</div>
       </div>
       {offer && <EnergyNegotiationPanel world={world} offer={offer} response={response} signedContractId={signedContractId} showAdjustments={showAdjustments} onSend={send} onSendAI={sendWithAI} onReplyAI={replyWithAI} onAdjust={adjust} onSign={sign} onToggleAdjustments={() => setShowAdjustments((value) => !value)} onClose={resetNegotiation} aiNegotiationStatus={aiNegotiationStatus} aiNegotiationMessage={aiNegotiationMessage} playerReply={playerReply} onPlayerReplyChange={setPlayerReply} />}
+      {(preparedAction || actionWarnings.length > 0) && <div className={`border p-4 ${preparedAction ? 'border-primary/45 bg-card/80' : 'border-amber-400/40 bg-card/70'}`}>
+        {preparedAction ? <>
+          <div className="font-mono text-[10px] uppercase tracking-wider text-primary">Programme prêt à engager</div>
+          <h2 className="mt-1 text-xl font-semibold">{preparedAction.title}</h2>
+          <p className="mt-2 text-sm text-muted-foreground">{preparedAction.intent}</p>
+          <div className="mt-4 grid gap-2 sm:grid-cols-3"><Stat label="Durée" value={`${preparedAction.durationMonths} mois`} /><Stat label="Issue estimée" value={`${preparedAction.successProbability}%`} /><Stat label="Coût initial" value={preparedAction.budgetCost.toFixed(1)} detail="budget du prototype" /></div>
+          <div className="mt-4 text-xs"><b>Moyens engagés :</b><div className="mt-2 flex flex-wrap gap-2">{preparedAction.requiredCapacities.map((item) => <span key={item.domain} className="border border-border bg-muted/30 px-2 py-1">{item.domain} +{item.commitment}</span>)}</div></div>
+          <div className="mt-4 text-xs"><b>Risques :</b><ul className="mt-1 space-y-1 text-muted-foreground">{preparedAction.risks.map((risk) => <li key={risk}>— {risk}</li>)}</ul></div>
+          {actionWarnings.length > 0 && <div className="mt-3 text-xs text-amber-300">{actionWarnings.map((warning) => <div key={warning}>⚠ {warning}</div>)}</div>}
+          <Button className="mt-4" onClick={launchPreparedAction}><CheckCircle2 className="size-4" />Engager le programme</Button>
+        </> : <><div className="font-semibold text-amber-200">Action non préparée</div><div className="mt-2 space-y-1 text-sm text-amber-100">{actionWarnings.map((warning) => <div key={warning}>— {warning}</div>)}</div></>}
+      </div>}
       {answer.plans.map((plan) => <PlanCard key={plan.id} world={world} plan={plan} onPrepare={prepare} />)}
     </section>
   </div>;

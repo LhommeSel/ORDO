@@ -490,6 +490,7 @@ export function createFrance2000World(): WorldState {
     powerActors: {},
     powerStruggleCampaigns: {},
     aiJobs: {},
+    actionPrograms: {},
     diplomaticSessions: {},
     sectors: structuredClone(sectors),
     armamentProducts: structuredClone(armamentProducts),

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { answerAdvisorQuestion, assessStrategicPlan } from './advisor';
+import { launchCommonAction, prepareCommonAction } from './action-programs';
 import { energyBalance, nodeAvailableExport, proposeEnergyContract } from './energy';
 import {
   acceptEnergyOffer, adjustEnergyOffer, createAdministrativeEnergyOffer, sendEnergyOffer,
@@ -36,6 +37,22 @@ test('le scénario 2000 charge un monde cohérent et jouable', () => {
   assert.ok(Object.keys(state.historicalCurrents).length >= 3);
   assert.ok(Object.keys(state.armamentProducts).length >= 6);
   assert.ok(Object.keys(state.strategicDossiers).length >= 2);
+});
+
+test('une intention diplomatique devient un programme puis libère ses moyens à la résolution', () => {
+  const initial = createFrance2000World();
+  const prepared = prepareCommonAction(initial, 'Ouvrir une coopération technologique avec l’Allemagne.');
+  assert.equal(prepared.ok, true);
+  if (!prepared.ok) return;
+  assert.equal(prepared.action.category, 'diplomacy');
+  const launched = launchCommonAction(initial, prepared.action);
+  assert.equal(launched.ok, true);
+  if (!launched.ok) return;
+  assert.equal(launched.state.actionPrograms[launched.programId].status, 'active');
+  assert.ok(launched.state.countries.FRA.capacities.diplomacy.committed > initial.countries.FRA.capacities.diplomacy.committed);
+  const advanced = advanceWorld(launched.state, '2000-04-01').state;
+  assert.notEqual(advanced.actionPrograms[launched.programId].status, 'active');
+  assert.equal(advanced.countries.FRA.capacities.diplomacy.committed, initial.countries.FRA.capacities.diplomacy.committed);
 });
 
 test('un contrat énergétique ne peut pas dépasser la capacité physique restante', () => {

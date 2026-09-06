@@ -1,4 +1,5 @@
 export * from './advisor';
+export * from './action-programs';
 export * from './ai';
 export * from './autonomy';
 export * from './core';
