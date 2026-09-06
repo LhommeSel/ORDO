@@ -26,12 +26,33 @@ import {
 } from '@/lib/simulation';
 import {
   createAdvisorAIRequest,
+  type AdvisorAIRequest,
   type AdvisorAIAnswer,
   type AdvisorAIResponse,
   type AdvisorAIUsage,
 } from '@/lib/ai/contracts';
 
 type Panel = 'world' | 'economy' | 'energy' | 'industry' | 'dossiers' | 'advisor' | 'ledger';
+
+type AdvisorAIAuditEntry = {
+  id: string;
+  createdAt: string;
+  request: Pick<AdvisorAIRequest, 'requestId' | 'question' | 'context'>;
+  result: { ok: true; answer: AdvisorAIAnswer; usage: AdvisorAIUsage } | { ok: false; message: string };
+};
+
+const advisorAuditStorageKey = 'ordo-advisor-ai-audit-v1';
+const advisorAuditMaximumEntries = 20;
+
+function readAdvisorAudit(): AdvisorAIAuditEntry[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(advisorAuditStorageKey) ?? '[]');
+    return Array.isArray(parsed) ? parsed.slice(0, advisorAuditMaximumEntries) as AdvisorAIAuditEntry[] : [];
+  } catch {
+    return [];
+  }
+}
 
 const panels: Array<{ id: Panel; label: string; icon: typeof Activity }> = [
   { id: 'world', label: 'Monde', icon: Activity },
@@ -392,12 +413,53 @@ function EnergyNegotiationPanel({
       </div>}
       {signedContractId ? <div className="flex items-center gap-3 border border-emerald-400/50 bg-emerald-400/5 p-4 text-sm"><CheckCircle2 className="size-5 text-emerald-300" /><div><b>Accord signé et activé.</b><div className="font-mono text-[10px] text-muted-foreground">{signedContractId}</div></div></div> : <div className="flex flex-wrap gap-2">
         {!response && <Button onClick={onSend}><Send className="size-4" /> Résolution locale</Button>}
-        {!response && <Button variant="outline" disabled={aiNegotiationStatus === 'loading'} onClick={onSendAI}>{aiNegotiationStatus === 'loading' ? <LoaderCircle className="size-4 animate-spin" /> : <BrainCircuit className="size-4" />} Négocier avec Luna</Button>}
+        {!response && <Button variant="outline" disabled={aiNegotiationStatus === 'loading'} onClick={onSendAI}>{aiNegotiationStatus === 'loading' ? <LoaderCircle className="size-4 animate-spin" /> : <BrainCircuit className="size-4" />} Négocier avec l’IA</Button>}
         {response && response.status !== 'refused' && <Button onClick={onSign}><CheckCircle2 className="size-4" /> {response.status === 'countered' ? 'Accepter la contre-proposition' : 'Signer l’accord'}</Button>}
         <Button variant="outline" onClick={onToggleAdjustments}><SlidersHorizontal className="size-4" /> Ajuster</Button>
         <Button variant="ghost" onClick={onClose}>Abandonner</Button>
       </div>}
     </div>
+  </section>;
+}
+
+function AdvisorAIAuditPanel({ entries, onClear }: { entries: AdvisorAIAuditEntry[]; onClear: () => void }) {
+  return <section className="border border-sky-400/35 bg-card/70 p-4">
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <div>
+        <div className="font-mono text-[10px] uppercase tracking-wider text-sky-300">Traçabilité IA locale</div>
+        <h2 className="mt-1 text-lg font-semibold">Ce qui a été envoyé et reçu</h2>
+        <p className="mt-1 text-xs text-muted-foreground">Conservé sur cet appareil, limité aux {advisorAuditMaximumEntries} derniers appels. La clé API et les données serveur sensibles n’y figurent jamais.</p>
+      </div>
+      {entries.length > 0 && <Button size="sm" variant="outline" onClick={onClear}>Effacer le journal</Button>}
+    </div>
+    {!entries.length && <div className="mt-4 border border-dashed border-border p-4 text-sm text-muted-foreground">Le prochain appel IA apparaîtra ici avec son contexte, sa réponse et son coût.</div>}
+    <div className="mt-4 space-y-3">{entries.map((entry, index) => <details key={entry.id} className="border border-border bg-background/35 p-3" open={index === 0}>
+      <summary className="cursor-pointer list-none">
+        <div className="flex flex-wrap items-center justify-between gap-2 pr-5">
+          <span className="font-semibold">{entry.request.question}</span>
+          <span className={`font-mono text-[10px] ${entry.result.ok ? 'text-emerald-300' : 'text-amber-300'}`}>{entry.result.ok ? `${entry.result.usage.model} · $${entry.result.usage.estimatedCostUsd.toFixed(4)}` : 'appel non abouti'}</span>
+        </div>
+        <div className="mt-1 font-mono text-[10px] text-muted-foreground">{new Date(entry.createdAt).toLocaleString('fr-FR')} · requête {entry.request.requestId.slice(0, 8)}</div>
+      </summary>
+      <div className="mt-4 grid gap-3 xl:grid-cols-2">
+        <div className="border border-border bg-muted/15 p-3">
+          <div className="font-mono text-[10px] uppercase tracking-wider text-sky-300">Envoyé au modèle</div>
+          <div className="mt-2 text-xs"><b>Question :</b> {entry.request.question}</div>
+          <div className="mt-2 text-xs text-muted-foreground">{entry.request.context.playerCountry.name} · {entry.request.context.playerCountry.government} · {entry.request.context.currentDate}</div>
+          <div className="mt-3 text-xs"><b>Faits sélectionnés ({entry.request.context.facts.length})</b><ul className="mt-1 space-y-1 text-muted-foreground">{entry.request.context.facts.map((fact) => <li key={fact.id}>— <span className="font-mono text-[10px]">{fact.id}</span> : {fact.label} — {fact.value} <span className="text-sky-300">({fact.confidence}%)</span></li>)}</ul></div>
+          <div className="mt-3 text-xs"><b>Pistes locales jointes ({entry.request.context.localPlans.length})</b><ul className="mt-1 space-y-1 text-muted-foreground">{entry.request.context.localPlans.map((plan, planIndex) => <li key={`${plan.title}-${planIndex}`}>— <b>{plan.title}</b> : {plan.intent}</li>)}</ul></div>
+          <div className="mt-3 border-l-2 border-sky-400/60 pl-2 text-[11px] text-muted-foreground">Règles fixes du serveur : répondre en français, n’utiliser comme chiffres que les faits fournis, distinguer faits et inférences, ne jamais modifier le monde.</div>
+        </div>
+        <div className="border border-border bg-muted/15 p-3">
+          <div className="font-mono text-[10px] uppercase tracking-wider text-emerald-300">Reçu et contrôlé</div>
+          {entry.result.ok ? <>
+            <div className="mt-2 text-xs"><b>Validation :</b> réponse structurée conforme au contrat ORDO.</div>
+            <div className="mt-2 text-xs"><b>Usage :</b> {entry.result.usage.inputTokens} entrants · {entry.result.usage.outputTokens} sortants · {entry.result.usage.remainingSessionRequestsToday} appel(s) restant(s).</div>
+            <details className="mt-3 border border-border bg-background/30 p-2"><summary className="cursor-pointer text-xs font-semibold">Voir la réponse structurée exacte</summary><pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-words font-mono text-[10px] text-muted-foreground">{JSON.stringify(entry.result.answer, null, 2)}</pre></details>
+          </> : <div className="mt-2 text-xs text-amber-200"><b>Erreur :</b> {entry.result.message}</div>}
+        </div>
+      </div>
+    </details>)}</div>
   </section>;
 }
 
@@ -407,7 +469,8 @@ function AdvisorPanel({ world, onWorldChange, onNotice }: { world: WorldState; o
   const [aiAnswer, setAiAnswer] = useState<AdvisorAIAnswer | null>(null);
   const [aiUsage, setAiUsage] = useState<AdvisorAIUsage | null>(null);
   const [aiStatus, setAiStatus] = useState<'idle' | 'loading' | 'ready' | 'unavailable'>('idle');
-  const [aiMessage, setAiMessage] = useState('Luna n’est appelée que sur demande explicite.');
+  const [aiMessage, setAiMessage] = useState('L’IA n’est appelée que sur demande explicite.');
+  const [aiAudit, setAiAudit] = useState<AdvisorAIAuditEntry[]>(readAdvisorAudit);
   const [offer, setOffer] = useState<EnergyAdministrativeOffer | null>(null);
   const [response, setResponse] = useState<EnergyCounterpartResponse | null>(null);
   const [showAdjustments, setShowAdjustments] = useState(false);
@@ -417,6 +480,17 @@ function AdvisorPanel({ world, onWorldChange, onNotice }: { world: WorldState; o
   const [playerReply, setPlayerReply] = useState('');
   const resetNegotiation = () => {
     setOffer(null); setResponse(null); setSignedContractId(null); setPlayerReply(''); setAiNegotiationStatus('idle'); setAiNegotiationMessage('');
+  };
+  const appendAudit = (entry: AdvisorAIAuditEntry) => {
+    setAiAudit((previous) => {
+      const next = [entry, ...previous].slice(0, advisorAuditMaximumEntries);
+      localStorage.setItem(advisorAuditStorageKey, JSON.stringify(next));
+      return next;
+    });
+  };
+  const clearAudit = () => {
+    localStorage.removeItem(advisorAuditStorageKey);
+    setAiAudit([]);
   };
   const prepareLocalAnswer = () => {
     if (question.trim().length < 3) return;
@@ -431,7 +505,7 @@ function AdvisorPanel({ world, onWorldChange, onNotice }: { world: WorldState; o
     if (question.trim().length < 3 || aiStatus === 'loading') return;
     const local = answerAdvisorQuestion(world, question);
     setAnswer(local); setAiAnswer(null); setAiUsage(null); setAiStatus('loading');
-    setAiMessage('Luna confronte la demande aux faits transmis par le moteur…');
+    setAiMessage('L’IA confronte la demande aux faits transmis par le moteur…');
     resetNegotiation();
     try {
       const storageKey = 'ordo-ai-session-v1';
@@ -440,19 +514,24 @@ function AdvisorPanel({ world, onWorldChange, onNotice }: { world: WorldState; o
         sessionId = crypto.randomUUID();
         localStorage.setItem(storageKey, sessionId);
       }
+      const aiRequest = createAdvisorAIRequest(world, question, local, sessionId);
+      const auditRequest = { requestId: aiRequest.requestId, question: aiRequest.question, context: aiRequest.context };
       const response = await fetch('/api/ai/advisor', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(createAdvisorAIRequest(world, question, local, sessionId)),
+        body: JSON.stringify(aiRequest),
       });
       const payload = await response.json() as AdvisorAIResponse;
       if (!payload.ok) {
+        appendAudit({ id: aiRequest.requestId, createdAt: new Date().toISOString(), request: auditRequest, result: { ok: false, message: payload.message } });
         setAiStatus('unavailable'); setAiMessage(payload.message);
         return;
       }
+      appendAudit({ id: aiRequest.requestId, createdAt: new Date().toISOString(), request: auditRequest, result: { ok: true, answer: payload.answer, usage: payload.usage } });
       setAiAnswer(payload.answer); setAiUsage(payload.usage); setAiStatus('ready');
-      setAiMessage(`Réponse Luna validée · ${payload.usage.remainingSessionRequestsToday} requête(s) restantes aujourd’hui.`);
+      setAiMessage(`Réponse IA validée · ${payload.usage.remainingSessionRequestsToday} requête(s) restantes aujourd’hui.`);
     } catch {
+      // L'entrée n'est créée ici que si la requête a pu être préparée, afin d'éviter un faux audit vide.
       setAiStatus('unavailable');
       setAiMessage('Le serveur IA est inaccessible. La réponse locale reste disponible.');
     }
@@ -481,7 +560,7 @@ function AdvisorPanel({ world, onWorldChange, onNotice }: { world: WorldState; o
     return sessionId;
   };
   const resolveDiplomacyJob = async (pendingWorld: WorldState, jobId: string, diplomaticSessionId: string) => {
-    setAiNegotiationStatus('loading'); setAiNegotiationMessage('Luna prépare la réponse du pays à partir de ses intérêts privés…');
+    setAiNegotiationStatus('loading'); setAiNegotiationMessage('L’IA prépare la réponse du pays à partir de ses intérêts privés…');
     onWorldChange(pendingWorld);
     const result = await executeAIJob(pendingWorld, jobId, aiSessionId());
     if (!result.ok) {
@@ -494,7 +573,7 @@ function AdvisorPanel({ world, onWorldChange, onNotice }: { world: WorldState; o
     setOffer(energyCounterpartResponseFromSession(session).offer);
     setResponse(energyCounterpartResponseFromSession(session, [answer.assessment, ...answer.proposals.slice(0, 1).map((proposal) => proposal.rationale)]));
     setAiNegotiationStatus('ready');
-    setAiNegotiationMessage(`Réponse Luna validée par le moteur · coût estimé $${result.response.usage.estimatedCostUsd.toFixed(4)}.`);
+    setAiNegotiationMessage(`Réponse IA validée par le moteur · coût estimé $${result.response.usage.estimatedCostUsd.toFixed(4)}.`);
   };
   const sendWithAI = async () => {
     if (!offer || aiNegotiationStatus === 'loading') return;
@@ -524,14 +603,14 @@ function AdvisorPanel({ world, onWorldChange, onNotice }: { world: WorldState; o
       <Textarea value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="Ex. Je veux sécuriser un contrat gazier de long terme avec l’Algérie afin de diversifier nos approvisionnements." className="mt-2 min-h-36" />
       <div className="mt-3 grid gap-2 sm:grid-cols-2">
         <Button variant="outline" disabled={question.trim().length < 3 || aiStatus === 'loading'} onClick={prepareLocalAnswer}>Préparer localement</Button>
-        <Button disabled={question.trim().length < 3 || aiStatus === 'loading'} onClick={askAI}>{aiStatus === 'loading' ? <LoaderCircle className="size-4 animate-spin" /> : <BrainCircuit className="size-4" />}Approfondir avec Luna</Button>
+        <Button disabled={question.trim().length < 3 || aiStatus === 'loading'} onClick={askAI}>{aiStatus === 'loading' ? <LoaderCircle className="size-4 animate-spin" /> : <BrainCircuit className="size-4" />}Approfondir avec l’IA</Button>
       </div>
       <div className={`mt-4 border p-3 text-xs ${aiStatus === 'unavailable' ? 'border-amber-400/40 text-amber-200' : 'border-border bg-muted/20 text-muted-foreground'}`}>{aiMessage}{aiUsage && <div className="mt-2 font-mono text-[10px] text-muted-foreground">{aiUsage.inputTokens} jetons reçus · {aiUsage.outputTokens} produits · coût estimé ${aiUsage.estimatedCostUsd.toFixed(4)}</div>}</div>
-      <div className="mt-2 text-[11px] text-muted-foreground">Le moteur local produit les actions exécutables. Luna les approfondit, mais ne peut modifier aucune donnée du monde.</div>
+      <div className="mt-2 text-[11px] text-muted-foreground">Le moteur local produit les actions exécutables. L’IA les approfondit, mais ne peut modifier aucune donnée du monde.</div>
     </section>
     <section className="space-y-3">
       {aiAnswer && <div className="border border-primary/45 bg-card/80 p-4">
-        <div className="font-mono text-[10px] uppercase tracking-wider text-primary">Analyse Luna · consultative</div>
+        <div className="font-mono text-[10px] uppercase tracking-wider text-primary">Analyse IA · consultative</div>
         <h2 className="mt-1 text-xl font-semibold">{aiAnswer.headline}</h2>
         <p className="mt-2 text-sm text-muted-foreground">{aiAnswer.synthesis}</p>
         <div className="mt-4 border-l-2 border-primary bg-primary/5 p-3 text-sm"><b>Jugement central :</b> {aiAnswer.keyJudgment}</div>
@@ -547,6 +626,7 @@ function AdvisorPanel({ world, onWorldChange, onNotice }: { world: WorldState; o
         </details>)}</div>
         <div className="mt-4 text-xs"><b>Angles morts</b><ul className="mt-1 space-y-1 text-muted-foreground">{aiAnswer.blindSpots.map((item) => <li key={item}>— {item}</li>)}</ul></div>
       </div>}
+      <AdvisorAIAuditPanel entries={aiAudit} onClear={clearAudit} />
       <div className="border border-border bg-card/70 p-4">
         <div className="font-mono text-[10px] uppercase tracking-wider text-primary">{answer.mode}</div><h2 className="mt-1 text-xl font-semibold">{answer.headline}</h2><p className="mt-2 text-sm text-muted-foreground">{answer.synthesis}</p>
         {answer.interpretation.kind === 'energy_contract' && <div className="mt-4 border-l-2 border-primary bg-muted/20 p-3 text-xs"><b>Demande comprise :</b> négociation énergétique · {answer.interpretation.resource === 'gas' ? 'gaz' : answer.interpretation.resource === 'oil' ? 'pétrole' : 'ressource à préciser'} · {answer.interpretation.targetLabel ?? 'fournisseur à recommander'} <span className="text-muted-foreground">· confiance {answer.interpretation.confidence}%</span>{answer.interpretation.warnings.map((warning) => <div key={warning} className="mt-2 text-amber-300">⚠ {warning}</div>)}</div>}
