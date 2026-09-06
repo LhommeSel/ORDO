@@ -1,4 +1,4 @@
-import type { AdvisorAIResponse } from './contracts';
+import { ORDO_AI_MODEL, type AdvisorAIResponse } from './contracts';
 
 type WindowCounter = { count: number; resetAt: number };
 type DailyBudget = { estimatedUsd: number; resetAt: number };
@@ -21,6 +21,7 @@ const numberSetting = (name: string, fallback: number, minimum: number, maximum:
 export const aiRuntimePolicy = () => ({
   enabled: process.env.AI_ENABLED === 'true',
   apiKey: process.env.OPENAI_API_KEY ?? '',
+  model: process.env.AI_MODEL?.trim() || ORDO_AI_MODEL,
   perIpPerMinute: integerSetting('AI_PER_IP_PER_MINUTE', 4, 1, 30),
   perSessionPerDay: integerSetting('AI_PER_SESSION_PER_DAY', 20, 1, 200),
   maximumInflight: integerSetting('AI_MAX_INFLIGHT', 4, 1, 20),
@@ -54,7 +55,7 @@ export async function hashRateLimitKey(value: string) {
 export function admitAIRequest(ipKey: string, sessionKey: string): AIAdmission {
   const policy = aiRuntimePolicy();
   if (!policy.enabled || !policy.apiKey) {
-    return { ok: false, response: { ok: false, code: 'not_configured', message: 'Luna est prête, mais la clé serveur n’est pas encore activée.' } };
+    return { ok: false, response: { ok: false, code: 'not_configured', message: 'Le modèle IA est prêt, mais la clé serveur n’est pas encore activée.' } };
   }
   const now = Date.now();
   const nextMidnight = new Date(now);
@@ -87,9 +88,21 @@ export function recordAICost(estimatedUsd: number) {
   if (Number.isFinite(estimatedUsd) && estimatedUsd > 0) dailyBudget.estimatedUsd += estimatedUsd;
 }
 
-export function estimateLunaCost(inputTokens: number, outputTokens: number, cachedInputTokens = 0) {
+const pricingByModel: Record<string, { input: number; cachedInput: number; output: number }> = {
+  'gpt-4o': { input: 2.5, cachedInput: 1.25, output: 10 },
+  'gpt-4o-mini': { input: 0.15, cachedInput: 0.075, output: 0.6 },
+  'gpt-5.6-luna': { input: 0.2, cachedInput: 0.02, output: 1.2 },
+};
+
+export function supportsReasoning(model: string) {
+  return /^gpt-(?:5|6)(?:\.|-|$)/.test(model);
+}
+
+export function estimateAICost(model: string, inputTokens: number, outputTokens: number, cachedInputTokens = 0) {
+  // Valeur prudente pour tout modèle non encore répertorié afin de ne pas sous-estimer le budget.
+  const pricing = pricingByModel[model] ?? { input: 4, cachedInput: 4, output: 20 };
   const uncached = Math.max(0, inputTokens - cachedInputTokens);
-  return (uncached * 0.2 + cachedInputTokens * 0.02 + outputTokens * 1.2) / 1_000_000;
+  return (uncached * pricing.input + cachedInputTokens * pricing.cachedInput + outputTokens * pricing.output) / 1_000_000;
 }
 
 export function requestIp(request: Request) {

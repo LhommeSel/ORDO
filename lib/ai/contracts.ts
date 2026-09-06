@@ -45,7 +45,7 @@ export type AdvisorAIAnswer = {
 };
 
 export type AdvisorAIUsage = {
-  model: typeof ORDO_AI_MODEL;
+  model: string;
   inputTokens: number;
   outputTokens: number;
   estimatedCostUsd: number;

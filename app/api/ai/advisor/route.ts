@@ -1,5 +1,4 @@
 import {
-  ORDO_AI_MODEL,
   advisorAIJsonSchema,
   isAdvisorAIAnswer,
   parseAdvisorAIRequest,
@@ -8,11 +7,12 @@ import {
 import {
   admitAIRequest,
   aiRuntimePolicy,
-  estimateLunaCost,
+  estimateAICost,
   hashRateLimitKey,
   isSameOriginRequest,
   recordAICost,
   requestIp,
+  supportsReasoning,
 } from '@/lib/ai/security';
 
 export const runtime = 'edge';
@@ -68,10 +68,10 @@ export async function POST(request: Request) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: ORDO_AI_MODEL,
+        model: policy.model,
         service_tier: 'default',
         store: false,
-        reasoning: { effort: 'low' },
+        ...(supportsReasoning(policy.model) ? { reasoning: { effort: 'low' } } : {}),
         max_output_tokens: policy.maxOutputTokens,
         safety_identifier: sessionKey,
         instructions: [
@@ -96,7 +96,7 @@ export async function POST(request: Request) {
     });
     if (!upstream.ok) {
       console.error('ORDO AI upstream failure', { requestId: parsed.requestId, status: upstream.status });
-      return json({ ok: false, code: 'upstream_error', message: 'Luna n’a pas pu répondre. Aucun coût supplémentaire ne sera relancé automatiquement.' }, 502);
+      return json({ ok: false, code: 'upstream_error', message: 'Le modèle IA n’a pas pu répondre. Aucun coût supplémentaire ne sera relancé automatiquement.' }, 502);
     }
     const payload = await upstream.json() as Record<string, unknown>;
     const text = extractOutputText(payload);
@@ -104,7 +104,7 @@ export async function POST(request: Request) {
     try { answer = JSON.parse(text); } catch { answer = null; }
     if (!isAdvisorAIAnswer(answer)) {
       console.error('ORDO AI invalid structured output', { requestId: parsed.requestId });
-      return json({ ok: false, code: 'upstream_error', message: 'La réponse de Luna a été rejetée par le contrôle de cohérence.' }, 502);
+      return json({ ok: false, code: 'upstream_error', message: 'La réponse du modèle IA a été rejetée par le contrôle de cohérence.' }, 502);
     }
     const usage = payload.usage && typeof payload.usage === 'object' ? payload.usage as Record<string, unknown> : {};
     const inputTokens = typeof usage.input_tokens === 'number' ? usage.input_tokens : 0;
@@ -112,13 +112,13 @@ export async function POST(request: Request) {
     const details = usage.input_tokens_details && typeof usage.input_tokens_details === 'object'
       ? usage.input_tokens_details as Record<string, unknown> : {};
     const cachedTokens = typeof details.cached_tokens === 'number' ? details.cached_tokens : 0;
-    const estimatedCostUsd = estimateLunaCost(inputTokens, outputTokens, cachedTokens);
+    const estimatedCostUsd = estimateAICost(policy.model, inputTokens, outputTokens, cachedTokens);
     recordAICost(estimatedCostUsd);
     return json({
       ok: true,
       answer,
       usage: {
-        model: ORDO_AI_MODEL,
+        model: policy.model,
         inputTokens,
         outputTokens,
         estimatedCostUsd,

@@ -1,5 +1,4 @@
 import {
-  ORDO_AI_MODEL,
   aiJobAIJsonSchema,
   isAIJobAIModelAnswer,
   parseAIJobAIRequest,
@@ -9,11 +8,12 @@ import {
 import {
   admitAIRequest,
   aiRuntimePolicy,
-  estimateLunaCost,
+  estimateAICost,
   hashRateLimitKey,
   isSameOriginRequest,
   recordAICost,
   requestIp,
+  supportsReasoning,
 } from '@/lib/ai/security';
 import type { AIJobBudgetTier, AIJobKind } from '@/lib/simulation/types';
 import { conceptsFromText, selectSupplementalFacts, type SupplementalFactRequest } from '@/lib/simulation/ai/context';
@@ -139,10 +139,10 @@ export async function POST(request: Request) {
     const { reserveFacts: _reserveFacts, ...initialContext } = parsed.context;
     const initialInput = { job: parsed.job, compiledWorldContext: initialContext };
     const baseRequest = {
-      model: ORDO_AI_MODEL,
+      model: policy.model,
       service_tier: 'default',
       store: false,
-      reasoning: { effort: reasoningByTier[parsed.job.budgetTier] },
+      ...(supportsReasoning(policy.model) ? { reasoning: { effort: reasoningByTier[parsed.job.budgetTier] } } : {}),
       max_output_tokens: policy.maxOutputTokens,
       safety_identifier: sessionKey,
       instructions,
@@ -170,7 +170,7 @@ export async function POST(request: Request) {
     let upstream = await callOpenAI(JSON.stringify(initialInput), true);
     if (!upstream.ok) {
       console.error('ORDO AI job upstream failure', { requestId: parsed.requestId, kind: parsed.job.kind, status: upstream.status });
-      return json({ ok: false, code: 'upstream_error', message: 'Luna n’a pas pu traiter cette tâche. Aucun nouvel essai payant ne sera lancé automatiquement.' }, 502);
+      return json({ ok: false, code: 'upstream_error', message: 'Le modèle IA n’a pas pu traiter cette tâche. Aucun nouvel essai payant ne sera lancé automatiquement.' }, 502);
     }
     let payload = await upstream.json() as Record<string, unknown>;
     const totalUsage = readUsage(payload);
@@ -208,11 +208,11 @@ export async function POST(request: Request) {
     try { answer = JSON.parse(extractOutputText(payload)); } catch { answer = null; }
     if (!isAIJobAIModelAnswer(answer, parsed.job.kind)) {
       console.error('ORDO AI job invalid output', { requestId: parsed.requestId, kind: parsed.job.kind });
-      return json({ ok: false, code: 'upstream_error', message: 'La réponse de Luna a été rejetée par le contrôle de cohérence.' }, 502);
+      return json({ ok: false, code: 'upstream_error', message: 'La réponse du modèle IA a été rejetée par le contrôle de cohérence.' }, 502);
     }
-    const estimatedCostUsd = estimateLunaCost(totalUsage.input, totalUsage.output, totalUsage.cached);
+    const estimatedCostUsd = estimateAICost(policy.model, totalUsage.input, totalUsage.output, totalUsage.cached);
     recordAICost(estimatedCostUsd);
-    return json({ ok: true, answer: sanitizeAIJobAIAnswer(answer), usage: { model: ORDO_AI_MODEL, inputTokens: totalUsage.input, outputTokens: totalUsage.output, estimatedCostUsd, remainingSessionRequestsToday: admission.remainingSessionRequestsToday } });
+    return json({ ok: true, answer: sanitizeAIJobAIAnswer(answer), usage: { model: policy.model, inputTokens: totalUsage.input, outputTokens: totalUsage.output, estimatedCostUsd, remainingSessionRequestsToday: admission.remainingSessionRequestsToday } });
   } catch (error) {
     console.error('ORDO AI job request failure', { requestId: parsed.requestId, name: error instanceof Error ? error.name : 'unknown' });
     return json({ ok: false, code: 'upstream_error', message: 'Le service IA est momentanément indisponible.' }, 502);
