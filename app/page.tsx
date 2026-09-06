@@ -3,13 +3,14 @@
 import { useMemo, useState } from 'react';
 import {
   Activity, Archive, BrainCircuit, ChevronRight, Database, Factory,
-  BellRing, CheckCircle2, Eye, FlaskConical, Fuel, History, Landmark, Pin,
+  BellRing, CheckCircle2, Eye, FlaskConical, Fuel, History, Landmark, Map, Pin,
   PinOff, RotateCcw, Save, Send, Shield, SlidersHorizontal, Swords, X,
   TrendingUp, LoaderCircle,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { WorldMap } from '@/components/world-map';
 import {
   advanceWorld, answerAdvisorQuestion, armamentAdvisorFacts,
   acceptEnergyOffer, adjustEnergyOffer, assessStrategicPlan,
@@ -32,7 +33,7 @@ import {
   type AdvisorAIUsage,
 } from '@/lib/ai/contracts';
 
-type Panel = 'world' | 'economy' | 'energy' | 'industry' | 'dossiers' | 'advisor' | 'ledger';
+type Panel = 'world' | 'map' | 'economy' | 'energy' | 'industry' | 'dossiers' | 'advisor' | 'ledger';
 
 type AdvisorAIAuditEntry = {
   id: string;
@@ -56,6 +57,7 @@ function readAdvisorAudit(): AdvisorAIAuditEntry[] {
 
 const panels: Array<{ id: Panel; label: string; icon: typeof Activity }> = [
   { id: 'world', label: 'Monde', icon: Activity },
+  { id: 'map', label: 'Carte', icon: Map },
   { id: 'economy', label: 'Économie', icon: TrendingUp },
   { id: 'energy', label: 'Énergie', icon: Fuel },
   { id: 'industry', label: 'Industrie', icon: Factory },
@@ -198,6 +200,48 @@ function WorldPanel({ world, onWorldChange, onNotice }: {
       </div>
     </aside>
   </div>;
+}
+
+function MapPanel({ world }: { world: WorldState }) {
+  const [selectedCountryId, setSelectedCountryId] = useState(world.playerCountryId);
+  const selected = world.countries[selectedCountryId];
+  const activeMetrics = useMemo(() => Object.fromEntries(Object.keys(world.countries).map((id) => [id, 100])), [world.countries]);
+  const activeCountries = Object.values(world.countries).sort((a, b) => b.weight - a.weight);
+
+  return <section className="strategic-map-shell border border-border bg-card/70">
+    <div className="map-header">
+      <div><div className="font-mono text-[10px] uppercase tracking-wider text-primary">Repère géographique</div><h2 className="mt-1 text-lg font-semibold">Carte des États modélisés</h2></div>
+      <p className="max-w-2xl text-xs text-muted-foreground">Les pays en vert sont actuellement actifs dans le moteur. Cliquez un État pour consulter sa fiche de base ; les autres frontières restent visibles sans données ORDO.</p>
+      <div className="ml-auto font-mono text-[10px] text-muted-foreground">{activeCountries.length} / 195 États modélisés</div>
+    </div>
+    <div className="map-command-layout">
+      <WorldMap mode="military" metrics={activeMetrics} selectedId={selectedCountryId} onSelect={(id) => setSelectedCountryId(id)} />
+      <aside className="map-dossier">
+        {selected ? <>
+          <div className="font-mono text-[10px] uppercase tracking-wider text-emerald-300">État modélisé</div>
+          <h3 className="mt-1 text-xl font-semibold">{selected.flag} {selected.name}</h3>
+          <p className="mt-1 text-xs text-muted-foreground">{selected.politics.governmentLabel}</p>
+          <div className="map-facts">
+            <Stat label="Poids" value={`${selected.weight}/100`} detail="influence relative" />
+            <Stat label="Fiabilité" value={`${selected.statisticalReliability}%`} detail="données initiales" />
+            <Stat label="Stabilité" value={`${selected.metrics.stability}/100`} />
+            <Stat label="Industrie" value={`${selected.metrics.industry}/100`} />
+          </div>
+          <div className="text-xs"><b>Priorité immédiate</b><p className="mt-1 text-muted-foreground">{selected.strategy.goals[0]?.label ?? 'Aucune priorité encore formalisée.'}</p></div>
+          <div className="mt-4 text-xs"><b>Vulnérabilités connues</b><ul className="mt-1 space-y-1 text-muted-foreground">{selected.strategy.vulnerabilities.length ? selected.strategy.vulnerabilities.map((item) => <li key={item}>— {item}</li>) : <li>— Aucune vulnérabilité formalisée.</li>}</ul></div>
+        </> : <>
+          <div className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Référence géographique</div>
+          <h3 className="mt-1 text-xl font-semibold">État non modélisé</h3>
+          <p className="mt-2 text-sm text-muted-foreground">Cette frontière est affichée pour l’orientation du joueur. Son référentiel sera ajouté lorsque le pays entrera dans le périmètre de simulation.</p>
+        </>}
+        <div className="map-legend"><span><i className="player" /> Pays joué</span><span><i className="high" /> État modélisé</span><span><i /> Référence sans données</span></div>
+      </aside>
+    </div>
+    <div className="border-t border-border p-3">
+      <div className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">États actifs</div>
+      <div className="mt-2 flex flex-wrap gap-2">{activeCountries.map((country) => <button key={country.id} onClick={() => setSelectedCountryId(country.id)} className={`border px-2 py-1 text-xs transition-colors ${selectedCountryId === country.id ? 'border-primary bg-primary/10 text-foreground' : 'border-border bg-muted/20 text-muted-foreground hover:border-primary'}`}>{country.flag} {country.name}</button>)}</div>
+    </div>
+  </section>;
 }
 
 const diagnosisDirectionLabels = {
@@ -728,6 +772,7 @@ export default function Home() {
     <div className="border-b border-border bg-muted/20"><div className="mx-auto flex max-w-[1600px] items-center justify-between gap-4 px-4 py-2 text-xs text-muted-foreground lg:px-6"><span>{notice}</span><span className="hidden font-mono sm:block">{autonomousCount} acteurs autonomes · seed {world.seed} · séquence {world.sequence}</span></div></div>
     <div className="mx-auto max-w-[1600px] p-4 lg:p-6">
       {panel === 'world' && <WorldPanel world={world} onWorldChange={setWorld} onNotice={setNotice} />}
+      {panel === 'map' && <MapPanel world={world} />}
       {panel === 'economy' && <EconomyPanel world={world} />}
       {panel === 'energy' && <EnergyPanel world={world} />}
       {panel === 'industry' && <IndustryPanel world={world} />}
