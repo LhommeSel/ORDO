@@ -73,6 +73,37 @@ const leadershipOverrides: Partial<Record<CountryId, LeadershipOverride>> = {
       { id: 'sau-abdallah-2000', name: 'Abdallah ben Abdelaziz Al Saoud', role: 'Prince héritier et dirigeant opérationnel', authorityShare: 52, ideologyTags: ['prudence dynastique', 'réforme graduelle', 'sécurité régionale'], traits: traits(38, 46, 52, 61, 82, 77, 78) },
     ],
   },
+  BRA: {
+    executiveCoordination: 72,
+    figures: [{ id: 'bra-cardoso-2000', name: 'Fernando Henrique Cardoso', role: 'Président', authorityShare: 100, ideologyTags: ['stabilisation monétaire', 'réforme libérale', 'multilatéralisme'], traits: traits(42, 25, 71, 68, 78, 62, 74) }],
+  },
+  ZAF: {
+    executiveCoordination: 76,
+    figures: [{ id: 'zaf-mbeki-2000', name: 'Thabo Mbeki', role: 'Président', authorityShare: 100, ideologyTags: ['consolidation démocratique', 'renaissance africaine', 'réduction des inégalités'], traits: traits(44, 30, 62, 62, 78, 72, 70) }],
+  },
+  AUS: {
+    executiveCoordination: 86,
+    figures: [{ id: 'aus-howard-2000', name: 'John Howard', role: 'Premier ministre', authorityShare: 100, ideologyTags: ['libéralisme conservateur', 'alliance américaine', 'rigueur budgétaire'], traits: traits(48, 38, 52, 62, 76, 74, 78) }],
+  },
+  IND: {
+    executiveCoordination: 68,
+    figures: [{ id: 'ind-vajpayee-2000', name: 'Atal Bihari Vajpayee', role: 'Premier ministre', authorityShare: 100, ideologyTags: ['nationalisme modéré', 'autonomie stratégique', 'ouverture graduelle'], traits: traits(58, 52, 61, 66, 76, 78, 72) }],
+  },
+  JPN: {
+    executiveCoordination: 55,
+    figures: [{ id: 'jpn-mori-2000', name: 'Yoshiro Mori', role: 'Premier ministre', authorityShare: 100, ideologyTags: ['conservatisme PLD', 'alliance américaine', 'relance prudente'], traits: traits(38, 26, 48, 52, 65, 57, 48) }],
+  },
+  TUR: {
+    executiveCoordination: 52,
+    figures: [
+      { id: 'tur-demirel-2000', name: 'Süleyman Demirel', role: 'Président', authorityShare: 38, ideologyTags: ['républicanisme', 'équilibre institutionnel', 'occidentalisme'], traits: traits(46, 42, 58, 68, 70, 64, 70) },
+      { id: 'tur-ecevit-2000', name: 'Bülent Ecevit', role: 'Premier ministre', authorityShare: 62, ideologyTags: ['nationalisme de gauche', 'souveraineté', 'réforme prudente'], traits: traits(50, 55, 46, 52, 68, 74, 64) },
+    ],
+  },
+  VNM: {
+    executiveCoordination: 80,
+    figures: [{ id: 'vnm-khai-2000', name: 'Phan Văn Khải', role: 'Premier ministre', authorityShare: 100, ideologyTags: ['Đổi Mới', 'modernisation économique', 'primauté du Parti'], traits: traits(39, 28, 62, 63, 80, 84, 73) }],
+  },
 };
 
 const doctrineSignals = (country: CountryState) => {
@@ -118,6 +149,13 @@ const apparatusLabels: Partial<Record<CountryId, [string, string]>> = {
   DZA: ['Appareil militaire et sécuritaire', 'Technocratie présidentielle et réseaux économiques'],
   LBY: ['Réseaux révolutionnaires et sécuritaires', 'Réseaux tribaux et économiques'],
   SAU: ['Coalition dynastique et religieuse', 'Technocratie pétrolière et financière'],
+  BRA: ['Fédéralisme administratif et coalition du centre', 'Congrès fragmenté et élites économiques'],
+  ZAF: ['État constitutionnel post-apartheid', 'Mouvement national africain et coalition sociale'],
+  AUS: ['Administration fédérale et alliance occidentale', 'Coalition libérale–nationale'],
+  IND: ['Haute administration fédérale et appareil sécuritaire', 'Coalition nationale démocratique'],
+  JPN: ['Bureaucraties économiques et réseau PLD', 'Coalition gouvernementale conservatrice'],
+  TUR: ['État-major et appareil républicain', 'Coalition DSP–MHP–ANAP'],
+  VNM: ['Parti-État et appareil sécuritaire', 'Technocratie du Đổi Mới'],
 };
 
 export function createPoliticalApparatus2000(countries: Record<CountryId, CountryState>): Record<CountryId, PoliticalApparatusProfile> {

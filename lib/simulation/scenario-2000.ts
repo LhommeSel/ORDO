@@ -207,6 +207,139 @@ const countries: Record<string, CountryState> = {
     },
     strategy: { goals: [], vulnerabilities: ['Dépendance pétrolière', 'Tensions sociales'], redLines: ['Menace sur la monarchie'], partners: ['USA'], rivals: [], lastReviewDate: '2000-01-01' },
   }),
+  BRA: country({
+    id: 'BRA', name: 'Brésil', flag: '🇧🇷', weight: 70, statisticalReliability: 78,
+    metrics: { budget: 132, industry: 82, stability: 63, security: 57 },
+    capacities: capacities({ government: [70, 37], administration: [68, 40], diplomacy: [70, 34], economy: [72, 48], intelligence: [58, 30], defense: [66, 36] }),
+    politics: {
+      regime: 'République fédérale présidentielle', executive: 'Fernando Henrique Cardoso', headOfGovernment: 'Fernando Henrique Cardoso',
+      governmentLabel: 'Coalition présidentielle autour du PSDB', legislatureSeats: 594, governingSeats: 340,
+      publicApproval: 47, administrativeCompliance: 67,
+      doctrine: { economic: 30, social: 10, sovereignty: 28, security: 18 },
+    },
+    strategy: {
+      goals: [
+        { id: 'bra-real-credibility', label: 'Consolider le real et la crédibilité financière', priority: 94, progress: 56, status: 'active' },
+        { id: 'bra-regional-leadership', label: 'Affirmer le leadership sud-américain', priority: 78, progress: 47, status: 'active' },
+      ],
+      vulnerabilities: ['Dette et taux d’intérêt élevés', 'Inégalités sociales', 'Dépendance aux capitaux extérieurs'],
+      redLines: ['Nouvelle crise monétaire'], partners: ['USA'], rivals: [], lastReviewDate: '2000-01-01',
+    },
+  }),
+  ZAF: country({
+    id: 'ZAF', name: 'Afrique du Sud', flag: '🇿🇦', weight: 55, statisticalReliability: 78,
+    metrics: { budget: 74, industry: 64, stability: 58, security: 52 },
+    capacities: capacities({ government: [60, 33], administration: [62, 36], diplomacy: [65, 29], economy: [62, 40], intelligence: [48, 23], defense: [53, 30] }),
+    politics: {
+      regime: 'République parlementaire constitutionnelle', executive: 'Thabo Mbeki', headOfGovernment: 'Thabo Mbeki',
+      governmentLabel: 'Gouvernement de l’ANC', legislatureSeats: 400, governingSeats: 266,
+      publicApproval: 61, administrativeCompliance: 63,
+      doctrine: { economic: 8, social: 46, sovereignty: 33, security: 18 },
+    },
+    strategy: {
+      goals: [
+        { id: 'zaf-democratic-consolidation', label: 'Consolider la transition démocratique', priority: 96, progress: 54, status: 'active' },
+        { id: 'zaf-african-role', label: 'Structurer une influence africaine crédible', priority: 74, progress: 45, status: 'active' },
+      ],
+      vulnerabilities: ['Chômage de masse', 'Inégalités héritées de l’apartheid', 'Criminalité et pandémie'],
+      redLines: ['Retour à une violence politique systémique'], partners: ['BRA'], rivals: [], lastReviewDate: '2000-01-01',
+    },
+  }),
+  AUS: country({
+    id: 'AUS', name: 'Australie', flag: '🇦🇺', weight: 60, statisticalReliability: 94,
+    metrics: { budget: 118, industry: 66, stability: 76, security: 64 },
+    capacities: capacities({ government: [66, 30], administration: [74, 35], diplomacy: [72, 32], economy: [70, 37], intelligence: [62, 29], defense: [65, 33] }),
+    politics: {
+      regime: 'Monarchie parlementaire fédérale', executive: 'Élisabeth II', headOfGovernment: 'John Howard',
+      governmentLabel: 'Coalition libérale–nationale', legislatureSeats: 150, governingSeats: 80,
+      publicApproval: 56, administrativeCompliance: 86,
+      doctrine: { economic: 34, social: -10, sovereignty: 35, security: 42 },
+    },
+    strategy: {
+      goals: [
+        { id: 'aus-us-alliance', label: 'Préserver l’alliance américaine et l’ancrage indo-pacifique', priority: 92, progress: 66, status: 'active' },
+        { id: 'aus-resource-markets', label: 'Sécuriser les débouchés des ressources', priority: 82, progress: 60, status: 'active' },
+      ],
+      vulnerabilities: ['Éloignement géographique', 'Dépendance aux exportations de ressources', 'Exposition aux marchés asiatiques'],
+      redLines: ['Abandon de l’alliance américaine'], partners: ['USA', 'JPN'], rivals: [], lastReviewDate: '2000-01-01',
+    },
+  }),
+  IND: country({
+    id: 'IND', name: 'Inde', flag: '🇮🇳', weight: 78, statisticalReliability: 72,
+    metrics: { budget: 96, industry: 76, stability: 62, security: 72 },
+    capacities: capacities({ government: [76, 42], administration: [64, 43], diplomacy: [78, 39], economy: [74, 49], intelligence: [68, 36], defense: [78, 46] }),
+    politics: {
+      regime: 'République fédérale parlementaire', executive: 'K. R. Narayanan', headOfGovernment: 'Atal Bihari Vajpayee',
+      governmentLabel: 'Coalition NDA', legislatureSeats: 543, governingSeats: 296,
+      publicApproval: 54, administrativeCompliance: 61,
+      doctrine: { economic: 17, social: 12, sovereignty: 72, security: 70 },
+    },
+    strategy: {
+      goals: [
+        { id: 'ind-growth-opening', label: 'Accélérer la croissance et l’intégration économique', priority: 96, progress: 50, status: 'active' },
+        { id: 'ind-strategic-autonomy', label: 'Préserver l’autonomie stratégique et nucléaire', priority: 98, progress: 64, status: 'active' },
+      ],
+      vulnerabilities: ['Pauvreté de masse', 'Infrastructures insuffisantes', 'Tensions avec le Pakistan et la Chine'],
+      redLines: ['Contrainte extérieure sur la dissuasion nucléaire', 'Remise en cause du Cachemire'], partners: ['RUS'], rivals: ['CHN'], lastReviewDate: '2000-01-01',
+    },
+  }),
+  JPN: country({
+    id: 'JPN', name: 'Japon', flag: '🇯🇵', weight: 88, statisticalReliability: 95,
+    metrics: { budget: 226, industry: 118, stability: 70, security: 68 },
+    capacities: capacities({ government: [80, 43], administration: [88, 49], diplomacy: [82, 40], economy: [90, 55], intelligence: [68, 35], defense: [70, 38] }),
+    politics: {
+      regime: 'Monarchie constitutionnelle parlementaire', executive: 'Akihito', headOfGovernment: 'Yoshiro Mori',
+      governmentLabel: 'Coalition PLD–Kōmeitō–Conservateur', legislatureSeats: 480, governingSeats: 271,
+      publicApproval: 38, administrativeCompliance: 86,
+      doctrine: { economic: 10, social: 10, sovereignty: 20, security: 25 },
+    },
+    strategy: {
+      goals: [
+        { id: 'jpn-end-stagnation', label: 'Sortir durablement de la stagnation et de la déflation', priority: 100, progress: 34, status: 'active' },
+        { id: 'jpn-alliance', label: 'Maintenir l’alliance américaine et la sécurité régionale', priority: 94, progress: 70, status: 'active' },
+      ],
+      vulnerabilities: ['Déflation', 'Dette publique', 'Dépendance énergétique', 'Vieillissement démographique'],
+      redLines: ['Menace directe sur l’archipel', 'Rupture de la garantie américaine'], partners: ['USA', 'AUS'], rivals: ['CHN'], lastReviewDate: '2000-01-01',
+    },
+  }),
+  TUR: country({
+    id: 'TUR', name: 'Turquie', flag: '🇹🇷', weight: 64, statisticalReliability: 68,
+    metrics: { budget: 78, industry: 70, stability: 49, security: 75 },
+    capacities: capacities({ government: [66, 42], administration: [61, 42], diplomacy: [72, 39], economy: [64, 50], intelligence: [65, 41], defense: [78, 50] }),
+    politics: {
+      regime: 'République parlementaire', executive: 'Süleyman Demirel', headOfGovernment: 'Bülent Ecevit',
+      governmentLabel: 'Coalition DSP–MHP–ANAP', legislatureSeats: 550, governingSeats: 351,
+      publicApproval: 45, administrativeCompliance: 62,
+      doctrine: { economic: 10, social: -10, sovereignty: 73, security: 79 },
+    },
+    strategy: {
+      goals: [
+        { id: 'tur-imf-stabilization', label: 'Stabiliser l’économie et le programme financier', priority: 100, progress: 42, status: 'active' },
+        { id: 'tur-eu-candidacy', label: 'Transformer la candidature européenne en levier stratégique', priority: 88, progress: 48, status: 'active' },
+      ],
+      vulnerabilities: ['Inflation extrême', 'Dette de court terme', 'Question kurde', 'Fragilité bancaire'],
+      redLines: ['Partition territoriale', 'Isolement de l’OTAN'], partners: ['USA'], rivals: [], lastReviewDate: '2000-01-01',
+    },
+  }),
+  VNM: country({
+    id: 'VNM', name: 'Vietnam', flag: '🇻🇳', weight: 48, statisticalReliability: 58,
+    metrics: { budget: 42, industry: 54, stability: 61, security: 58 },
+    capacities: capacities({ government: [62, 35], administration: [60, 37], diplomacy: [58, 27], economy: [61, 42], intelligence: [52, 28], defense: [62, 36] }),
+    politics: {
+      regime: 'République socialiste à parti unique', executive: 'Trần Đức Lương', headOfGovernment: 'Phan Văn Khải',
+      governmentLabel: 'Direction du Parti communiste vietnamien', legislatureSeats: 450, governingSeats: 450,
+      publicApproval: 64, administrativeCompliance: 70,
+      doctrine: { economic: 10, social: -18, sovereignty: 76, security: 50 },
+    },
+    strategy: {
+      goals: [
+        { id: 'vnm-export-industrialization', label: 'Accélérer l’industrialisation orientée vers l’export', priority: 98, progress: 52, status: 'active' },
+        { id: 'vnm-strategic-balance', label: 'Préserver la marge de manœuvre face aux grandes puissances', priority: 90, progress: 44, status: 'active' },
+      ],
+      vulnerabilities: ['Faible revenu par habitant', 'Infrastructures', 'Dépendance commerciale', 'Pression chinoise'],
+      redLines: ['Atteinte à la souveraineté maritime', 'Déstabilisation du Parti'], partners: [], rivals: ['CHN'], lastReviewDate: '2000-01-01',
+    },
+  }),
 };
 
 const currents: Record<string, HistoricalCurrent> = {
@@ -274,6 +407,9 @@ const energyNodes: Record<string, EnergyNode> = {
   'dza-gas': { id: 'dza-gas', countryId: 'DZA', resource: 'gas', label: 'Gaz saharien algérien', provenReserves: 4500, probableReserves: 1600, annualProduction: 88, annualCapacity: 104, domesticConsumption: 24, storageCapacity: 18, stocks: 9, extractionCost: 8, declineRate: 0.009, developmentLeadMonths: 36, infrastructure: ['TransMed', 'Gazoduc Maghreb-Europe', 'Terminaux GNL'] },
   'lby-oil': { id: 'lby-oil', countryId: 'LBY', resource: 'oil', label: 'Croissant pétrolier libyen', provenReserves: 3900, probableReserves: 1100, annualProduction: 70, annualCapacity: 92, domesticConsumption: 12, storageCapacity: 20, stocks: 10, extractionCost: 7, declineRate: 0.01, developmentLeadMonths: 30, infrastructure: ['Ras Lanouf', 'Es Sider'] },
   'sau-oil': { id: 'sau-oil', countryId: 'SAU', resource: 'oil', label: 'Système pétrolier saoudien', provenReserves: 26000, probableReserves: 6400, annualProduction: 430, annualCapacity: 520, domesticConsumption: 65, storageCapacity: 70, stocks: 42, extractionCost: 4, declineRate: 0.004, developmentLeadMonths: 24, infrastructure: ['Ras Tanura', 'Petroline'] },
+  'bra-oil': { id: 'bra-oil', countryId: 'BRA', resource: 'oil', label: 'Bassins offshore brésiliens', provenReserves: 920, probableReserves: 420, annualProduction: 68, annualCapacity: 75, domesticConsumption: 100, storageCapacity: 20, stocks: 11, extractionCost: 20, declineRate: 0.01, developmentLeadMonths: 48, infrastructure: ['Bassin de Campos', 'Terminaux du Sud-Est'] },
+  'aus-gas': { id: 'aus-gas', countryId: 'AUS', resource: 'gas', label: 'Gaz offshore australien', provenReserves: 1150, probableReserves: 520, annualProduction: 31, annualCapacity: 38, domesticConsumption: 20, storageCapacity: 5, stocks: 2, extractionCost: 14, declineRate: 0.008, developmentLeadMonths: 48, infrastructure: ['Bass Strait', 'North West Shelf'] },
+  'vnm-oil': { id: 'vnm-oil', countryId: 'VNM', resource: 'oil', label: 'Plateau continental vietnamien', provenReserves: 350, probableReserves: 180, annualProduction: 17, annualCapacity: 21, domesticConsumption: 8, storageCapacity: 3, stocks: 1, extractionCost: 17, declineRate: 0.012, developmentLeadMonths: 42, infrastructure: ['Bach Ho', 'Vung Tau'] },
 };
 
 const sectors: Record<string, StrategicSectorState> = {
@@ -334,6 +470,13 @@ export function createFrance2000World(): WorldState {
       DZA: { countryId: 'DZA', annualDemand: { oil: 18, gas: 24 }, domesticProduction: { oil: 70, gas: 88 }, legacyImports: { oil: 0, gas: 0 }, strategicStocks: { oil: 8, gas: 9 }, storageCapacity: { oil: 14, gas: 18 }, desiredCoverageMonths: { oil: 2, gas: 2 } },
       LBY: { countryId: 'LBY', annualDemand: { oil: 12, gas: 6 }, domesticProduction: { oil: 70, gas: 12 }, legacyImports: { oil: 0, gas: 0 }, strategicStocks: { oil: 10, gas: 2 }, storageCapacity: { oil: 20, gas: 5 }, desiredCoverageMonths: { oil: 2, gas: 1 } },
       SAU: { countryId: 'SAU', annualDemand: { oil: 65, gas: 55 }, domesticProduction: { oil: 430, gas: 58 }, legacyImports: { oil: 0, gas: 0 }, strategicStocks: { oil: 42, gas: 4 }, storageCapacity: { oil: 70, gas: 12 }, desiredCoverageMonths: { oil: 2, gas: 1 } },
+      BRA: { countryId: 'BRA', annualDemand: { oil: 100, gas: 10 }, domesticProduction: { oil: 68, gas: 7 }, legacyImports: { oil: 32, gas: 3 }, strategicStocks: { oil: 11, gas: 1 }, storageCapacity: { oil: 20, gas: 4 }, desiredCoverageMonths: { oil: 1.5, gas: 0.8 } },
+      ZAF: { countryId: 'ZAF', annualDemand: { oil: 22, gas: 2 }, domesticProduction: { oil: 1, gas: 2 }, legacyImports: { oil: 21, gas: 0 }, strategicStocks: { oil: 3, gas: 0.3 }, storageCapacity: { oil: 7, gas: 1 }, desiredCoverageMonths: { oil: 1.5, gas: 0.5 } },
+      AUS: { countryId: 'AUS', annualDemand: { oil: 40, gas: 20 }, domesticProduction: { oil: 41, gas: 31 }, legacyImports: { oil: 0, gas: 0 }, strategicStocks: { oil: 6, gas: 2 }, storageCapacity: { oil: 10, gas: 5 }, desiredCoverageMonths: { oil: 1.5, gas: 1 } },
+      IND: { countryId: 'IND', annualDemand: { oil: 110, gas: 27 }, domesticProduction: { oil: 35, gas: 27 }, legacyImports: { oil: 75, gas: 0 }, strategicStocks: { oil: 7, gas: 1 }, storageCapacity: { oil: 16, gas: 4 }, desiredCoverageMonths: { oil: 0.8, gas: 0.5 } },
+      JPN: { countryId: 'JPN', annualDemand: { oil: 260, gas: 80 }, domesticProduction: { oil: 1, gas: 2 }, legacyImports: { oil: 259, gas: 78 }, strategicStocks: { oil: 72, gas: 7 }, storageCapacity: { oil: 90, gas: 14 }, desiredCoverageMonths: { oil: 3, gas: 1 } },
+      TUR: { countryId: 'TUR', annualDemand: { oil: 33, gas: 14 }, domesticProduction: { oil: 3, gas: 1 }, legacyImports: { oil: 30, gas: 13 }, strategicStocks: { oil: 3, gas: 1 }, storageCapacity: { oil: 6, gas: 3 }, desiredCoverageMonths: { oil: 1, gas: 0.8 } },
+      VNM: { countryId: 'VNM', annualDemand: { oil: 8, gas: 6 }, domesticProduction: { oil: 17, gas: 6 }, legacyImports: { oil: 0, gas: 0 }, strategicStocks: { oil: 1, gas: 0.4 }, storageCapacity: { oil: 3, gas: 1 }, desiredCoverageMonths: { oil: 1, gas: 0.5 } },
     },
     macroEconomies: createMacroEconomies2000(),
     worldEconomy: structuredClone(worldEconomy2000),

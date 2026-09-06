@@ -31,6 +31,13 @@ const baseline: Record<CountryId, Baseline> = {
   DZA: { gdp: 54.790, growth: 3.800, population: 30.904, populationGrowth: 1.400, inflation: 0.339, unemployment: 29.770, investment: 23.564, exports: 42.070, imports: 20.789, industry: 53.331, confidence: 67 },
   LBY: { gdp: 38.271, growth: 3.679, population: 5.305, populationGrowth: 1.653, inflation: -2.900, unemployment: 19.275, investment: 11.841, exports: 31.558, imports: 13.723, industry: 58.000, confidence: 48 },
   SAU: { gdp: 189.515, growth: 4.718, population: 16.178, populationGrowth: 4.460, inflation: -1.125, unemployment: 4.570, investment: 19.317, exports: 43.405, imports: 24.761, industry: 53.450, confidence: 62 },
+  BRA: { gdp: 655.448, growth: 4.388, population: 174.018, populationGrowth: 1.375, inflation: 7.044, unemployment: 10.889, investment: 18.903, exports: 10.188, imports: 12.452, industry: 23.007, confidence: 76 },
+  ZAF: { gdp: 151.753, growth: 4.200, population: 47.160, populationGrowth: 0.915, inflation: 5.339, unemployment: 22.788, investment: 15.060, exports: 24.404, imports: 21.816, industry: 28.230, confidence: 74 },
+  AUS: { gdp: 416.902, growth: 3.916, population: 19.029, populationGrowth: 1.144, inflation: 4.457, unemployment: 6.288, investment: 26.204, exports: 19.356, imports: 21.507, industry: 24.532, confidence: 95 },
+  IND: { gdp: 468.396, growth: 3.841, population: 1057.923, populationGrowth: 1.879, inflation: 4.009, unemployment: 7.589, investment: 25.677, exports: 12.997, imports: 13.904, industry: 27.326, confidence: 70 },
+  JPN: { gdp: 5042.382, growth: 2.978, population: 126.843, populationGrowth: 0.167, inflation: -0.677, unemployment: 4.748, investment: 29.652, exports: 10.310, imports: 8.965, industry: 32.485, confidence: 97 },
+  TUR: { gdp: 274.748, growth: 6.985, population: 65.426, populationGrowth: 1.283, inflation: 54.915, unemployment: 6.495, investment: 24.011, exports: 19.933, imports: 22.441, industry: 26.804, confidence: 72 },
+  VNM: { gdp: 31.173, growth: 6.787, population: 77.154, populationGrowth: 1.130, inflation: -1.710, unemployment: 2.260, investment: 29.610, exports: 53.921, imports: 57.496, industry: 36.731, confidence: 60 },
 };
 
 type Calibration = {
@@ -53,6 +60,13 @@ const calibration: Record<CountryId, Calibration> = {
   DZA: { workingAge: 60.2, participation: 43, migration: -0.9, debt: 46, revenue: 36, spending: 40, rate: 8.5, privateDebt: 29, reserves: 12, agriculture: 10.2, extractive: 39, publicServices: 14 },
   LBY: { workingAge: 59.8, participation: 52, migration: 2.0, debt: 35, revenue: 48, spending: 52, rate: 5.0, privateDebt: 24, reserves: 20, agriculture: 4.1, extractive: 47, publicServices: 15 },
   SAU: { workingAge: 62.0, participation: 55, migration: 12, debt: 87, revenue: 35, spending: 42, rate: 6.5, privateDebt: 55, reserves: 14, agriculture: 5.0, extractive: 41, publicServices: 14 },
+  BRA: { workingAge: 65.0, participation: 69, migration: -0.2, debt: 58, revenue: 33, spending: 37, rate: 17, privateDebt: 47, reserves: 3.2, agriculture: 8.5, extractive: 4.5, publicServices: 18 },
+  ZAF: { workingAge: 64.0, participation: 55, migration: 1.0, debt: 39.6, revenue: 23.1, spending: 24.4, rate: 12, privateDebt: 65, reserves: 3.5, agriculture: 3.0, extractive: 9.0, publicServices: 16 },
+  AUS: { workingAge: 66.0, participation: 76, migration: 5.0, debt: 29.5, revenue: 25.8, spending: 24.0, rate: 6.2, privateDebt: 110, reserves: 4.5, agriculture: 4.0, extractive: 8.0, publicServices: 16 },
+  IND: { workingAge: 62.5, participation: 61, migration: -0.2, debt: 55.0, revenue: 11.7, spending: 15.4, rate: 10.0, privateDebt: 48, reserves: 5.0, agriculture: 23.0, extractive: 2.0, publicServices: 12 },
+  JPN: { workingAge: 68.0, participation: 62, migration: 0.3, debt: 140, revenue: 28, spending: 35, rate: 0.25, privateDebt: 135, reserves: 11.0, agriculture: 1.5, extractive: 0.3, publicServices: 18 },
+  TUR: { workingAge: 64.0, participation: 51, migration: -0.3, debt: 60, revenue: 32, spending: 42, rate: 50, privateDebt: 35, reserves: 3.0, agriculture: 15.0, extractive: 1.0, publicServices: 14 },
+  VNM: { workingAge: 63.5, participation: 75, migration: -0.4, debt: 36, revenue: 21, spending: 25, rate: 8, privateDebt: 20, reserves: 4.0, agriculture: 24.0, extractive: 4.0, publicServices: 12 },
 };
 
 const productEndowments: Record<CountryId, [number, number, number, number, number, number]> = {
@@ -60,6 +74,8 @@ const productEndowments: Record<CountryId, [number, number, number, number, numb
   POL: [72, 35, 58, 68, 65, 42], USA: [100, 55, 100, 100, 100, 100], GBR: [63, 76, 48, 71, 78, 89],
   RUS: [84, 100, 100, 58, 48, 54], CHN: [88, 53, 83, 100, 92, 51], NOR: [46, 100, 88, 42, 54, 72],
   DZA: [57, 100, 91, 28, 20, 22], LBY: [31, 94, 79, 18, 13, 17], SAU: [43, 100, 94, 33, 24, 28],
+  BRA: [88, 75, 85, 70, 64, 42], ZAF: [60, 68, 100, 64, 58, 38], AUS: [78, 83, 100, 45, 55, 55],
+  IND: [85, 42, 67, 74, 62, 38], JPN: [34, 8, 28, 94, 94, 92], TUR: [73, 20, 55, 70, 64, 45], VNM: [88, 60, 72, 55, 52, 35],
 };
 
 const debtCalibration: Record<CountryId, {
@@ -79,6 +95,13 @@ const debtCalibration: Record<CountryId, {
   DZA: { effectiveRate: 7.2, spread: 390, maturity: 4.0, foreignHeld: 20, foreignCurrency: 32, bankExposure: 18, backstop: 42, marketAccess: 52, bankCapital: 10.0, badLoans: 14.0 },
   LBY: { effectiveRate: 6.0, spread: 580, maturity: 3.5, foreignHeld: 8, foreignCurrency: 35, bankExposure: 21, backstop: 28, marketAccess: 45, bankCapital: 8.5, badLoans: 22.0 },
   SAU: { effectiveRate: 6.0, spread: 180, maturity: 5.0, foreignHeld: 12, foreignCurrency: 22, bankExposure: 16, backstop: 65, marketAccess: 68, bankCapital: 11.0, badLoans: 9.0 },
+  BRA: { effectiveRate: 14.0, spread: 420, maturity: 3.5, foreignHeld: 38, foreignCurrency: 28, bankExposure: 15, backstop: 62, marketAccess: 70, bankCapital: 10.5, badLoans: 8.0 },
+  ZAF: { effectiveRate: 10.0, spread: 240, maturity: 5.0, foreignHeld: 24, foreignCurrency: 8, bankExposure: 13, backstop: 64, marketAccess: 74, bankCapital: 11.0, badLoans: 7.0 },
+  AUS: { effectiveRate: 6.5, spread: 42, maturity: 6.5, foreignHeld: 42, foreignCurrency: 0, bankExposure: 10, backstop: 86, marketAccess: 93, bankCapital: 11.8, badLoans: 3.0 },
+  IND: { effectiveRate: 8.0, spread: 240, maturity: 6.0, foreignHeld: 12, foreignCurrency: 5, bankExposure: 22, backstop: 72, marketAccess: 74, bankCapital: 9.5, badLoans: 12.0 },
+  JPN: { effectiveRate: 1.5, spread: 10, maturity: 6.5, foreignHeld: 6, foreignCurrency: 0, bankExposure: 28, backstop: 98, marketAccess: 100, bankCapital: 9.5, badLoans: 8.5 },
+  TUR: { effectiveRate: 35.0, spread: 780, maturity: 2.5, foreignHeld: 20, foreignCurrency: 40, bankExposure: 29, backstop: 52, marketAccess: 45, bankCapital: 8.8, badLoans: 19.0 },
+  VNM: { effectiveRate: 6.0, spread: 520, maturity: 5.0, foreignHeld: 30, foreignCurrency: 38, bankExposure: 20, backstop: 50, marketAccess: 54, bankCapital: 9.0, badLoans: 12.0 },
 };
 
 const families: EconomicProductFamily[] = ['food', 'energy', 'raw_materials', 'industrial_inputs', 'manufactured_goods', 'strategic_technology'];
@@ -114,7 +137,7 @@ function createSectors(countryId: CountryId, item: Baseline): Record<AggregateSe
     market_services: marketServices, public_services: c.publicServices,
   };
   const employmentBias: Record<AggregateSectorId, number> = {
-    agriculture: countryId === 'CHN' || countryId === 'DZA' ? 2.1 : 1.25,
+    agriculture: ['CHN', 'DZA', 'IND', 'VNM'].includes(countryId) ? 2.1 : 1.25,
     extractive: 0.45, manufacturing: 1.05, construction: 1.2, market_services: 1.05, public_services: 1.1,
   };
   const rawEmployment = Object.fromEntries(Object.entries(shares).map(([id, share]) => [id, share * employmentBias[id as AggregateSectorId]])) as Record<AggregateSectorId, number>;
@@ -123,7 +146,7 @@ function createSectors(countryId: CountryId, item: Baseline): Record<AggregateSe
     valueAddedSharePct: round(share),
     capacityIndex: round(92 + Math.min(16, item.investment / 2) + (id === 'manufacturing' ? item.industry / 8 : 0)),
     utilizationPct: round(clamp(76 + (item.growth - potentialGrowth(item)) * 1.8, 55, 94)),
-    productivityIndex: round(clamp(100 + (item.confidence - 80) * 0.25 - (id === 'agriculture' && ['CHN', 'DZA'].includes(countryId) ? 20 : 0), 55, 120)),
+    productivityIndex: round(clamp(100 + (item.confidence - 80) * 0.25 - (id === 'agriculture' && ['CHN', 'DZA', 'IND', 'VNM'].includes(countryId) ? 20 : 0), 55, 120)),
     employmentSharePct: round(rawEmployment[id as AggregateSectorId] / totalEmployment * 100),
   }])) as Record<AggregateSectorId, AggregateSectorState>;
 }

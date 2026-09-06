@@ -119,6 +119,50 @@ const overrides: Record<CountryId, ProfileOverride> = {
       aversion('sau-elites', 'Préserver la coalition dynastique', 'red_line', ['elite_displacement'], 100, 100),
     ],
   },
+  BRA: {
+    weights: { growth: 90, price_stability: 94, fiscal_sustainability: 90, social_cohesion: 78, international_prestige: 76 },
+    riskTolerance: 45, adaptability: 68, satisficingThreshold: -8, choiceNoise: 14,
+    constraints: [aversion('bra-monetary-stability', 'Éviter une nouvelle rupture de crédibilité monétaire', 'taboo', ['monetary_financing'], 46, 84)],
+  },
+  ZAF: {
+    weights: { employment: 94, social_cohesion: 98, redistribution: 86, international_prestige: 74, regime_survival: 82 },
+    riskTolerance: 44, adaptability: 62, satisficingThreshold: -9, choiceNoise: 13,
+    constraints: [aversion('zaf-social-fracture', 'Éviter toute politique aggravant brutalement les fractures sociales', 'taboo', ['labor_deregulation'], 34, 78)],
+  },
+  AUS: {
+    weights: { growth: 86, fiscal_sustainability: 88, alliance_cohesion: 94, strategic_autonomy: 68, international_prestige: 78 },
+    riskTolerance: 50, adaptability: 72, satisficingThreshold: -8, choiceNoise: 10,
+    constraints: [aversion('aus-alliance-break', 'Préserver l’ancrage de sécurité américain', 'taboo', ['alliance_breach'], 42, 86)],
+  },
+  IND: {
+    weights: { growth: 94, employment: 94, strategic_autonomy: 100, regime_survival: 84, international_prestige: 90 },
+    riskTolerance: 62, adaptability: 67, satisficingThreshold: -11, choiceNoise: 16,
+    constraints: [
+      aversion('ind-nuclear-autonomy', 'Préserver l’autonomie de la dissuasion indienne', 'red_line', ['foreign_dependency'], 100, 96),
+      aversion('ind-territorial-integrity', 'Refus de toute concession sur l’intégrité territoriale', 'red_line', ['elite_displacement'], 76, 94),
+    ],
+  },
+  JPN: {
+    weights: { growth: 92, price_stability: 88, fiscal_sustainability: 82, alliance_cohesion: 96, social_cohesion: 82 },
+    riskTolerance: 32, adaptability: 54, satisficingThreshold: -4, choiceNoise: 8,
+    constraints: [aversion('jpn-alliance-break', 'Préserver la garantie de sécurité américaine', 'red_line', ['alliance_breach'], 100, 96)],
+  },
+  TUR: {
+    weights: { growth: 90, price_stability: 98, regime_survival: 92, strategic_autonomy: 92, alliance_cohesion: 70 },
+    riskTolerance: 62, adaptability: 52, satisficingThreshold: -14, choiceNoise: 19,
+    constraints: [
+      aversion('tur-territorial-integrity', 'Refus de toute fragmentation territoriale', 'red_line', ['elite_displacement'], 100, 100),
+      aversion('tur-nato-isolation', 'Éviter l’isolement stratégique occidental', 'taboo', ['alliance_breach'], 48, 88),
+    ],
+  },
+  VNM: {
+    weights: { growth: 94, employment: 90, strategic_autonomy: 98, regime_survival: 100, social_cohesion: 86 },
+    riskTolerance: 48, adaptability: 68, satisficingThreshold: -12, choiceNoise: 14,
+    constraints: [
+      aversion('vnm-party-control', 'Préserver le monopole politique du Parti', 'red_line', ['political_opening'], 100, 100),
+      aversion('vnm-sovereignty', 'Refus de toute atteinte à la souveraineté maritime', 'red_line', ['rival_dependency'], 86, 94),
+    ],
+  },
 };
 
 export function createDecisionProfiles2000(countries: Record<CountryId, CountryState>): Record<CountryId, CountryDecisionProfile> {

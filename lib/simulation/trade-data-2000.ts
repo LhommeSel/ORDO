@@ -46,6 +46,21 @@ export function createTradeFlows2000(): Record<string, BilateralTradeFlow> {
     flow('DZA', 'FRA', 5, energy, 17, 79), flow('FRA', 'DZA', 4, industrial, 17, 76),
     flow('DZA', 'ITA', 4, energy, 18, 77), flow('LBY', 'ITA', 5, energy, 24, 62),
     flow('SAU', 'USA', 15, energy, 14, 84), flow('USA', 'SAU', 8, { strategic_technology: 0.42, manufactured_goods: 0.38, industrial_inputs: 0.2 }, 16, 80),
+    flow('USA', 'JPN', 64, { manufactured_goods: 0.38, strategic_technology: 0.35, industrial_inputs: 0.17, food: 0.1 }, 10, 92),
+    flow('JPN', 'USA', 112, { manufactured_goods: 0.58, strategic_technology: 0.27, industrial_inputs: 0.15 }, 10, 94),
+    flow('AUS', 'JPN', 15, { energy: 0.32, raw_materials: 0.43, food: 0.15, industrial_inputs: 0.1 }, 14, 90),
+    flow('JPN', 'AUS', 6, { manufactured_goods: 0.56, strategic_technology: 0.24, industrial_inputs: 0.2 }, 14, 90),
+    flow('BRA', 'USA', 13, { food: 0.22, raw_materials: 0.24, manufactured_goods: 0.38, industrial_inputs: 0.16 }, 16, 82),
+    flow('USA', 'BRA', 11, { manufactured_goods: 0.46, industrial_inputs: 0.3, strategic_technology: 0.16, food: 0.08 }, 16, 84),
+    flow('CHN', 'JPN', 25, { manufactured_goods: 0.5, industrial_inputs: 0.3, raw_materials: 0.12, strategic_technology: 0.08 }, 16, 82),
+    flow('JPN', 'CHN', 20, { manufactured_goods: 0.38, industrial_inputs: 0.34, strategic_technology: 0.28 }, 16, 86),
+    flow('USA', 'IND', 6, { strategic_technology: 0.3, manufactured_goods: 0.42, industrial_inputs: 0.18, food: 0.1 }, 18, 78),
+    flow('IND', 'USA', 8, { manufactured_goods: 0.43, strategic_technology: 0.22, food: 0.2, industrial_inputs: 0.15 }, 18, 78),
+    flow('DEU', 'TUR', 8, industrial, 16, 80), flow('TUR', 'DEU', 7, { manufactured_goods: 0.52, food: 0.16, industrial_inputs: 0.22, strategic_technology: 0.1 }, 16, 78),
+    flow('CHN', 'VNM', 3, { manufactured_goods: 0.48, industrial_inputs: 0.32, food: 0.1, strategic_technology: 0.1 }, 18, 70),
+    flow('VNM', 'CHN', 2, { food: 0.25, raw_materials: 0.2, manufactured_goods: 0.4, industrial_inputs: 0.15 }, 18, 68),
+    flow('ZAF', 'GBR', 3, { raw_materials: 0.35, manufactured_goods: 0.28, food: 0.17, industrial_inputs: 0.2 }, 18, 78),
+    flow('GBR', 'ZAF', 3, { manufactured_goods: 0.42, industrial_inputs: 0.27, strategic_technology: 0.21, food: 0.1 }, 18, 78),
   ];
   return Object.fromEntries(values.map((item) => [item.id, item]));
 }

@@ -224,7 +224,7 @@ test('la sauvegarde et le registre permettent de reconstruire exactement un éta
 test('le noyau macroéconomique fait évoluer réellement les économies sur un an', () => {
   const initial = createFrance2000World();
   const advanced = advanceWorld(initial, '2001-01-01').state;
-  assert.equal(Object.keys(initial.macroEconomies).length, 12);
+  assert.equal(Object.keys(initial.macroEconomies).length, 19);
   assert.equal(initial.macroEconomies.FRA.realGdpBillion2000Usd, 1360.959);
   assert.ok(advanced.macroEconomies.FRA.realGdpBillion2000Usd > initial.macroEconomies.FRA.realGdpBillion2000Usd);
   assert.notEqual(advanced.macroEconomies.FRA.realGrowthAnnualPct, initial.macroEconomies.FRA.realGrowthAnnualPct);
