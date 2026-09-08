@@ -1,4 +1,4 @@
-import { activateEnergyContract, energyBalance, producerNodes, proposeEnergyContract } from './energy';
+import { activateEnergyContract, energyBalance, nodeBookedVolume, nodeExpansionPotential, producerNodes, proposeEnergyContract } from './energy';
 import { commitWorldAction } from './ledger';
 import { selectStrategicAction } from './decision-making';
 import type { CountryId, DecisionSignal, ISODate, StrategicActionCandidate, WorldState } from './types';
@@ -25,8 +25,14 @@ function reviewEnergy(state: WorldState, countryId: CountryId) {
   let next = state;
   for (const resource of ['oil', 'gas'] as const) {
     const balance = energyBalance(next, countryId, resource);
-    if (!balance || balance.deficit < Math.max(5, next.countryEnergy[countryId]?.annualDemand[resource] * 0.08)) continue;
+    const energy = next.countryEnergy[countryId];
+    if (!balance || !energy) continue;
     const demand = next.countryEnergy[countryId]?.annualDemand[resource] ?? 1;
+    const targetMonths = energy.desiredCoverageMonths[resource];
+    const stockGapAnnualized = Math.max(0, (targetMonths - balance.coverageMonths) / 12 * demand);
+    const urgentDeficit = balance.deficit >= Math.max(5, demand * 0.08);
+    const weakReserve = balance.coverageMonths < targetMonths * 0.7;
+    if (!urgentDeficit && !weakReserve) continue;
     const suppliers = producerNodes(next, resource)
       .filter(({ node, available }) => node.countryId !== countryId && available >= Math.min(balance.deficit, 18))
       .slice(0, 5);
@@ -55,7 +61,7 @@ function reviewEnergy(state: WorldState, countryId: CountryId) {
     if (!selected) continue;
     const supplier = suppliers.find((item) => item.node.id === selected.candidate.metadata?.nodeId);
     if (!supplier) continue;
-    const volume = Math.min(balance.deficit, supplier.available, 18);
+    const volume = Math.min(Math.max(balance.deficit, stockGapAnnualized), supplier.available, Math.max(4, demand * 0.18), 18);
     const id = `auto-${countryId}-${supplier.node.countryId}-${resource}-${next.currentDate}`;
     if (next.energyContracts[id]) continue;
     next = commitWorldAction(next, {
@@ -73,6 +79,20 @@ function reviewEnergy(state: WorldState, countryId: CountryId) {
     if (!proposed.ok) continue;
     const activated = activateEnergyContract(proposed.state, id, countryId, 'local_rule');
     if (activated.ok) next = activated.state;
+  }
+  // Un producteur proche de la saturation ne « vend » pas sans fin : il ouvre
+  // une revue d'expansion, visible dans le registre, avant toute hausse future.
+  for (const { node } of producerNodes(next, 'oil').concat(producerNodes(next, 'gas'))) {
+    if (node.countryId !== countryId) continue;
+    const capacity = Math.max(1, Math.min(node.annualProduction, node.annualCapacity) - node.domesticConsumption);
+    const pressure = nodeBookedVolume(next, node.id) / capacity;
+    if (pressure < 0.88) continue;
+    const id = `capacity-review-${node.id}-${next.currentDate}`;
+    if (next.actions.some((action) => action.intent === id)) continue;
+    next = commitWorldAction(next, {
+      kind: 'energy', actorId: countryId, origin: 'local_rule', visibility: 'debug', intent: id,
+      effects: [], metadata: { nodeId: node.id, booked: nodeBookedVolume(next, node.id), physicalCapacity: capacity, expansionPotential: nodeExpansionPotential(next, node.id) },
+    });
   }
   return next;
 }

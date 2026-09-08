@@ -1,4 +1,5 @@
 import type { WorldState } from './types';
+import { createTerritorialState, indexTerritorialState } from './territories';
 import { createMacroEconomies2000, worldEconomy2000 } from './macro-data-2000';
 import { createStructuralProfiles2000 } from './structural-data-2000';
 import { createStakeholderGroups2000 } from './stakeholder-data-2000';
@@ -59,8 +60,13 @@ export function deserializeWorld(raw: string): WorldState {
   }]));
   return {
     ...restored,
+    territorial: restored.territorial
+      ? indexTerritorialState(restored.territorial)
+      : createTerritorialState({ countries: restored.countries, macroEconomies }),
     countryEnergy,
-    baselineEnergyFlows: restored.baselineEnergyFlows ?? {},
+    baselineEnergyFlows: Object.fromEntries(Object.entries(restored.baselineEnergyFlows ?? {}).map(([id, flow]) => [id, {
+      ...flow, sourceNodeId: flow.sourceNodeId,
+    }])),
     strategicDossiers: restored.strategicDossiers ?? {},
     macroEconomies,
     worldEconomy,

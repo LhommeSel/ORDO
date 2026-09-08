@@ -11,6 +11,7 @@ import type {
   WorldEconomyState,
   WorldProductMarket,
 } from './types';
+import { nationalBaseline2000 } from './national-baseline-2000';
 
 type Baseline = {
   gdp: number; growth: number; population: number; populationGrowth: number;
@@ -103,6 +104,45 @@ const debtCalibration: Record<CountryId, {
   TUR: { effectiveRate: 35.0, spread: 780, maturity: 2.5, foreignHeld: 20, foreignCurrency: 40, bankExposure: 29, backstop: 52, marketAccess: 45, bankCapital: 8.8, badLoans: 19.0 },
   VNM: { effectiveRate: 6.0, spread: 520, maturity: 5.0, foreignHeld: 30, foreignCurrency: 38, bankExposure: 20, backstop: 50, marketAccess: 54, bankCapital: 9.0, badLoans: 12.0 },
 };
+
+// Spain is added as a first-class country for the territorial slice. Its macro
+// values are deliberately rounded scenario inputs; the regional allocation is
+// supplied by Eurostat's retrospective 2000 series below.
+Object.assign(baseline, { ESP: { gdp: 646.456, growth: 5.048, population: 40.470, populationGrowth: 0.140, inflation: 2.999, unemployment: 13.945, investment: 26.184, exports: 30.086, imports: 32.744, industry: 28.004, confidence: 88 } satisfies Baseline });
+Object.assign(calibration, { ESP: { workingAge: 68.1, participation: 65, migration: 2.0, debt: 58, revenue: 38, spending: 39, rate: 4.8, privateDebt: 88, reserves: 2.8, agriculture: 4.2, extractive: 0.8, publicServices: 17 } satisfies Calibration });
+Object.assign(productEndowments, { ESP: [74, 37, 49, 70, 73, 65] });
+Object.assign(debtCalibration, { ESP: { effectiveRate: 5.4, spread: 35, maturity: 5.8, foreignHeld: 35, foreignCurrency: 0, bankExposure: 18, backstop: 62, marketAccess: 88, bankCapital: 10.5, badLoans: 4.5 } });
+
+// The global fiches intentionally use rounded, internally consistent scenario
+// inputs. They unlock the same macro engine without pretending that every
+// country has French-level regional statistics on 1 January 2000.
+for (const item of nationalBaseline2000) {
+  baseline[item.id] = {
+    gdp: item.gdp, growth: item.growth, population: item.population, populationGrowth: item.populationGrowth,
+    inflation: item.inflation, unemployment: item.unemployment, investment: Math.min(36, Math.max(12, 17 + item.industry * 0.22)),
+    exports: item.openness * 0.46, imports: item.openness * 0.49, industry: item.industry, confidence: item.confidence,
+  };
+  const fragile = item.orientation === 'fragile' || item.orientation === 'military' || item.stability < 40;
+  const controlled = item.orientation === 'party_state' || item.orientation === 'military' || item.orientation === 'theocratic';
+  calibration[item.id] = {
+    workingAge: Math.min(72, Math.max(55, 62 + item.populationGrowth * 1.8)), participation: Math.min(82, Math.max(42, 58 + item.industry * 0.22)),
+    migration: item.populationGrowth > 2 ? 1.5 : 0, debt: fragile ? 62 : item.gdp > 100 ? 48 : 55,
+    revenue: controlled ? 24 : 32, spending: controlled ? 28 : 34, rate: Math.max(2, item.inflation * 0.55 + 3),
+    privateDebt: item.gdp > 100 ? 75 : 42, reserves: item.openness > 65 ? 4 : 2.5,
+    agriculture: Math.max(2, 42 - item.industry * 0.8), extractive: item.vulnerabilities.some((v) => /pétrol|hydrocarb|miner/i.test(v)) ? 12 : 3,
+    publicServices: controlled ? 12 : 17,
+  };
+  productEndowments[item.id] = [
+    Math.min(100, Math.round(item.industry * 2.4)), Math.min(100, Math.round(item.openness * 0.8)),
+    Math.min(100, Math.round(item.industry * 1.8)), Math.min(100, Math.round(item.industry * 1.5)),
+    Math.min(100, Math.round(item.industry * 1.55)), Math.min(100, Math.round(item.industry * 1.2)),
+  ];
+  debtCalibration[item.id] = {
+    effectiveRate: Math.max(3, item.inflation * 0.4 + 4), spread: fragile ? 450 : 120, maturity: fragile ? 3.8 : 5.8,
+    foreignHeld: item.openness > 65 ? 35 : 20, foreignCurrency: controlled ? 25 : 10, bankExposure: fragile ? 24 : 14,
+    backstop: item.stability, marketAccess: Math.max(35, item.confidence), bankCapital: fragile ? 8.8 : 10.5, badLoans: fragile ? 15 : 6,
+  };
+}
 
 const families: EconomicProductFamily[] = ['food', 'energy', 'raw_materials', 'industrial_inputs', 'manufactured_goods', 'strategic_technology'];
 const clamp = (value: number, minimum: number, maximum: number) => Math.min(maximum, Math.max(minimum, value));

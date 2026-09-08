@@ -189,7 +189,12 @@ const fact = (
   observedAt: input.observedAt ?? state.currentDate,
 });
 
-function collectFacts(state: WorldState): AIContextFact[] {
+/**
+ * Inventaire canonique des faits du monde. Les compilateurs spécialisés (conseil,
+ * négociation, pouls mondial) partent tous de cette même vérité plutôt que de
+ * reconstruire chacun leur propre lecture de la sauvegarde.
+ */
+export function collectFacts(state: WorldState): AIContextFact[] {
   const facts: AIContextFact[] = [];
   const add = (input: AIContextFactInput) => facts.push(fact(state, input));
 

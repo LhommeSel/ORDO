@@ -119,6 +119,10 @@ export function startEnergyNegotiationAI(state: WorldState, offer: EnergyAdminis
   const supplier = state.countries[offer.supplierId];
   const buyer = state.countries[offer.buyerId];
   if (!supplier || !buyer) return { ok: false as const, state, error: 'Les participants de la négociation sont inconnus.' };
+  const existing = state.diplomaticSessions[offer.id];
+  if (existing && ['awaiting_response', 'countered', 'awaiting_signature', 'active'].includes(existing.status)) {
+    return { ok: false as const, state, error: 'Cette négociation est déjà ouverte dans le dossier diplomatique.' };
+  }
   if (offer.annualVolume > nodeAvailableExport(state, offer.nodeId)) return { ok: false as const, state, error: 'Le volume proposé dépasse désormais la capacité exportable.' };
   const dossierId = energyDossierId(offer);
   const session: DiplomaticSession = {
@@ -432,6 +436,10 @@ export function sendEnergyOffer(state: WorldState, offer: EnergyAdministrativeOf
 }
 
 export function acceptEnergyOffer(state: WorldState, offer: EnergyAdministrativeOffer) {
+  const existingSession = state.diplomaticSessions[offer.id];
+  if (existingSession?.linkedContractId || existingSession?.status === 'active') {
+    return { ok: false as const, state, error: 'Cette négociation a déjà été signée.' };
+  }
   const contractId = `player-${offer.buyerId}-${offer.supplierId}-${offer.resource}-${state.currentDate}-${state.sequence + 1}`;
   const proposed = proposeEnergyContract(state, {
     id: contractId, nodeId: offer.nodeId, buyerId: offer.buyerId,

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { answerAdvisorQuestion, assessStrategicPlan } from './advisor';
+import { answerAdvisorQuestion, assessStrategicPlan, classifyAdvisorQuestion } from './advisor';
 import { launchCommonAction, prepareCommonAction } from './action-programs';
 import { energyBalance, nodeAvailableExport, proposeEnergyContract } from './energy';
 import {
@@ -14,6 +14,7 @@ import { addEconomicShock, setEconomicPolicy } from './macro-economy';
 import { applyDebtCrisisResponse } from './sovereign-debt';
 import { evaluateStrategicAction, selectStrategicAction } from './decision-making';
 import { reviewCountryStrategy } from './autonomy';
+import { countrySheet } from './country-sheet';
 import type { GovernmentMeasure, StrategicActionCandidate } from './types';
 import { createFrance2000World } from './scenario-2000';
 import { deriveStructuralDiagnostics } from './structural-diagnostics';
@@ -21,13 +22,15 @@ import {
   enactGovernmentMeasure, enactPrototypeGovernmentMeasure, stakeholderPressureByChannel, visibleStakeholderReactions,
 } from './stakeholders';
 import {
-  applyPowerStruggleAIProposal, pendingPowerStruggleAIRequests,
+  applyPowerStruggleAIProposal, detectPowerStruggleOpportunities, pendingPowerStruggleAIRequests,
   submitPowerStrugglePlayerResponse,
 } from './power-struggles';
 import { interpretPlayerIntent, rankEnergySuppliers } from './intent';
 import {
   dossierUnreadCount, dossiersRequiringAttention, markDossierViewed, setDossierFollowed,
 } from './dossiers';
+import { applyWorldPulseAnswer, createWorldPulseRequest } from './ai/world-pulse';
+import { parseWorldPulseRequest } from '../ai/world-pulse-contracts';
 
 test('le scénario 2000 charge un monde cohérent et jouable', () => {
   const state = createFrance2000World();
@@ -37,6 +40,54 @@ test('le scénario 2000 charge un monde cohérent et jouable', () => {
   assert.ok(Object.keys(state.historicalCurrents).length >= 3);
   assert.ok(Object.keys(state.armamentProducts).length >= 6);
   assert.ok(Object.keys(state.strategicDossiers).length >= 2);
+});
+
+test('le pouls mondial IA ne peut créer que des mises à jour de dossiers citées et relationnelles bornées', () => {
+  const initial = createFrance2000World();
+  const request = createWorldPulseRequest(initial, initial.actions.length, 1, 'test-world-pulse-session');
+  assert.ok(parseWorldPulseRequest(request));
+  const item = request.pulses.find((candidate) => candidate.kind === 'world_autonomy');
+  assert.ok(item);
+  if (!item) return;
+  const dossierFact = item.context.facts.find((fact) => fact.id === 'dossier:current-dotcom-exuberance');
+  assert.ok(dossierFact);
+  if (!dossierFact) return;
+  const applied = applyWorldPulseAnswer(initial, item, {
+    headline: 'Les marchés technologiques se crispent',
+    synthesis: 'Les autorités financières réévaluent les risques. Le dossier reste évolutif.',
+    requestedFactIds: [],
+    proposals: [{
+      dossierId: 'current-dotcom-exuberance', title: 'Vigilance financière accrue', kind: 'economic', importance: 'major',
+      actorIds: ['USA', 'FRA'], regionTags: ['Europe', 'Amérique du Nord'], phase: 'Réévaluation des expositions', trend: 'escalating',
+      summary: 'Les autorités et investisseurs réévaluent progressivement leur exposition aux valeurs technologiques.',
+      requiresPlayerDecision: true, playerDecision: 'Déterminer si la France prépare une surveillance prudentielle ciblée.',
+      factIds: [dossierFact.id],
+      relationEffects: [{ from: 'USA', to: 'FRA', relation: 8, trust: -8, reason: 'Consultations financières plus tendues.' }],
+    }],
+  });
+  const dossier = applied.state.strategicDossiers['current-dotcom-exuberance'];
+  assert.ok(dossier.entries.some((entry) => entry.title === 'Vigilance financière accrue'));
+  assert.ok(dossier.pendingDecisions.includes('Déterminer si la France prépare une surveillance prudentielle ciblée.'));
+  const relation = applied.state.relations['USA:FRA'];
+  assert.ok(relation);
+  assert.equal(relation.relation - (initial.relations['USA:FRA']?.relation ?? 50), 3);
+  assert.equal(relation.trust - (initial.relations['USA:FRA']?.trust ?? 50), -3);
+  assert.equal(applied.relationChanges, 1);
+});
+
+test('le pouls de réaction conserve les choix du joueur faits avant le clic d’avance', () => {
+  const firstTurn = advanceWorld(createFrance2000World(), '2000-02-01').state;
+  const prepared = prepareCommonAction(firstTurn, 'Ouvrir une coopération technologique avec l’Allemagne.');
+  assert.equal(prepared.ok, true);
+  if (!prepared.ok) return;
+  const launched = launchCommonAction(firstTurn, prepared.action);
+  assert.equal(launched.ok, true);
+  if (!launched.ok) return;
+  const after = advanceWorld(launched.state, '2000-03-01').state;
+  const startIndex = firstTurn.actions.map((action) => action.kind).lastIndexOf('time_advance') + 1;
+  const request = createWorldPulseRequest(after, startIndex, 1, 'test-world-pulse-session');
+  const reaction = request.pulses.find((candidate) => candidate.kind === 'player_reaction');
+  assert.ok(reaction?.context.recentPlayerActions.some((action) => action.id === launched.state.actions.at(-1)?.id));
 });
 
 test('une intention diplomatique devient un programme puis libère ses moyens à la résolution', () => {
@@ -53,6 +104,41 @@ test('une intention diplomatique devient un programme puis libère ses moyens à
   const advanced = advanceWorld(launched.state, '2000-04-01').state;
   assert.notEqual(advanced.actionPrograms[launched.programId].status, 'active');
   assert.equal(advanced.countries.FRA.capacities.diplomacy.committed, initial.countries.FRA.capacities.diplomacy.committed);
+});
+
+test('une initiative diplomatique réussie crée un engagement et un dossier persistants', () => {
+  const initial = createFrance2000World();
+  const prepared = prepareCommonAction(initial, 'Négocier une alliance défensive avec l’Allemagne.');
+  assert.equal(prepared.ok, true);
+  if (!prepared.ok) return;
+  const launched = launchCommonAction(initial, { ...prepared.action, successProbability: 100 });
+  assert.equal(launched.ok, true);
+  if (!launched.ok) return;
+  const advanced = advanceWorld(launched.state, '2000-04-01').state;
+  assert.ok(Object.values(advanced.treaties).some((treaty) => treaty.parties.includes('DEU') && treaty.status === 'active'));
+  assert.ok(Object.values(advanced.strategicDossiers).some((dossier) => dossier.actorIds.includes('DEU') && dossier.kind === 'security'));
+  assert.equal(advanced.actionPrograms[launched.programId].status, 'succeeded');
+});
+
+test('une option IA reste consultative, ouvre un dossier puis reçoit le résultat de résolution', () => {
+  const initial = createFrance2000World();
+  const prepared = prepareCommonAction(initial, 'Proposer une coopération technologique avec le Japon.', {
+    source: 'ai', requestId: 'ai-quality-option-1',
+  });
+  assert.equal(prepared.ok, true);
+  if (!prepared.ok) return;
+  assert.equal(prepared.action.intentSpec?.source, 'ai');
+  assert.equal(prepared.action.intentSpec?.requestId, 'ai-quality-option-1');
+  const launched = launchCommonAction(initial, { ...prepared.action, successProbability: 100 });
+  assert.equal(launched.ok, true);
+  if (!launched.ok) return;
+  const activeDossier = Object.values(launched.state.strategicDossiers).find((dossier) => dossier.actorIds.includes('JPN'));
+  assert.ok(activeDossier);
+  assert.equal(activeDossier?.status, 'active');
+  const advanced = advanceWorld(launched.state, '2000-04-01').state;
+  const resolvedDossier = activeDossier ? advanced.strategicDossiers[activeDossier.id] : undefined;
+  assert.ok(resolvedDossier?.entries.some((entry) => entry.id === `${launched.programId}-resolution`));
+  assert.equal(resolvedDossier?.phase, 'Première mise en œuvre achevée');
 });
 
 test('un contrat énergétique ne peut pas dépasser la capacité physique restante', () => {
@@ -189,6 +275,84 @@ test('le conseiller local produit des options situées et auditables', () => {
   assert.ok(assessStrategicPlan(state, diplomatic).capabilityPressure.length >= 1);
 });
 
+test('le classificateur local distingue faits, stratégie et diplomatie', () => {
+  assert.equal(classifyAdvisorQuestion('Quel est le PIB français en 2000 ?').kind, 'fact');
+  assert.equal(classifyAdvisorQuestion('Que peut faire la France pour réduire sa dette ?').kind, 'strategy');
+  assert.equal(classifyAdvisorQuestion('Négocier un contrat gazier avec l’Algérie').kind, 'diplomacy');
+  const fact = answerAdvisorQuestion(createFrance2000World(), 'Quel est le PIB réel de la France en 2000 ?');
+  assert.equal(fact.questionKind, 'fact');
+  assert.equal(fact.plans.length, 0);
+
+  const mixed = classifyAdvisorQuestion('Compare deux trajectoires françaises : priorité à l’énergie ou aux semi-conducteurs ?');
+  assert.equal(mixed.kind, 'strategy');
+  assert.deepEqual(mixed.dimensions, ['strategy', 'situation']);
+  assert.equal(mixed.responseMode, 'facts_and_options');
+
+  const multiActor = answerAdvisorQuestion(createFrance2000World(), 'Construis une proposition entre la Turquie et la Grèce avec médiation française.');
+  assert.deepEqual(multiActor.actors.map((actor) => actor.id), ['FRA', 'TUR', 'GRC']);
+  assert.ok(multiActor.facts.some((item) => item.id === 'actor-GRC-strategy'));
+});
+
+test('le conseiller conserve les pays cités et reconnaît le vocabulaire énergétique', () => {
+  const state = createFrance2000World();
+  const answer = answerAdvisorQuestion(state, 'Compare la vulnérabilité énergétique de la France, de l’Allemagne et de l’Italie : stocks de gaz, production et options.', { questionKind: 'strategy' });
+  assert.ok(answer.actors.some((actor) => actor.id === 'DEU'));
+  assert.ok(answer.actors.some((actor) => actor.id === 'ITA'));
+  assert.ok(answer.facts.some((fact) => fact.id === 'target-gas' || fact.id === 'actor-DEU-gas'));
+  assert.ok(answer.facts.some((fact) => fact.id === 'actor-ITA-gas'));
+});
+
+test('un programme ne peut pas engager un budget inférieur à son coût', () => {
+  const initial = createFrance2000World();
+  const prepared = prepareCommonAction(initial, 'Lancer un programme industriel de semi-conducteurs.');
+  assert.equal(prepared.ok, true);
+  if (!prepared.ok) return;
+  const poor = { ...initial, countries: { ...initial.countries, FRA: { ...initial.countries.FRA, metrics: { ...initial.countries.FRA.metrics, budget: 0 } } } };
+  const launched = launchCommonAction(poor, prepared.action);
+  assert.equal(launched.ok, false);
+  assert.match(launched.error, /Budget insuffisant/);
+});
+
+test('une intention inconnue ne devient pas arbitrairement un programme économique', () => {
+  const result = prepareCommonAction(createFrance2000World(), 'Faire quelque chose de surprenant.');
+  assert.equal(result.ok, false);
+  if (!result.ok) assert.match(result.error, /ne reconnaît pas encore le domaine/);
+});
+
+test('la signature énergétique est idempotente', () => {
+  const initial = createFrance2000World();
+  const draft = createAdministrativeEnergyOffer(initial, 'DZA', 'gas');
+  assert.equal(draft.ok, true);
+  if (!draft.ok) return;
+  const sent = sendEnergyOffer(initial, draft.offer);
+  assert.equal(sent.ok, true);
+  if (!sent.ok) return;
+  const first = acceptEnergyOffer(sent.state, sent.response.offer);
+  assert.equal(first.ok, true);
+  if (!first.ok) return;
+  const second = acceptEnergyOffer(first.state, sent.response.offer);
+  assert.equal(second.ok, false);
+  assert.match(second.error, /déjà été signée/);
+});
+
+test('la fiche pays et le conseiller exposent des chiffres opérationnels sans jauge de fiabilité', () => {
+  const state = createFrance2000World();
+  const sheet = countrySheet(state, 'FRA');
+  assert.equal(sheet?.defense?.activePersonnelThousands, 353);
+  assert.equal(sheet?.macro?.population, 60.919);
+  const answer = answerAdvisorQuestion(state, 'Quel est l’état des forces militaires françaises ?');
+  assert.ok(answer.facts.some((fact) => fact.id === 'player-defense-budget'));
+  assert.ok(answer.facts.some((fact) => fact.id === 'player-defense-personnel'));
+  assert.ok(answer.facts.some((fact) => fact.value.includes('353 milliers')));
+});
+
+test('un État autonome comble aussi une réserve énergétique trop faible', () => {
+  const state = createFrance2000World();
+  state.countryEnergy.POL.strategicStocks.gas = 0;
+  const reviewed = reviewCountryStrategy(state, 'POL');
+  assert.ok(Object.values(reviewed.energyContracts).some((contract) => contract.buyerId === 'POL' && contract.resource === 'gas'));
+});
+
 test('une demande libre identifie le pays et la ressource sans sélecteur', () => {
   const state = createFrance2000World();
   const answer = answerAdvisorQuestion(state, 'Je veux négocier un contrat gazier de long terme avec l’Algérie.');
@@ -209,14 +373,14 @@ test('sans partenaire imposé, le moteur classe plusieurs fournisseurs réels', 
   assert.equal(new Set(answer.plans.map((plan) => plan.execution?.supplierId)).size, answer.plans.length);
 });
 
-test('un pays absent est identifié sans inventer de capacité', () => {
+test('une fiche nationale compacte est utilisable sans inventaire territorial détaillé', () => {
   const state = createFrance2000World();
   const intent = interpretPlayerIntent(state, 'Négocier un contrat gazier avec le Kazakhstan.');
   const answer = answerAdvisorQuestion(state, 'Négocier un contrat gazier avec le Kazakhstan.');
   assert.equal(intent.targetLabel, 'Kazakhstan');
-  assert.equal(intent.targetStatus, 'unmodeled');
+  assert.equal(intent.targetStatus, 'modeled');
   assert.equal(answer.plans.length, 0);
-  assert.ok(answer.synthesis.includes('ne fabrique donc pas'));
+  assert.ok(answer.synthesis.includes('aucune capacité exportatrice'));
 });
 
 test('un dossier conserve ses nouveautés jusqu’à leur consultation', () => {
@@ -260,7 +424,7 @@ test('la sauvegarde et le registre permettent de reconstruire exactement un éta
 test('le noyau macroéconomique fait évoluer réellement les économies sur un an', () => {
   const initial = createFrance2000World();
   const advanced = advanceWorld(initial, '2001-01-01').state;
-  assert.equal(Object.keys(initial.macroEconomies).length, 19);
+  assert.equal(Object.keys(initial.macroEconomies).length, 100);
   assert.equal(initial.macroEconomies.FRA.realGdpBillion2000Usd, 1360.959);
   assert.ok(advanced.macroEconomies.FRA.realGdpBillion2000Usd > initial.macroEconomies.FRA.realGdpBillion2000Usd);
   assert.notEqual(advanced.macroEconomies.FRA.realGrowthAnnualPct, initial.macroEconomies.FRA.realGrowthAnnualPct);
@@ -418,7 +582,7 @@ test('un tabou peut céder à une urgence extrême tandis qu’une ligne rouge d
 
 test('l’autonomie économique obéit réellement aux lignes rouges du gouvernement', () => {
   const state = createFrance2000World();
-  state.countryEnergy.POL.legacyImports.gas = 0;
+  state.baselineEnergyFlows['pol-gas-rus'] = { ...state.baselineEnergyFlows['pol-gas-rus'], annualVolume: 0 };
   const reviewed = reviewCountryStrategy(state, 'POL');
   const contracts = Object.values(reviewed.energyContracts).filter((contract) => contract.buyerId === 'POL' && contract.status === 'active');
   assert.ok(contracts.length >= 1);
@@ -431,7 +595,7 @@ test('le bilan structurel dérive ses diagnostics des données du monde', () => 
   const france = deriveStructuralDiagnostics(state, 'FRA');
   const norway = deriveStructuralDiagnostics(state, 'NOR');
 
-  assert.equal(Object.keys(state.structuralProfiles).length, 12);
+  assert.equal(Object.keys(state.structuralProfiles).length, 100);
   assert.ok(france.some((item) => item.id === 'energy-import-dependency'));
   assert.ok(france.some((item) => item.id === 'industrial-depth'));
   assert.ok(norway.some((item) => item.id === 'energy-export-capacity'));
@@ -443,7 +607,7 @@ test('le bilan structurel dérive ses diagnostics des données du monde', () => 
 
 test('les mesures successives font émerger une défiance qualitative puis celle-ci s’use', () => {
   let state = createFrance2000World();
-  assert.equal(Object.keys(state.stakeholderGroups).length, 48);
+  assert.equal(Object.keys(state.stakeholderGroups).length, 400);
   assert.equal(visibleStakeholderReactions(state).length, 0);
 
   state = enactPrototypeGovernmentMeasure(state, 'labor_restrictions');
@@ -526,4 +690,22 @@ test('une opposition systémique attend l’IA puis devient un acteur et un doss
   const responseRequest = pendingPowerStruggleAIRequests(answered.state)[0];
   assert.equal(responseRequest.purpose, 'react_to_player');
   assert.ok(responseRequest.context.playerResponse?.includes('consultation technique'));
+});
+
+test('les tensions émergentes sont plafonnées par passage pour préserver le budget IA', () => {
+  let state = createFrance2000World();
+  const measure: GovernmentMeasure = {
+    id: 'test-capacity-reform', countryId: 'FRA', title: 'Réorganisation administrative brutale', subjectId: 'admin-reform', intensity: 95,
+    signals: [{ signal: 'administrative_reorganization', weight: 1 }], effects: [],
+  };
+  state = enactGovernmentMeasure(state, measure);
+  const reactions = Object.values(state.stakeholderReactions).filter((reaction) => reaction.countryId === 'FRA');
+  const duplicated = reactions.slice(0, 6).reduce((all, reaction, index) => ({
+    ...all,
+    [`synthetic-${index}`]: { ...reaction, id: `synthetic-${index}`, level: 'critical' as const, defiance: 100, mobilization: 100 },
+  }), {} as typeof state.stakeholderReactions);
+  state = { ...state, stakeholderReactions: { ...state.stakeholderReactions, ...duplicated } };
+  const detected = detectPowerStruggleOpportunities(state);
+  const pending = Object.values(detected.aiJobs).filter((job) => job.kind === 'power_struggle' && job.purpose === 'materialize_actor' && job.status === 'pending');
+  assert.ok(pending.length <= 3);
 });

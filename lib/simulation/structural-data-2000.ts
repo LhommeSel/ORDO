@@ -1,4 +1,4 @@
-import type { CountryId, CountryStructuralProfile } from './types';
+import type { CountryId, CountryState, CountryStructuralProfile } from './types';
 
 type ProfileInput = Omit<CountryStructuralProfile, 'countryId' | 'source'> & {
   confidence: number;
@@ -26,8 +26,8 @@ const profiles: Record<CountryId, ProfileInput> = {
   VNM: { industrialDepth: 43, economicDiversification: 52, innovationCapacity: 32, infrastructureQuality: 39, financialResilience: 43, socialStabilizers: 46, exportConcentration: 61, resourceRentDependency: 22, demographicPressure: 48, productivityCatchUp: 96, monetaryRegime: 'sovereign_managed', workforceTrend: 'growth', confidence: 56 },
 };
 
-export function createStructuralProfiles2000(): Record<CountryId, CountryStructuralProfile> {
-  return Object.fromEntries(Object.entries(profiles).map(([countryId, profile]) => {
+export function createStructuralProfiles2000(countries?: Record<CountryId, CountryState>): Record<CountryId, CountryStructuralProfile> {
+  const result = Object.fromEntries(Object.entries(profiles).map(([countryId, profile]) => {
     const { confidence, ...values } = profile;
     return [countryId, {
       countryId,
@@ -39,5 +39,30 @@ export function createStructuralProfiles2000(): Record<CountryId, CountryStructu
         estimated: true,
       },
     }];
-  }));
+  })) as Record<CountryId, CountryStructuralProfile>;
+  if (!countries) return result;
+  for (const country of Object.values(countries)) {
+    if (result[country.id]) continue;
+    const controlled = /parti unique|autoritaire|junte|islamique|monarchie absolue/i.test(country.politics.regime);
+    result[country.id] = {
+      countryId: country.id,
+      industrialDepth: Math.min(92, Math.max(12, country.metrics.industry)),
+      economicDiversification: Math.min(92, Math.max(12, 100 - country.strategy.vulnerabilities.length * 12)),
+      innovationCapacity: Math.min(92, Math.max(10, country.metrics.industry * 0.8)),
+      infrastructureQuality: Math.min(92, Math.max(12, country.metrics.industry * 0.9)),
+      financialResilience: Math.min(92, Math.max(10, country.metrics.stability + 10)),
+      socialStabilizers: Math.min(92, Math.max(12, country.metrics.stability)),
+      exportConcentration: Math.min(96, Math.max(12, country.strategy.vulnerabilities.some((v) => /pétrol|hydrocarb|miner|matière/i.test(v)) ? 78 : 42)),
+      resourceRentDependency: Math.min(97, Math.max(3, country.strategy.vulnerabilities.some((v) => /pétrol|hydrocarb|miner/i.test(v)) ? 72 : 15)),
+      demographicPressure: Math.min(92, Math.max(12, country.strategy.vulnerabilities.some((v) => /démograph|pauvreté|chômage/i.test(v)) ? 62 : 38)),
+      productivityCatchUp: Math.min(96, Math.max(4, 100 - country.metrics.industry)),
+      monetaryRegime: controlled ? 'sovereign_managed' : 'sovereign_floating',
+      workforceTrend: 'stable',
+      source: {
+        basis: 'Profil structurel ORDO généré à partir de la fiche nationale compacte du scénario 2000 ; valeurs de gameplay à calibrer.',
+        observationYear: 2000, confidence: country.statisticalReliability, estimated: true,
+      },
+    };
+  }
+  return result;
 }

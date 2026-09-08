@@ -194,6 +194,44 @@
 .world-map-wrap { position: relative; min-width: 0; overflow: hidden; border-right: 1px solid var(--border); background: color-mix(in oklch, var(--background) 75%, black); }
 .world-map { display: block; width: 100%; height: 100%; min-height: 500px; touch-action: none; cursor: grab; }
 .world-map:active { cursor: grabbing; }
+.map-load-status { position: absolute; inset: 40% 15% auto; z-index: 3; padding: 1rem; background: var(--card); border: 1px solid var(--border); font-size: 0.9rem; }
+.map-load-status button { display: block; padding: 0.5rem; text-decoration: underline; }
+.map-country:focus-visible, .territory-locator:focus-visible circle, .territory-asset-marker:focus-visible > :last-child { stroke: white; stroke-width: 2.5; }
+.territory-explorer { border-top: 1px solid var(--border); padding: 1rem; font-size: 0.875rem; }
+.territory-explorer header h3 { font-size: 1.2rem; font-weight: 650; }
+.territory-explorer header p { margin-top: 0.5rem; color: var(--muted-foreground); }
+.territory-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem; padding-block: 0.8rem; }
+.territory-toolbar input { margin-right: 0.3rem; }
+.territory-toolbar span { color: var(--muted-foreground); font-size: 0.8rem; }
+.territory-layout { display: grid; grid-template-columns: minmax(210px, 27%) minmax(0, 1fr); gap: 1rem; align-items: start; }
+.territory-list { max-height: 750px; overflow-y: auto; border: 1px solid var(--border); }
+.territory-list > input { position: sticky; top: 0; z-index: 1; width: 100%; background: var(--card); border-bottom: 1px solid var(--border); padding: 0.75rem; }
+.territory-list > button { display: block; width: 100%; padding: 0.65rem; text-align: left; border-bottom: 1px solid var(--border); }
+.territory-list > button:hover, .territory-list > button:focus-visible { background: var(--muted); }
+.territory-list > button.active { background: color-mix(in oklch, var(--signal-blue) 20%, var(--card)); border-left: 3px solid var(--signal-blue); }
+.territory-list small { display: block; margin-top: 0.25rem; color: var(--muted-foreground); }
+.territory-map-area { border: 1px solid var(--border); padding: 0.75rem; }
+.territory-map { display: block; width: 100%; height: auto; max-height: 520px; background: var(--background); }
+.territory-locator, .territory-asset-marker { cursor: pointer; outline: none; }
+.territory-locator text { pointer-events: none; }
+.territory-map-placeholder { padding: 2rem; min-height: 180px; border: 1px solid var(--border); line-height: 1.6; }
+.territory-detail { border: 1px solid var(--border); margin-top: 0.75rem; padding: 1rem; }
+.territory-detail h4 { font-size: 1.1rem; font-weight: 650; }
+.territory-detail h5 { margin-top: 1rem; font-weight: 650; }
+.territory-detail dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.9rem; padding-block: 1rem; }
+.territory-detail dt { color: var(--muted-foreground); font-size: 0.8rem; }
+.territory-detail dd { margin-top: 0.25rem; font-size: 1rem; }
+.territory-detail li { margin-top: 0.5rem; line-height: 1.5; }
+.territory-detail details { border-top: 1px solid var(--border); margin-top: 1rem; padding-top: 0.75rem; }
+.territory-detail summary { cursor: pointer; }
+.territory-detail details p { margin-top: 0.65rem; }
+.territory-detail a { text-decoration: underline; }
+.territory-help { color: var(--muted-foreground); font-size: 0.8rem; line-height: 1.5; margin-top: 0.7rem; }
+@media (max-width: 800px) {
+  .territory-layout { grid-template-columns: 1fr; }
+  .territory-list { max-height: 230px; }
+  .territory-detail dl { grid-template-columns: 1fr; }
+}
 .map-sphere { fill: color-mix(in oklch, var(--signal-blue) 7%, var(--background)); stroke: var(--border); stroke-width: 0.8; }
 .map-graticule { fill: none; stroke: color-mix(in oklch, var(--border) 55%, transparent); stroke-width: 0.45; }
 .map-country { fill: color-mix(in oklch, var(--muted) 70%, var(--background)); stroke: color-mix(in oklch, var(--border) 80%, black); stroke-width: 0.65; transition: fill 120ms ease, filter 120ms ease; cursor: pointer; outline: none; }

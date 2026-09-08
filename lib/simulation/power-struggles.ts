@@ -142,12 +142,22 @@ function activeCampaignForReaction(state: WorldState, reactionId: string) {
  */
 export function detectPowerStruggleOpportunities(state: WorldState) {
   const effects: WorldEffect[] = [];
-  for (const reaction of Object.values(state.stakeholderReactions ?? {})) {
-    if (reaction.status === 'resolved' || !['important', 'critical'].includes(reaction.level)) continue;
-    const group = state.stakeholderGroups[reaction.groupId];
-    if (!group || activeCampaignForReaction(state, reaction.id) || pendingRequestFor(state, reaction.id)) continue;
-    const pressure = strugglePressure(group, reaction);
-    if (pressure < 48) continue;
+  const pendingEmergences = Object.values(state.aiJobs ?? {})
+    .filter((job) => job.kind === 'power_struggle' && job.status === 'pending' && job.purpose === 'materialize_actor').length;
+  // Une tension locale ne doit pas monopoliser le budget IA : quelques dossiers
+  // prioritaires sont ouverts à chaque passage, les autres restent observables.
+  const emergenceSlots = Math.max(0, 3 - pendingEmergences);
+  const candidates = Object.values(state.stakeholderReactions ?? {})
+    .filter((reaction) => {
+      if (reaction.status === 'resolved' || !['important', 'critical'].includes(reaction.level)) return false;
+      const group = state.stakeholderGroups[reaction.groupId];
+      return Boolean(group && !activeCampaignForReaction(state, reaction.id) && !pendingRequestFor(state, reaction.id));
+    })
+    .map((reaction) => ({ reaction, group: state.stakeholderGroups[reaction.groupId], pressure: strugglePressure(state.stakeholderGroups[reaction.groupId], reaction) }))
+    .filter((candidate) => candidate.pressure >= 48)
+    .sort((a, b) => b.pressure - a.pressure || a.reaction.id.localeCompare(b.reaction.id))
+    .slice(0, emergenceSlots);
+  for (const { reaction, group, pressure } of candidates) {
     const request: PowerStruggleAIRequest = {
       id: `power-ai-emergence:${reaction.id}`,
       kind: 'power_struggle', schemaVersion: 1,

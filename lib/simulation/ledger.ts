@@ -8,6 +8,8 @@ import type {
   WorldState,
 } from './types';
 
+import { synchronizeTerritorialEconomy } from './territories';
+
 const relationKey = (from: CountryId, to: CountryId) => `${from}:${to}`;
 const intelligenceKey = (observerId: CountryId, targetId: CountryId) => `${observerId}:${targetId}`;
 
@@ -166,6 +168,13 @@ function applyEffect(state: WorldState, action: WorldAction, effect: WorldEffect
     return appendChange(next, action, effect, `institutions.${effect.institutionId}`, institution, after);
   }
 
+  if (effect.kind === 'treaty_add') {
+    const before = state.treaties[effect.treaty.id] ?? null;
+    if (before) return state;
+    const next = { ...state, treaties: { ...state.treaties, [effect.treaty.id]: effect.treaty } };
+    return appendChange(next, action, effect, `treaties.${effect.treaty.id}`, before, effect.treaty);
+  }
+
   if (effect.kind === 'treaty_patch') {
     const treaty = state.treaties[effect.treatyId];
     if (!treaty) return state;
@@ -267,6 +276,20 @@ function applyEffect(state: WorldState, action: WorldAction, effect: WorldEffect
     return appendChange(next, action, effect, `sectors.${effect.sectorId}`, sector, after);
   }
 
+  if (effect.kind === 'sector_delta') {
+    const sector = state.sectors[effect.sectorId];
+    if (!sector) return state;
+    const bounded = (key: string, value: number) => key === 'workloadMonths'
+      ? Math.max(0, value) : clamp(value);
+    const patch = Object.fromEntries(Object.entries(effect.delta).map(([key, delta]) => {
+      const current = sector[key as keyof typeof sector];
+      return [key, typeof current === 'number' && typeof delta === 'number' ? bounded(key, current + delta) : current];
+    })) as Partial<typeof sector>;
+    const after = { ...sector, ...patch };
+    const next = { ...state, sectors: { ...state.sectors, [effect.sectorId]: after } };
+    return appendChange(next, action, effect, `sectors.${effect.sectorId}`, sector, after);
+  }
+
   if (effect.kind === 'dossier_add') {
     const dossiers = state.strategicDossiers ?? {};
     const before = dossiers[effect.dossier.id] ?? null;
@@ -303,8 +326,36 @@ function applyEffect(state: WorldState, action: WorldAction, effect: WorldEffect
     const before = Object.fromEntries(Object.keys(effect.patch).map((key) => [key, economy[key as keyof typeof economy]]));
     const afterEconomy = { ...economy, ...effect.patch };
     const after = Object.fromEntries(Object.keys(effect.patch).map((key) => [key, afterEconomy[key as keyof typeof afterEconomy]]));
+    let next = { ...state, macroEconomies: { ...state.macroEconomies, [effect.countryId]: afterEconomy } };
+    next = appendChange(next, action, effect, `macroEconomies.${effect.countryId}`, before, after);
+    if (effect.patch.populationMillions !== undefined || effect.patch.realGdpBillion2000Usd !== undefined) {
+      const territorial = synchronizeTerritorialEconomy(state.territorial, effect.countryId, afterEconomy.populationMillions * 1e6, afterEconomy.realGdpBillion2000Usd);
+      // Store aggregate reconciliation only, never thousands of region snapshots per month.
+      // The original macro effect deterministically replays the proportional allocation.
+      const ids = territorial.accountingTerritoryIds[effect.countryId] ?? [];
+      const amounts = (registry: typeof territorial) => ({
+        regionCount: ids.length,
+        population: ids.reduce((sum, id) => sum + (registry.territories[id].population ?? 0), 0),
+        gdp: ids.reduce((sum, id) => sum + (registry.territories[id].realGdpBillion2000Usd ?? 0), 0),
+      });
+      next = appendChange({ ...next, territorial }, action, effect, `territorial.accounting.${effect.countryId}`, amounts(state.territorial), amounts(territorial));
+    }
+    return next;
+  }
+
+  if (effect.kind === 'macro_policy_delta') {
+    const economy = state.macroEconomies[effect.countryId];
+    if (!economy) return state;
+    const before = economy.policy;
+    const policy = Object.fromEntries(Object.entries(effect.patch).map(([key, delta]) => {
+      const current = before[key as keyof typeof before];
+      const numericDelta = typeof delta === 'number' ? delta : 0;
+      return [key, typeof current === 'number' ? clamp(current + numericDelta) : current];
+    })) as Partial<typeof before>;
+    const afterPolicy = { ...before, ...policy };
+    const afterEconomy = { ...economy, policy: afterPolicy };
     const next = { ...state, macroEconomies: { ...state.macroEconomies, [effect.countryId]: afterEconomy } };
-    return appendChange(next, action, effect, `macroEconomies.${effect.countryId}`, before, after);
+    return appendChange(next, action, effect, `macroEconomies.${effect.countryId}.policy`, before, afterPolicy);
   }
 
   if (effect.kind === 'world_economy_patch') {

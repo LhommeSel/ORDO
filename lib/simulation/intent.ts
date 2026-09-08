@@ -1,5 +1,6 @@
 import { nodeAvailableExport } from './energy';
 import { relationBetween } from './ledger';
+import { countryMentionedInText } from './country-sheet';
 import type { CountryId, EnergyResource, WorldState } from './types';
 
 export type PlayerIntent = {
@@ -24,25 +25,6 @@ const normalize = (value: string) => value
   .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
   .toLocaleLowerCase('fr').replace(/[’']/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim();
 
-const aliases: Record<string, string[]> = {
-  USA: ['usa', 'us', 'etats unis', 'amerique'],
-  GBR: ['royaume uni', 'grande bretagne', 'angleterre'],
-  SAU: ['arabie saoudite', 'saoudiens'],
-  DZA: ['algerie'],
-  DEU: ['allemagne'],
-  RUS: ['russie', 'moscou'],
-};
-
-function modeledCountryInText(state: WorldState, text: string) {
-  const normalized = ` ${normalize(text)} `;
-  const matches = Object.values(state.countries).flatMap((country) => {
-    const names = [country.name, ...(aliases[country.id] ?? [])];
-    return names.map((name) => ({ country, name: normalize(name) }));
-  }).filter(({ name }) => name.length > 1 && normalized.includes(` ${name} `))
-    .sort((a, b) => b.name.length - a.name.length);
-  return matches[0]?.country;
-}
-
 function requestedTargetLabel(text: string) {
   const match = text.match(/(?:avec|auprès de|aupres de|provenant de|acheter à|acheter a)\s+(?:(?:l['’]|le |la |les |du |de la |des )?)([\p{L}][\p{L}\s'’\-]{1,45}?)(?=\s+(?:afin|pour|de long terme|à long terme|a long terme|sur|sans)\b|[,.!?;]|$)/iu);
   const label = match?.[1]?.trim();
@@ -58,7 +40,8 @@ export function interpretPlayerIntent(state: WorldState, text: string): PlayerIn
   const energyLanguage = Boolean(resource) || /\b(energie|energetique|approvisionnement)\b/.test(normalized);
   const contractLanguage = /\b(contrat|accord|negocier|negociation|acheter|importer|securiser|fournisseur)\b/.test(normalized);
   const kind = energyLanguage && contractLanguage ? 'energy_contract' : 'general_advice';
-  const modeled = modeledCountryInText(state, text);
+  const modeledId = countryMentionedInText(state, text);
+  const modeled = modeledId ? state.countries[modeledId] : undefined;
   const rawTarget = modeled ? modeled.name : requestedTargetLabel(text);
   const warnings: string[] = [];
   if (kind === 'energy_contract' && !resource) warnings.push('La ressource énergétique n’est pas assez précise : gaz ou pétrole doit être indiqué.');
@@ -94,7 +77,7 @@ export function rankEnergySuppliers(state: WorldState, resource: EnergyResource)
       reasons: [
         `${available.toFixed(1)} unités/an encore exportables`,
         routeKnown ? `acheminement identifié : ${node.infrastructure[0]}` : 'acheminement à négocier',
-        `fiabilité des données : ${country.statisticalReliability}/100`,
+        `marge exportable physique : ${Math.min(100, available / Math.max(1, nodeAvailableExport(state, node.id)) * 100).toFixed(0)} % de la capacité libre du nœud`,
       ],
     };
     const current = bestByCountry.get(node.countryId);

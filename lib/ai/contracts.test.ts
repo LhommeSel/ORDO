@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createAIJobAIRequest, parseAIJobAIRequest, type AIJobAIResponse } from './job-contracts';
+import { advisorAnswerGroundingIssues } from './contracts';
 import { compileContextForAIJob, selectSupplementalFacts } from '../simulation/ai/context';
 import { executeAIJob } from '../simulation/ai/executor';
 import { createFrance2000World } from '../simulation/scenario-2000';
@@ -67,4 +68,12 @@ test('le pipeline IA compile un contexte visible, valide le contrat et conserve 
   assert.equal(result.state.diplomaticSessions[draft.offer.id].turns.length, 2);
   assert.match(result.state.diplomaticSessions[draft.offer.id].terms.priceSummary, /prime de sécurité/);
   assert.equal(result.state.relations['FRA:DZA'], undefined, 'un effectHint ne doit jamais modifier directement le monde');
+});
+
+test('une intention d’action IA doit cibler un acteur effectivement transmis', () => {
+  const issues = advisorAnswerGroundingIssues({
+    options: [{ factIds: ['fact-1'], actionIntent: { kind: 'energy_contract', targetCountryId: 'DZA', resource: 'gas', objective: 'Diversifier' } }],
+    claims: [],
+  }, new Set(['fact-1']), new Set(['FRA', 'DEU']));
+  assert.deepEqual(issues, ['option0.actionIntent.acteur absent du contexte']);
 });

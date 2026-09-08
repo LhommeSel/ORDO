@@ -1,3 +1,5 @@
+import type { TerritorialState } from './territory-types';
+
 export type ISODate = `${number}-${number}-${number}`;
 export type CountryId = string;
 export type EntityId = string;
@@ -934,6 +936,8 @@ export type ActionProgram = {
   successEffects: WorldEffect[];
   partialEffects: WorldEffect[];
   resolution?: string;
+  /** Intention vérifiée à l'origine du programme, sans effets exécutables. */
+  intentSpec?: import('./action-intents').ActionIntent;
 };
 
 export type WorldEffect =
@@ -947,6 +951,7 @@ export type WorldEffect =
   | { kind: 'relation_delta'; from: CountryId; to: CountryId; relation: number; trust: number; reason: string; visibility?: Visibility }
   | { kind: 'intelligence_delta'; observerId: CountryId; targetId: CountryId; delta: number; reason: string; visibility?: Visibility }
   | { kind: 'institution_patch'; institutionId: string; patch: Partial<InstitutionState>; reason: string; visibility?: Visibility }
+  | { kind: 'treaty_add'; treaty: TreatyState; reason: string; visibility?: Visibility }
   | { kind: 'treaty_patch'; treatyId: string; patch: Partial<TreatyState>; reason: string; visibility?: Visibility }
   | { kind: 'historical_pressure'; currentId: string; delta: number; reason: string; visibility?: Visibility }
   | { kind: 'latent_process_patch'; processId: string; patch: Partial<LatentProcess>; reason: string; visibility?: Visibility }
@@ -957,11 +962,13 @@ export type WorldEffect =
   | { kind: 'diplomatic_session_add'; session: DiplomaticSession; reason: string; visibility?: Visibility }
   | { kind: 'diplomatic_session_patch'; sessionId: string; patch: Partial<DiplomaticSession>; reason: string; visibility?: Visibility }
   | { kind: 'sector_patch'; sectorId: string; patch: Partial<StrategicSectorState>; reason: string; visibility?: Visibility }
+  | { kind: 'sector_delta'; sectorId: string; delta: Partial<Record<'capacity' | 'utilization' | 'workloadMonths' | 'health' | 'foreignDependency' | 'technology', number>>; reason: string; visibility?: Visibility }
   | { kind: 'armament_patch'; productId: string; patch: Partial<ArmamentProduct>; reason: string; visibility?: Visibility }
   | { kind: 'dossier_add'; dossier: StrategicDossier; reason: string; visibility?: Visibility }
   | { kind: 'dossier_patch'; dossierId: string; patch: Partial<StrategicDossier>; reason: string; visibility?: Visibility }
   | { kind: 'dossier_entry_add'; dossierId: string; entry: DossierEntry; reason: string; visibility?: Visibility }
   | { kind: 'macro_patch'; countryId: CountryId; patch: Partial<MacroeconomicState>; reason: string; visibility?: Visibility }
+  | { kind: 'macro_policy_delta'; countryId: CountryId; patch: Partial<EconomicPolicyState>; reason: string; visibility?: Visibility }
   | { kind: 'world_economy_patch'; patch: Partial<WorldEconomyState>; reason: string; visibility?: Visibility }
   | { kind: 'structural_profile_patch'; countryId: CountryId; patch: Partial<CountryStructuralProfile>; reason: string; visibility?: Visibility }
   | { kind: 'stakeholder_group_add'; group: StakeholderGroup; reason: string; visibility?: Visibility }
@@ -1055,6 +1062,7 @@ export type StrategicDossier = {
 
 export type WorldState = {
   version: 1;
+  territorial: TerritorialState;
   scenarioId: string;
   seed: number;
   sequence: number;

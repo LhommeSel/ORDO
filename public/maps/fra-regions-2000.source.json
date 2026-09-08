@@ -1,0 +1,9 @@
+{
+  "source": "https://raw.githubusercontent.com/gregoiredavid/france-geojson/5d34ee6d0140c29f785fdb047d9329f1aab58833/regions-avant-redecoupage-2015.geojson",
+  "revision": "5d34ee6d0140c29f785fdb047d9329f1aab58833",
+  "sha256": "e1832c7f2f1ad1db79e4eda123fa1f98710d0d046a9e81b3c9bea57d8ab3a2c8",
+  "attribution": "IGN / Admin Express, INSEE, Grégoire David — France GeoJSON",
+  "license": "Licence ouverte / Open Licence",
+  "licenseUrl": "https://www.etalab.gouv.fr/licence-ouverte-open-licence/",
+  "note": "Anciennes régions avant 2015 ; contours généralisés, pas un relevé cadastral au 1er janvier 2000. Outre-mer : localisateurs séparés."
+}

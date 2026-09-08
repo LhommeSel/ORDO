@@ -121,6 +121,7 @@ export function proposeEnergyContract(
   const node = state.energyNodes[input.nodeId];
   if (!node) return { ok: false as const, state, error: 'Gisement ou système de production inconnu.' };
   if (!state.countries[input.buyerId]) return { ok: false as const, state, error: 'Pays acheteur inconnu.' };
+  if (state.energyContracts[input.id]) return { ok: false as const, state, error: 'Cette proposition de contrat existe déjà dans le registre.' };
   if (input.startDate > input.endDate) return { ok: false as const, state, error: 'Période contractuelle invalide.' };
   const available = nodeAvailableExport(state, node.id, input.startDate);
   if (input.annualVolume <= 0 || input.annualVolume > available) {
@@ -153,6 +154,7 @@ export function proposeEnergyContract(
 export function activateEnergyContract(state: WorldState, contractId: string, actorId: CountryId, origin: ActionOrigin = 'player') {
   const contract = state.energyContracts[contractId];
   if (!contract) return { ok: false as const, state, error: 'Contrat inconnu.' };
+  if (contract.status === 'active') return { ok: false as const, state, error: 'Ce contrat est déjà actif.' };
   const available = nodeAvailableExport(state, contract.nodeId, contract.startDate) + (contract.status === 'proposed' ? contract.annualVolume : 0);
   if (available < contract.annualVolume) return { ok: false as const, state, error: 'La capacité exportable a été attribuée entre-temps.' };
   const next = commitWorldAction(state, {
@@ -187,7 +189,17 @@ export function advanceEnergySystem(state: WorldState, elapsedMonths: number) {
   for (const countryId of Object.keys(next.countryEnergy)) {
     for (const resource of ['oil', 'gas'] as const) {
       const balance = energyBalance(next, countryId, resource);
-      if (!balance || balance.deficit <= 0) continue;
+      if (!balance) continue;
+      if (balance.surplus > 0) {
+        const stocks = next.countryEnergy[countryId].strategicStocks[resource];
+        const space = Math.max(0, next.countryEnergy[countryId].storageCapacity[resource] - stocks);
+        const stored = Math.min(space, balance.surplus * (elapsedMonths / 12));
+        if (stored > 0) next = commitWorldAction(next, {
+          kind: 'energy', actorId: countryId, origin: 'time', visibility: 'debug', intent: `Constituer des réserves de ${resource}`,
+          effects: [{ kind: 'energy_stock_delta', countryId, resource, delta: stored, reason: `Le surplus contractuel est dirigé vers les stocks disponibles.`, visibility: 'debug' }],
+        });
+      }
+      if (balance.deficit <= 0) continue;
       const monthlyDeficit = balance.deficit * (elapsedMonths / 12);
       const stocks = next.countryEnergy[countryId].strategicStocks[resource];
       const draw = Math.min(stocks, monthlyDeficit);

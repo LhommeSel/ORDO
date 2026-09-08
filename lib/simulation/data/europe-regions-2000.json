@@ -1,0 +1,889 @@
+{
+  "sources": {
+    "population": "https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/demo_r_d2jan?unit=NR&sex=T&age=TOTAL&time=2000&lang=EN",
+    "gdp": "https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/nama_10r_2gdp?unit=MIO_EUR&time=2000&lang=EN",
+    "geometry": "https://gisco-services.ec.europa.eu/distribution/v2/nuts/geojson/NUTS_RG_20M_2021_4326.geojson"
+  },
+  "retrieved": "2026-09-07T15:28:15.091Z",
+  "countries": {
+    "DEU": [
+      {
+        "id": "DEU:DE1",
+        "name": "Baden-Württemberg",
+        "code": "DE1",
+        "population": 10475932,
+        "economicWeight": 312002.45,
+        "populationBasis": "observed_2000",
+        "economicBasis": "observed_2000",
+        "anchor": [
+          9.041785088673358,
+          48.53073548796022
+        ]
+      },
+      {
+        "id": "DEU:DE2",
+        "name": "Bayern",
+        "code": "DE2",
+        "population": 12154967,
+        "economicWeight": 359884.13,
+        "populationBasis": "observed_2000",
+        "economicBasis": "observed_2000",
+        "anchor": [
+          11.42462931112344,
+          48.93928850445308
+        ]
+      },
+      {
+        "id": "DEU:DE3",
+        "name": "Berlin",
+        "code": "DE3",
+        "population": 3386667,
+        "economicWeight": 86218.87,
+        "populationBasis": "observed_2000",
+        "economicBasis": "observed_2000",
+        "anchor": [
+          13.399257437621188,
+          52.49252133002182
+        ]
+      },
+      {
+        "id": "DEU:DE4",
+        "name": "Brandenburg",
+        "code": "DE4",
+        "population": 2601207,
+        "economicWeight": 45243.96,
+        "populationBasis": "observed_2000",
+        "economicBasis": "observed_2000",
+        "anchor": [
+          13.404468980424715,
+          52.46817468936681
+        ]
+      },
+      {
+        "id": "DEU:DE5",
+        "name": "Bremen",
+        "code": "DE5",
+        "population": 663065,
+        "economicWeight": 22537.53,
+        "populationBasis": "observed_2000",
+        "economicBasis": "observed_2000",
+        "anchor": [
+          8.744832273170882,
+          53.178996981038146
+        ]
+      },
+      {
+        "id": "DEU:DE6",
+        "name": "Hamburg",
+        "code": "DE6",
+        "population": 1704735,
+        "economicWeight": 78472.82,
+        "populationBasis": "observed_2000",
+        "economicBasis": "observed_2000",
+        "anchor": [
+          9.89784481291329,
+          53.575774301308776
+        ]
+      },
+      {
+        "id": "DEU:DE7",
+        "name": "Hessen",
+        "code": "DE7",
+        "population": 6051966,
+        "economicWeight": 195454.74,
+        "populationBasis": "observed_2000",
+        "economicBasis": "observed_2000",
+        "anchor": [
+          9.02967236878667,
+          50.59637002018562
+        ]
+      },
+      {
+        "id": "DEU:DE8",
+        "name": "Mecklenburg-Vorpommern",
+        "code": "DE8",
+        "population": 1789322,
+        "economicWeight": 29683.36,
+        "populationBasis": "observed_2000",
+        "economicBasis": "observed_2000",
+        "anchor": [
+          12.53943824847519,
+          53.7521464339347
+        ]
+      },
+      {
+        "id": "DEU:DE9",
+        "name": "Niedersachsen",
+        "code": "DE9",
+        "population": 7898760,
+        "economicWeight": 185794.27,
+        "populationBasis": "observed_2000",
+        "economicBasis": "observed_2000",
+        "anchor": [
+          9.17542953138397,
+          52.76417219478453
+        ]
+      },
+      {
+        "id": "DEU:DEA",
+        "name": "Nordrhein-Westfalen",
+        "code": "DEA",
+        "population": 17999800,
+        "economicWeight": 469964.84,
+        "populationBasis": "observed_2000",
+        "economicBasis": "observed_2000",
+        "anchor": [
+          7.552938606497462,
+          51.47930212000425
+        ]
+      },
+      {
+        "id": "DEU:DEB",
+        "name": "Rheinland-Pfalz",
+        "code": "DEB",
+        "population": 4030773,
+        "economicWeight": 94677.45,
+        "populationBasis": "observed_2000",
+        "economicBasis": "observed_2000",
+        "anchor": [
+          7.458589137672157,
+          49.9125738011613
+        ]
+      },
+      {
+        "id": "DEU:DEC",
+        "name": "Saarland",
+        "code": "DEC",
+        "population": 1071501,
+        "economicWeight": 25712.87,
+        "populationBasis": "observed_2000",
+        "economicBasis": "observed_2000",
+        "anchor": [
+          6.95320084172916,
+          49.38873356825287
+        ]
+      },
+      {
+        "id": "DEU:DED",
+        "name": "Sachsen",
+        "code": "DED",
+        "population": 4459686,
+        "economicWeight": 76629.91,
+        "populationBasis": "observed_2000",
+        "economicBasis": "observed_2000",
+        "anchor": [
+          13.346466045158435,
+          51.0480337474981
+        ]
+      },
+      {
+        "id": "DEU:DEE",
+        "name": "Sachsen-Anhalt",
+        "code": "DEE",
+        "population": 2648737,
+        "economicWeight": 42969.28,
+        "populationBasis": "observed_2000",
+        "economicBasis": "observed_2000",
+        "anchor": [
+          11.710303885830944,
+          52.00093463944443
+        ]
+      },
+      {
+        "id": "DEU:DEF",
+        "name": "Schleswig-Holstein",
+        "code": "DEF",
+        "population": 2777275,
+        "economicWeight": 64399.1,
+        "populationBasis": "observed_2000",
+        "economicBasis": "observed_2000",
+        "anchor": [
+          9.811378954832417,
+          54.17668244714285
+        ]
+      },
+      {
+        "id": "DEU:DEG",
+        "name": "Thüringen",
+        "code": "DEG",
+        "population": 2449082,
+        "economicWeight": 40014.54,
+        "populationBasis": "observed_2000",
+        "economicBasis": "observed_2000",
+        "anchor": [
+          11.02093786542136,
+          50.90276538390063
+        ]
+      }
+    ],
+    "ITA": [
+      {
+        "id": "ITA:ITC1",
+        "name": "Piemonte",
+        "code": "ITC1",
+        "population": 4225083,
+        "economicWeight": 98153.75,
+        "populationBasis": "observed_2000",
+        "economicBasis": "observed_2000",
+        "anchor": [
+          7.914440968117047,
+          45.05838662976098
+        ]
+      },
+      {
+        "id": "ITA:ITC2",
+        "name": "Valle d’Aosta/Vallée d’Aoste",
+        "code": "ITC2",
+        "population": 118861,
+        "economicWeight": 3418.08,
+        "populationBasis": "observed_2000",
+        "economicBasis": "observed_2000",
+        "anchor": [
+          7.399866174565307,
+          45.734620201295655
+        ]
+      },
+      {
+        "id": "ITA:ITC3",
+        "name": "Liguria",
+        "code": "ITC3",
+        "population": 1587787,
+        "economicWeight": 36395.68,
+        "populationBasis": "observed_2000",
+        "economicBasis": "observed_2000",
+        "anchor": [
+          8.705789893019913,
+          44.27107408421752
+        ]
+      },
+      {
+        "id": "ITA:ITC4",
+        "name": "Lombardia",
+        "code": "ITC4",
+        "population": 8971148,
+        "economicWeight": 264759.57,
+        "populationBasis": "observed_2000",
+        "economicBasis": "observed_2000",
+        "anchor": [
+          9.76825360443335,
+          45.615962905034465
+        ]
+      },
+      {
+        "id": "ITA:ITF1",
+        "name": "Abruzzo",
+        "code": "ITF1",
+        "population": 1261117,
+        "economicWeight": 23988.93,
+        "populationBasis": "observed_2000",
+        "economicBasis": "observed_2000",
+        "anchor": [
+          13.856871082727825,
+          42.23153380881072
+        ]
+      },
+      {
+        "id": "ITA:ITF2",
+        "name": "Molise",
+        "code": "ITF2",
+        "population": 322772,
+        "economicWeight": 5504.65,
+        "populationBasis": "observed_2000",
+        "economicBasis": "observed_2000",
+        "anchor": [
+          14.590109009910444,
+          41.68881798962875
+        ]
+      },
+      {
+        "id": "ITA:ITF3",
+        "name": "Campania",
+        "code": "ITF3",
+        "population": 5717694,
+        "economicWeight": 82735.52,
+        "populationBasis": "observed_2000",
+        "economicBasis": "observed_2000",
+        "anchor": [
+          14.840933238917838,
+          40.85880911160563
+        ]
+      },
+      {
+        "id": "ITA:ITF4",
+        "name": "Puglia",
+        "code": "ITF4",
+        "population": 4034887,
+        "economicWeight": 57315.45,
+        "populationBasis": "observed_2000",
+        "economicBasis": "observed_2000",
+        "anchor": [
+          16.625971473196685,
+          40.991365001524315
+        ]
+      },
+      {
+        "id": "ITA:ITF5",
+        "name": "Basilicata",
+        "code": "ITF5",
+        "population": 601399,
+        "economicWeight": 9438.35,
+        "populationBasis": "observed_2000",
+        "economicBasis": "observed_2000",
+        "anchor": [
+          16.078869991054738,
+          40.500659920789225
+        ]
+      },
+      {
+        "id": "ITA:ITF6",
+        "name": "Calabria",
+        "code": "ITF6",
+        "population": 2028592,
+        "economicWeight": 26351.33,
+        "populationBasis": "observed_2000",
+        "economicBasis": "observed_2000",
+        "anchor": [
+          16.354051375357304,
+          39.07272006098585
+        ]
+      },
+      {
+        "id": "ITA:ITG1",
+        "name": "Sicilia",
+        "code": "ITG1",
+        "population": 4994427,
+        "economicWeight": 68312.26,
+        "populationBasis": "observed_2000",
+        "economicBasis": "observed_2000",
+        "anchor": [
+          14.137118797003914,
+          37.587522723232226
+        ]
+      },
+      {
+        "id": "ITA:ITG2",
+        "name": "Sardegna",
+        "code": "ITG2",
+        "population": 1638573,
+        "economicWeight": 24394.08,
+        "populationBasis": "observed_2000",
+        "economicBasis": "observed_2000",
+        "anchor": [
+          9.024695642228714,
+          40.07657910371271
+        ]
+      },
+      {
+        "id": "ITA:ITH3",
+        "name": "Veneto",
+        "code": "ITH3",
+        "population": 4485059,
+        "economicWeight": 112073.22,
+        "populationBasis": "observed_2000",
+        "economicBasis": "observed_2000",
+        "anchor": [
+          11.846634014048982,
+          45.662059173356724
+        ]
+      },
+      {
+        "id": "ITA:ITH4",
+        "name": "Friuli-Venezia Giulia",
+        "code": "ITH4",
+        "population": 1178264,
+        "economicWeight": 27597.92,
+        "populationBasis": "observed_2000",
+        "economicBasis": "observed_2000",
+        "anchor": [
+          13.060462406904811,
+          46.16563973188922
+        ]
+      },
+      {
+        "id": "ITA:ITH5",
+        "name": "Emilia-Romagna",
+        "code": "ITH5",
+        "population": 3970000,
+        "economicWeight": 106749.77,
+        "populationBasis": "calibrated",
+        "economicBasis": "observed_2000",
+        "anchor": [
+          11.044630419552524,
+          44.526472609449485
+        ]
+      },
+      {
+        "id": "ITA:ITI1",
+        "name": "Toscana",
+        "code": "ITI1",
+        "population": 3491580,
+        "economicWeight": 80822.9,
+        "populationBasis": "observed_2000",
+        "economicBasis": "observed_2000",
+        "anchor": [
+          11.126855421638925,
+          43.44292104045273
+        ]
+      },
+      {
+        "id": "ITA:ITI2",
+        "name": "Umbria",
+        "code": "ITI2",
+        "population": 820844,
+        "economicWeight": 17418.89,
+        "populationBasis": "observed_2000",
+        "economicBasis": "observed_2000",
+        "anchor": [
+          12.491378532900196,
+          42.97319226782647
+        ]
+      },
+      {
+        "id": "ITA:ITI3",
+        "name": "Marche",
+        "code": "ITI3",
+        "population": 1460000,
+        "economicWeight": 29949.17,
+        "populationBasis": "calibrated",
+        "economicBasis": "observed_2000",
+        "anchor": [
+          13.14218118254172,
+          43.34987015651647
+        ]
+      },
+      {
+        "id": "ITA:ITI4",
+        "name": "Lazio",
+        "code": "ITI4",
+        "population": 5119323,
+        "economicWeight": 140223.36,
+        "populationBasis": "observed_2000",
+        "economicBasis": "observed_2000",
+        "anchor": [
+          12.761287557851213,
+          41.98358332518747
+        ]
+      },
+      {
+        "id": "ITA:ITH12",
+        "code": "ITH12",
+        "name": "Trentino-Alto Adige / Südtirol",
+        "population": 929058,
+        "economicWeight": 28261.72,
+        "populationBasis": "observed_2000",
+        "economicBasis": "observed_2000",
+        "anchor": [
+          11.270054824962493,
+          46.4417304942475
+        ]
+      }
+    ],
+    "ESP": [
+      {
+        "id": "ESP:ES11",
+        "name": "Galicia",
+        "code": "ES11",
+        "population": 2702471,
+        "economicWeight": 33439.5,
+        "populationBasis": "observed_2000",
+        "economicBasis": "observed_2000",
+        "anchor": [
+          -7.902322016166121,
+          42.75544108863771
+        ]
+      },
+      {
+        "id": "ESP:ES12",
+        "name": "Principado de Asturias",
+        "code": "ES12",
+        "population": 1068287,
+        "economicWeight": 14156.3,
+        "populationBasis": "observed_2000",
+        "economicBasis": "observed_2000",
+        "anchor": [
+          -5.985774595363384,
+          43.29844526549309
+        ]
+      },
+      {
+        "id": "ESP:ES13",
+        "name": "Cantabria",
+        "code": "ES13",
+        "population": 533417,
+        "economicWeight": 7985.5,
+        "populationBasis": "observed_2000",
+        "economicBasis": "observed_2000",
+        "anchor": [
+          -4.029158713366127,
+          43.20127887473053
+        ]
+      },
+      {
+        "id": "ESP:ES21",
+        "name": "País Vasco",
+        "code": "ES21",
+        "population": 2084535,
+        "economicWeight": 40734.2,
+        "populationBasis": "observed_2000",
+        "economicBasis": "observed_2000",
+        "anchor": [
+          -2.6146954537951856,
+          43.04461368879604
+        ]
+      },
+      {
+        "id": "ESP:ES22",
+        "name": "Comunidad Foral de Navarra",
+        "code": "ES22",
+        "population": 548379,
+        "economicWeight": 11309,
+        "populationBasis": "observed_2000",
+        "economicBasis": "observed_2000",
+        "anchor": [
+          -1.6458691894734319,
+          42.680622523746244
+        ]
+      },
+      {
+        "id": "ESP:ES23",
+        "name": "La Rioja",
+        "code": "ES23",
+        "population": 273828,
+        "economicWeight": 4931.4,
+        "populationBasis": "observed_2000",
+        "economicBasis": "observed_2000",
+        "anchor": [
+          -2.5028091638469925,
+          42.27912601632175
+        ]
+      },
+      {
+        "id": "ESP:ES24",
+        "name": "Aragón",
+        "code": "ES24",
+        "population": 1200200,
+        "economicWeight": 20431.7,
+        "populationBasis": "observed_2000",
+        "economicBasis": "observed_2000",
+        "anchor": [
+          -0.6695983633022964,
+          41.51176333583649
+        ]
+      },
+      {
+        "id": "ESP:ES30",
+        "name": "Comunidad de Madrid",
+        "code": "ES30",
+        "population": 5329606,
+        "economicWeight": 113369.2,
+        "populationBasis": "observed_2000",
+        "economicBasis": "observed_2000",
+        "anchor": [
+          -3.71110227631616,
+          40.49670156688802
+        ]
+      },
+      {
+        "id": "ESP:ES41",
+        "name": "Castilla y León",
+        "code": "ES41",
+        "population": 2472869,
+        "economicWeight": 35666.6,
+        "populationBasis": "observed_2000",
+        "economicBasis": "observed_2000",
+        "anchor": [
+          -4.783443097495882,
+          41.75524896320699
+        ]
+      },
+      {
+        "id": "ESP:ES42",
+        "name": "Castilla-La Mancha",
+        "code": "ES42",
+        "population": 1742456,
+        "economicWeight": 22364.8,
+        "populationBasis": "observed_2000",
+        "economicBasis": "observed_2000",
+        "anchor": [
+          -3.0033477095754835,
+          39.57831069139788
+        ]
+      },
+      {
+        "id": "ESP:ES43",
+        "name": "Extremadura",
+        "code": "ES43",
+        "population": 1060030,
+        "economicWeight": 11111.2,
+        "populationBasis": "observed_2000",
+        "economicBasis": "observed_2000",
+        "anchor": [
+          -6.150532065957726,
+          39.188833409041315
+        ]
+      },
+      {
+        "id": "ESP:ES51",
+        "name": "Cataluña",
+        "code": "ES51",
+        "population": 6283101,
+        "economicWeight": 122568.8,
+        "populationBasis": "observed_2000",
+        "economicBasis": "observed_2000",
+        "anchor": [
+          1.5201650903641226,
+          41.79884031587529
+        ]
+      },
+      {
+        "id": "ESP:ES52",
+        "name": "Comunitat Valenciana",
+        "code": "ES52",
+        "population": 4103816,
+        "economicWeight": 62769.3,
+        "populationBasis": "observed_2000",
+        "economicBasis": "observed_2000",
+        "anchor": [
+          -0.5547614349538192,
+          39.3957473471127
+        ]
+      },
+      {
+        "id": "ESP:ES53",
+        "name": "Illes Balears",
+        "code": "ES53",
+        "population": 817313,
+        "economicWeight": 16505.1,
+        "populationBasis": "observed_2000",
+        "economicBasis": "observed_2000",
+        "anchor": [
+          2.8903141475442755,
+          39.564377832411495
+        ]
+      },
+      {
+        "id": "ESP:ES61",
+        "name": "Andalucía",
+        "code": "ES61",
+        "population": 7285992,
+        "economicWeight": 86760.7,
+        "populationBasis": "observed_2000",
+        "economicBasis": "observed_2000",
+        "anchor": [
+          -4.573781388587154,
+          37.46780708346673
+        ]
+      },
+      {
+        "id": "ESP:ES62",
+        "name": "Región de Murcia",
+        "code": "ES62",
+        "population": 1169114,
+        "economicWeight": 16088.7,
+        "populationBasis": "observed_2000",
+        "economicBasis": "observed_2000",
+        "anchor": [
+          -1.479142066061875,
+          38.00021017884954
+        ]
+      },
+      {
+        "id": "ESP:ES63",
+        "name": "Ciudad de Ceuta",
+        "code": "ES63",
+        "population": 70855,
+        "economicWeight": 948.7,
+        "populationBasis": "observed_2000",
+        "economicBasis": "observed_2000",
+        "anchor": [
+          -5.3550600629138865,
+          35.89718836745869
+        ]
+      },
+      {
+        "id": "ESP:ES64",
+        "name": "Ciudad de Melilla",
+        "code": "ES64",
+        "population": 64851,
+        "economicWeight": 871,
+        "populationBasis": "observed_2000",
+        "economicBasis": "observed_2000",
+        "anchor": [
+          -2.950231219542019,
+          35.29409471841747
+        ]
+      },
+      {
+        "id": "ESP:ES70",
+        "name": "Canarias",
+        "code": "ES70",
+        "population": 1659062,
+        "economicWeight": 24986.1,
+        "populationBasis": "observed_2000",
+        "economicBasis": "observed_2000",
+        "anchor": [
+          -15.677067384348781,
+          28.348400384864718
+        ]
+      }
+    ],
+    "GBR": [
+      {
+        "id": "GBR:UKC",
+        "name": "North East (UK)",
+        "code": "UKC",
+        "population": 2546868,
+        "economicWeight": 1986557.04,
+        "populationBasis": "observed_2000",
+        "economicBasis": "calibrated",
+        "anchor": [
+          -1.8965274502395228,
+          55.0258080115993
+        ]
+      },
+      {
+        "id": "GBR:UKD",
+        "name": "North West (UK)",
+        "code": "UKD",
+        "population": 6773669,
+        "economicWeight": 5893092.03,
+        "populationBasis": "observed_2000",
+        "economicBasis": "calibrated",
+        "anchor": [
+          -2.713494553489198,
+          54.04962509097361
+        ]
+      },
+      {
+        "id": "GBR:UKE",
+        "name": "Yorkshire and The Humber",
+        "code": "UKE",
+        "population": 4957460,
+        "economicWeight": 4164266.4,
+        "populationBasis": "observed_2000",
+        "economicBasis": "calibrated",
+        "anchor": [
+          -1.2289211842308725,
+          53.967275636784336
+        ]
+      },
+      {
+        "id": "GBR:UKF",
+        "name": "East Midlands (UK)",
+        "code": "UKF",
+        "population": 4160258,
+        "economicWeight": 3661027.04,
+        "populationBasis": "observed_2000",
+        "economicBasis": "calibrated",
+        "anchor": [
+          -0.8097895024238894,
+          52.92139104961958
+        ]
+      },
+      {
+        "id": "GBR:UKG",
+        "name": "West Midlands (UK)",
+        "code": "UKG",
+        "population": 5270788,
+        "economicWeight": 4585585.56,
+        "populationBasis": "observed_2000",
+        "economicBasis": "calibrated",
+        "anchor": [
+          -2.2665435961479505,
+          52.472435136869315
+        ]
+      },
+      {
+        "id": "GBR:UKH",
+        "name": "East of England",
+        "code": "UKH",
+        "population": 5356848,
+        "economicWeight": 5463984.96,
+        "populationBasis": "observed_2000",
+        "economicBasis": "calibrated",
+        "anchor": [
+          0.5290613066662386,
+          52.25005021961883
+        ]
+      },
+      {
+        "id": "GBR:UKI",
+        "name": "London",
+        "code": "UKI",
+        "population": 7195314,
+        "economicWeight": 11152736.700000001,
+        "populationBasis": "observed_2000",
+        "economicBasis": "calibrated",
+        "anchor": [
+          -0.11583674983518641,
+          51.50386756932589
+        ]
+      },
+      {
+        "id": "GBR:UKJ",
+        "name": "South East (UK)",
+        "code": "UKJ",
+        "population": 7972866,
+        "economicWeight": 8770152.600000001,
+        "populationBasis": "observed_2000",
+        "economicBasis": "calibrated",
+        "anchor": [
+          -0.5288648568691086,
+          51.28433662174173
+        ]
+      },
+      {
+        "id": "GBR:UKK",
+        "name": "South West (UK)",
+        "code": "UKK",
+        "population": 4899027,
+        "economicWeight": 4409124.3,
+        "populationBasis": "observed_2000",
+        "economicBasis": "calibrated",
+        "anchor": [
+          -3.148940634409327,
+          50.99586279043044
+        ]
+      },
+      {
+        "id": "GBR:UKL",
+        "name": "Wales",
+        "code": "UKL",
+        "population": 2903727,
+        "economicWeight": 2177795.25,
+        "populationBasis": "observed_2000",
+        "economicBasis": "calibrated",
+        "anchor": [
+          -3.757380009567907,
+          52.33584408627919
+        ]
+      },
+      {
+        "id": "GBR:UKM",
+        "name": "Scotland",
+        "code": "UKM",
+        "population": 5067418,
+        "economicWeight": 4915395.46,
+        "populationBasis": "observed_2000",
+        "economicBasis": "calibrated",
+        "anchor": [
+          -4.196481597109349,
+          56.82724998055217
+        ]
+      },
+      {
+        "id": "GBR:UKN",
+        "name": "Northern Ireland (UK)",
+        "code": "UKN",
+        "population": 1681179,
+        "economicWeight": 1294507.83,
+        "populationBasis": "observed_2000",
+        "economicBasis": "calibrated",
+        "anchor": [
+          -6.700777660242467,
+          54.60937209242359
+        ]
+      }
+    ]
+  }
+}

@@ -3,6 +3,7 @@ import type {
   BaselineEnergyFlow,
   CapacityState,
   CountryState,
+  CountryEnergyState,
   EnergyNode,
   HistoricalCurrent,
   LatentProcess,
@@ -11,11 +12,13 @@ import type {
   WorldState,
 } from './types';
 import { createMacroEconomies2000, worldEconomy2000 } from './macro-data-2000';
+import { createTerritorialState } from './territories';
 import { createStructuralProfiles2000 } from './structural-data-2000';
 import { createStakeholderGroups2000 } from './stakeholder-data-2000';
 import { createTradeFlows2000 } from './trade-data-2000';
 import { createDecisionProfiles2000 } from './decision-data-2000';
 import { createLeadership2000, createPoliticalApparatus2000 } from './political-identity-data-2000';
+import { createNationalBaselineCountries2000 } from './national-baseline-2000';
 
 const capacities = (values: Partial<Record<keyof CapacityState, [number, number]>> = {}): CapacityState => ({
   government: { maximum: values.government?.[0] ?? 55, committed: values.government?.[1] ?? 25 },
@@ -343,6 +346,30 @@ const countries: Record<string, CountryState> = {
   }),
 };
 
+const allCountries: Record<string, CountryState> = {
+  ...countries,
+  ...createNationalBaselineCountries2000(),
+  ESP: country({
+    id: 'ESP', name: 'Espagne', flag: '🇪🇸', weight: 70, statisticalReliability: 88,
+    metrics: { budget: 118, industry: 88, stability: 64, security: 55 },
+    capacities: capacities({ government: [70, 35], administration: [68, 38], diplomacy: [68, 34], economy: [72, 42], intelligence: [58, 30], defense: [66, 36] }),
+    politics: {
+      regime: 'Monarchie parlementaire', executive: 'Juan Carlos I', headOfGovernment: 'José María Aznar',
+      governmentLabel: 'Gouvernement conservateur du Partido Popular', legislatureSeats: 350, governingSeats: 183,
+      publicApproval: 52, administrativeCompliance: 72,
+      doctrine: { economic: 18, social: -4, sovereignty: 12, security: 18 },
+    },
+    strategy: {
+      goals: [
+        { id: 'esp-euro-convergence', label: 'Consolider la convergence européenne', priority: 88, progress: 62, status: 'active' },
+        { id: 'esp-mediterranean', label: 'Renforcer la position méditerranéenne et atlantique', priority: 74, progress: 48, status: 'active' },
+      ],
+      vulnerabilities: ['Chômage élevé', 'Dépendance énergétique extérieure', 'Écarts régionaux persistants'],
+      redLines: ['Atteinte à l’intégrité territoriale', 'Isolement européen'], partners: ['FRA', 'DEU', 'ITA'], rivals: [], lastReviewDate: '2000-01-01',
+    },
+  }),
+};
+
 const currents: Record<string, HistoricalCurrent> = {
   'dotcom-exuberance': {
     id: 'dotcom-exuberance', name: 'Emballement des valeurs technologiques', startDate: '1998-01-01',
@@ -460,16 +487,37 @@ const armamentProducts: Record<string, ArmamentProduct> = {
   exocet: { id: 'exocet', countryId: 'FRA', name: 'Exocet', family: 'Missile antinavire', manufacturer: 'Aérospatiale Matra Missiles', status: 'exportable', annualCapacity: 42, backlogMonths: 20, industrialHealth: 84, maturity: 'proven', operationalExperience: 'combat_deployed', fieldFeedback: 'favorable', evidenceConfidence: 93, reputation: 90, clients: [], prospects: [] },
 };
 
+/** Fallback energy envelope for countries without a site-level inventory yet. */
+function defaultCountryEnergy2000(country: CountryState): CountryEnergyState {
+  const demand = Math.max(4, country.weight * 1.35);
+  const gasShare = country.strategy.vulnerabilities.some((item) => /gaz|énerg|pétrol/i.test(item)) ? 0.42 : 0.3;
+  const gasDemand = Math.max(2, demand * gasShare);
+  const domesticShare = country.strategy.vulnerabilities.some((item) => /pétrol|hydrocarb|ressource/i.test(item)) ? 0.34 : 0.08;
+  const oilDomestic = demand * domesticShare;
+  const gasDomestic = gasDemand * (domesticShare * 0.8);
+  return {
+    countryId: country.id,
+    annualDemand: { oil: demand, gas: gasDemand },
+    domesticProduction: { oil: oilDomestic, gas: gasDomestic },
+    legacyImports: { oil: Math.max(0, demand - oilDomestic), gas: Math.max(0, gasDemand - gasDomestic) },
+    strategicStocks: { oil: demand * 0.16, gas: gasDemand * 0.12 },
+    storageCapacity: { oil: demand * 0.24, gas: gasDemand * 0.2 },
+    desiredCoverageMonths: { oil: 2, gas: 1 },
+  };
+}
+
 export function createFrance2000World(): WorldState {
-  const structuralProfiles = createStructuralProfiles2000();
+  const structuralProfiles = createStructuralProfiles2000(allCountries);
+  const macroEconomies = createMacroEconomies2000();
   return {
     version: 1,
+    territorial: createTerritorialState({ countries: allCountries, macroEconomies }),
     scenarioId: 'france-2000-01',
     seed: 20000101,
     sequence: 0,
     currentDate: '2000-01-01',
     playerCountryId: 'FRA',
-    countries: structuredClone(countries),
+    countries: structuredClone(allCountries),
     relations: {
       'FRA:DEU': { from: 'FRA', to: 'DEU', relation: 68, trust: 61, tradeIntensity: 82, securityAlignment: 65, memories: [] },
       'FRA:ITA': { from: 'FRA', to: 'ITA', relation: 57, trust: 53, tradeIntensity: 69, securityAlignment: 54, memories: [] },
@@ -492,6 +540,7 @@ export function createFrance2000World(): WorldState {
       FRA: { countryId: 'FRA', annualDemand: { oil: 92, gas: 46 }, domesticProduction: { oil: 2, gas: 3 }, legacyImports: { oil: 90, gas: 43 }, strategicStocks: { oil: 24, gas: 3 }, storageCapacity: { oil: 34, gas: 12 }, desiredCoverageMonths: { oil: 3, gas: 1.5 } },
       DEU: { countryId: 'DEU', annualDemand: { oil: 128, gas: 78 }, domesticProduction: { oil: 4, gas: 18 }, legacyImports: { oil: 124, gas: 60 }, strategicStocks: { oil: 29, gas: 9 }, storageCapacity: { oil: 41, gas: 24 }, desiredCoverageMonths: { oil: 3, gas: 2 } },
       ITA: { countryId: 'ITA', annualDemand: { oil: 96, gas: 60 }, domesticProduction: { oil: 5, gas: 15 }, legacyImports: { oil: 91, gas: 45 }, strategicStocks: { oil: 18, gas: 5 }, storageCapacity: { oil: 30, gas: 18 }, desiredCoverageMonths: { oil: 2.5, gas: 1.5 } },
+      ESP: { countryId: 'ESP', annualDemand: { oil: 70, gas: 25 }, domesticProduction: { oil: 2, gas: 8 }, legacyImports: { oil: 68, gas: 17 }, strategicStocks: { oil: 16, gas: 3 }, storageCapacity: { oil: 25, gas: 7 }, desiredCoverageMonths: { oil: 2.5, gas: 1.5 } },
       POL: { countryId: 'POL', annualDemand: { oil: 24, gas: 14 }, domesticProduction: { oil: 1, gas: 5 }, legacyImports: { oil: 23, gas: 9 }, strategicStocks: { oil: 4, gas: 1 }, storageCapacity: { oil: 8, gas: 4 }, desiredCoverageMonths: { oil: 2, gas: 1 } },
       GBR: { countryId: 'GBR', annualDemand: { oil: 82, gas: 88 }, domesticProduction: { oil: 128, gas: 96 }, legacyImports: { oil: 0, gas: 0 }, strategicStocks: { oil: 11, gas: 2 }, storageCapacity: { oil: 20, gas: 8 }, desiredCoverageMonths: { oil: 1.5, gas: 0.8 } },
       USA: { countryId: 'USA', annualDemand: { oil: 820, gas: 650 }, domesticProduction: { oil: 370, gas: 520 }, legacyImports: { oil: 450, gas: 130 }, strategicStocks: { oil: 92, gas: 25 }, storageCapacity: { oil: 125, gas: 70 }, desiredCoverageMonths: { oil: 3, gas: 1.5 } },
@@ -508,15 +557,16 @@ export function createFrance2000World(): WorldState {
       JPN: { countryId: 'JPN', annualDemand: { oil: 260, gas: 80 }, domesticProduction: { oil: 1, gas: 2 }, legacyImports: { oil: 259, gas: 78 }, strategicStocks: { oil: 72, gas: 7 }, storageCapacity: { oil: 90, gas: 14 }, desiredCoverageMonths: { oil: 3, gas: 1 } },
       TUR: { countryId: 'TUR', annualDemand: { oil: 33, gas: 14 }, domesticProduction: { oil: 3, gas: 1 }, legacyImports: { oil: 30, gas: 13 }, strategicStocks: { oil: 3, gas: 1 }, storageCapacity: { oil: 6, gas: 3 }, desiredCoverageMonths: { oil: 1, gas: 0.8 } },
       VNM: { countryId: 'VNM', annualDemand: { oil: 8, gas: 6 }, domesticProduction: { oil: 17, gas: 6 }, legacyImports: { oil: 0, gas: 0 }, strategicStocks: { oil: 1, gas: 0.4 }, storageCapacity: { oil: 3, gas: 1 }, desiredCoverageMonths: { oil: 1, gas: 0.5 } },
+      ...Object.fromEntries(Object.values(allCountries).filter((country) => !['FRA', 'DEU', 'ITA', 'POL', 'GBR', 'USA', 'RUS', 'CHN', 'NOR', 'DZA', 'LBY', 'SAU', 'BRA', 'ZAF', 'AUS', 'IND', 'JPN', 'TUR', 'VNM'].includes(country.id)).map((country) => [country.id, defaultCountryEnergy2000(country)])),
     },
-    macroEconomies: createMacroEconomies2000(),
+    macroEconomies,
     worldEconomy: structuredClone(worldEconomy2000),
     tradeFlows: createTradeFlows2000(),
-    decisionProfiles: createDecisionProfiles2000(countries),
-    leadership: createLeadership2000(countries),
-    politicalApparatus: createPoliticalApparatus2000(countries),
+    decisionProfiles: createDecisionProfiles2000(allCountries),
+    leadership: createLeadership2000(allCountries),
+    politicalApparatus: createPoliticalApparatus2000(allCountries),
     structuralProfiles,
-    stakeholderGroups: createStakeholderGroups2000(countries, structuralProfiles),
+    stakeholderGroups: createStakeholderGroups2000(allCountries, structuralProfiles),
     stakeholderReactions: {},
     powerActors: {},
     powerStruggleCampaigns: {},
