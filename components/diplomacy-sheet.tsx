@@ -52,6 +52,16 @@ type SheetMessage = {
   meta?: string;
 };
 
+type StructuredDiplomaticResponse = {
+  kind: 'accept' | 'counter' | 'refuse' | 'request_clarification' | 'message';
+  position: string;
+  concessions: string[];
+  guaranteesRequested: string[];
+  conditions: string[];
+  redLines: string[];
+  timeline: string;
+};
+
 type QuickReply = { label: string; value: string };
 
 type DiplomacySheetProps = {
@@ -62,6 +72,7 @@ type DiplomacySheetProps = {
   onSelectCountry: (id: string) => void;
   selectedCountry: SheetCountry;
   messages: SheetMessage[];
+  structuredResponse?: StructuredDiplomaticResponse;
   draft: string;
   onDraftChange: (value: string) => void;
   onSend: () => void;
@@ -122,6 +133,7 @@ export function DiplomacySheet({
   onSelectCountry,
   selectedCountry,
   messages,
+  structuredResponse,
   draft,
   onDraftChange,
   onSend,
@@ -208,6 +220,19 @@ export function DiplomacySheet({
                   <p className="text-sm leading-6">{message.text}</p>
                 </article>
               ))}
+              {structuredResponse && (
+                <article className="message foreign border border-primary/40 bg-primary/5">
+                  <p className="mb-2 font-mono text-[9px] tracking-[0.08em] text-primary">POSITION STRUCTURÉE · {structuredResponse.kind === 'accept' ? 'ACCORD' : structuredResponse.kind === 'counter' ? 'CONTRE-PROPOSITION' : structuredResponse.kind === 'refuse' ? 'REFUS' : structuredResponse.kind === 'request_clarification' ? 'PRÉCISIONS' : 'MESSAGE'}</p>
+                  <p className="text-sm leading-6">{structuredResponse.position}</p>
+                  <div className="mt-3 grid gap-3 text-xs sm:grid-cols-2">
+                    {structuredResponse.concessions.length > 0 && <div><strong>Concessions possibles</strong><ul>{structuredResponse.concessions.map((item) => <li key={item}>— {item}</li>)}</ul></div>}
+                    {structuredResponse.guaranteesRequested.length > 0 && <div><strong>Garanties demandées</strong><ul>{structuredResponse.guaranteesRequested.map((item) => <li key={item}>— {item}</li>)}</ul></div>}
+                    {structuredResponse.conditions.length > 0 && <div><strong>Conditions</strong><ul>{structuredResponse.conditions.map((item) => <li key={item}>— {item}</li>)}</ul></div>}
+                    {structuredResponse.redLines.length > 0 && <div><strong>Lignes rouges</strong><ul>{structuredResponse.redLines.map((item) => <li key={item}>— {item}</li>)}</ul></div>}
+                  </div>
+                  <p className="mt-3 text-xs text-muted-foreground"><strong>Calendrier :</strong> {structuredResponse.timeline}</p>
+                </article>
+              )}
               {isThinking && <div className="message foreign"><p className="font-mono text-[9px] text-muted-foreground">ANALYSE DES INTÉRÊTS EN COURS…</p></div>}
             </div>
 

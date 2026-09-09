@@ -2,8 +2,8 @@ import { enqueueAIJob } from './ai/orchestrator';
 import { commitWorldAction } from './ledger';
 import { relationBetween } from './ledger';
 import { resolveDossierDecision } from './dossiers';
-import type { DiplomaticDialogue, DiplomaticTurn, GeneralAIJob, CountryId, WorldState } from './types';
-import type { AIJobOutcome, AIDiplomaticMove } from '../ai/job-contracts';
+import type { DiplomaticDialogue, DiplomaticTurn, GeneralAIJob, CountryId, WorldState, AIJobOutcome } from './types';
+import type { AIDiplomaticMove } from '../ai/job-contracts';
 
 const unique = <T,>(items: T[]) => [...new Set(items)];
 
@@ -110,8 +110,18 @@ export function applyDiplomaticDialogueAIAnswer(state: WorldState, jobId: string
   const nextSpeakerId = nextSpeaker(state, dialogue, [state.playerCountryId, speaker]);
   const response = outcome.publicMessage.trim();
   const relationEffect = move?.kind === 'accept' ? { relation: 5, trust: 3 } : move?.kind === 'refuse' ? { relation: -5, trust: -3 } : move?.kind === 'counter' ? { relation: 2, trust: 1 } : null;
+  const structuredResponse = move?.scope === 'general_dialogue' ? {
+    kind: move.kind,
+    position: move.position,
+    concessions: move.concessions,
+    guaranteesRequested: move.guaranteesRequested,
+    conditions: move.conditions,
+    redLines: move.redLines,
+    timeline: move.timeline,
+  } : dialogue.lastResponse;
   const nextDialogue: DiplomaticDialogue = {
     ...dialogue, status: 'awaiting_player', aiMode: 'ai', activeSpeakerId: nextSpeakerId, updatedAt: state.currentDate,
+    lastResponse: structuredResponse,
     turns: [...dialogue.turns, turn(`${dialogue.id}-${speaker}-${dialogue.turns.length + 1}`, state.currentDate, speaker, 'message', response || outcome.assessment.slice(0, 600))],
   };
   return { ok: true as const, state: commitWorldAction(state, {

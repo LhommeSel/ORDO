@@ -53,6 +53,7 @@ test('le pipeline IA compile un contexte visible, valide le contrat et conserve 
       requestedFacts: ['Capacité ferme de transit vers la France'],
       powerStrugglePlan: null,
       diplomaticMove: {
+        scope: 'energy_contract',
         kind: 'counter', annualVolume: draft.offer.annualVolume * 0.9,
         durationYears: 15, pricePosture: 'supplier_premium', clauses: ['infrastructure_investment'],
       },

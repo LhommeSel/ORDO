@@ -2,7 +2,7 @@ import { energyBalance, nodeAvailableExport, activateEnergyContract, proposeEner
 import { createDossier, recordDossierUpdate } from './dossiers';
 import { evaluateStrategicAction } from './decision-making';
 import { commitWorldAction, relationBetween } from './ledger';
-import type { AIDiplomaticMove, AIJobAIAnswer } from '../ai/job-contracts';
+import type { AIEnergyDiplomaticMove, AIJobAIAnswer } from '../ai/job-contracts';
 import type { AIJobOutcome, CountryId, DiplomaticEnergyTerms, DiplomaticSession, EnergyResource, GeneralAIJob, ISODate, StrategicActionCandidate, WorldState } from './types';
 
 export type EnergyOfferAdjustment =
@@ -54,7 +54,7 @@ const diplomaticTerms = (offer: EnergyAdministrativeOffer): DiplomaticEnergyTerm
   route: offer.route, politicalClauses: offer.politicalClauses,
 });
 
-const clauseLabels: Record<AIDiplomaticMove['clauses'][number], string> = {
+const clauseLabels: Record<AIEnergyDiplomaticMove['clauses'][number], string> = {
   delivery_priority: 'Priorité de livraison en période de tension',
   infrastructure_investment: 'Participation à l’investissement dans les infrastructures de transit',
   local_content: 'Part locale pour les entreprises du pays fournisseur',
@@ -62,7 +62,7 @@ const clauseLabels: Record<AIDiplomaticMove['clauses'][number], string> = {
   diplomatic_consultation: 'Consultation diplomatique annuelle sur la sécurité énergétique',
 };
 
-const priceSummaries: Record<NonNullable<AIDiplomaticMove['pricePosture']>, string> = {
+const priceSummaries: Record<NonNullable<AIEnergyDiplomaticMove['pricePosture']>, string> = {
   market: 'Prix de marché indexé, révision tous les trois ans',
   supplier_premium: 'Indice de marché assorti d’une prime de sécurité au fournisseur',
   buyer_discount: 'Indice de marché assorti d’une décote de long terme',
@@ -191,7 +191,7 @@ export function applyEnergyDiplomacyAIAnswer(state: WorldState, jobId: string, a
   const sessionId = typeof job.context.diplomaticSessionId === 'string' ? job.context.diplomaticSessionId : '';
   const session = state.diplomaticSessions[sessionId];
   const move = answer.diplomaticMove;
-  if (!session || session.status !== 'awaiting_response' || !move) return { ok: false as const, state, errors: ['Session diplomatique incohérente.'] };
+  if (!session || session.status !== 'awaiting_response' || !move || move.scope !== 'energy_contract') return { ok: false as const, state, errors: ['Session diplomatique incohérente : la réponse ne respecte pas le contrat énergétique.'] };
   let terms = session.terms;
   let status: DiplomaticSession['status'] = 'countered';
   if (move.kind === 'accept') status = 'awaiting_signature';

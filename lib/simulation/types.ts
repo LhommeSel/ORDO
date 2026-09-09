@@ -261,6 +261,17 @@ export type DiplomaticTurn = {
   proposalRevision?: number;
 };
 
+/** Position structurée affichée après une réponse IA dans un dialogue politique libre. */
+export type DiplomaticDialogueResponse = {
+  kind: 'accept' | 'counter' | 'refuse' | 'request_clarification' | 'message';
+  position: string;
+  concessions: string[];
+  guaranteesRequested: string[];
+  conditions: string[];
+  redLines: string[];
+  timeline: string;
+};
+
 export type DiplomaticSession = {
   id: string;
   kind: 'energy_contract';
@@ -296,6 +307,7 @@ export type DiplomaticDialogue = {
   openedAt: ISODate;
   updatedAt: ISODate;
   turns: DiplomaticTurn[];
+  lastResponse?: DiplomaticDialogueResponse;
   linkedDossierId?: string;
 };
 

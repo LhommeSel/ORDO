@@ -913,11 +913,21 @@ test('un dialogue libre conserve la première réponse locale et réserve Luna a
   const applied = applyDiplomaticDialogueAIAnswer(queued.state, queued.jobId, {
     headline: 'Position prudente', assessment: 'Une réponse conditionnelle est envisageable.',
     publicMessage: 'Nous pouvons examiner cette piste si les garanties sont écrites.', proposals: [], requestedFacts: [], contextFactIds: [], approximateInputTokens: 120,
+  }, {
+    scope: 'general_dialogue', kind: 'counter',
+    position: 'Nous sommes disposés à avancer, mais pas sans garanties politiques explicites.',
+    concessions: ['Coordination industrielle limitée'],
+    guaranteesRequested: ['Consultation préalable avant toute annonce publique'],
+    conditions: ['Validation par nos parlements respectifs'],
+    redLines: ['Aucune mutualisation budgétaire permanente'],
+    timeline: 'Évaluer la proposition avant le prochain Conseil européen.',
   });
   assert.equal(applied.ok, true);
   if (!applied.ok) return;
   const finalDialogue = applied.state.diplomaticDialogues[opened.dialogueId];
   assert.equal(finalDialogue.status, 'awaiting_player');
   assert.equal(finalDialogue.turns.length, 4);
+  assert.equal(finalDialogue.lastResponse?.kind, 'counter');
+  assert.match(finalDialogue.lastResponse?.position ?? '', /garanties politiques/);
   assert.equal(applied.state.aiJobs[queued.jobId].status, 'resolved');
 });

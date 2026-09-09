@@ -43,13 +43,28 @@ export type AIJobAIAnswer = {
   diplomaticMove: AIDiplomaticMove | null;
 };
 
-export type AIDiplomaticMove = {
+export type AIEnergyDiplomaticMove = {
+  scope: 'energy_contract';
   kind: 'accept' | 'counter' | 'refuse' | 'message';
   annualVolume: number | null;
   durationYears: number | null;
   pricePosture: 'market' | 'supplier_premium' | 'buyer_discount' | null;
   clauses: Array<'delivery_priority' | 'infrastructure_investment' | 'local_content' | 'technology_cooperation' | 'diplomatic_consultation'>;
 };
+
+/** Réponse de fond pour un dialogue politique : aucune décision n'est forcée dans un contrat chiffré. */
+export type AIGenericDiplomaticMove = {
+  scope: 'general_dialogue';
+  kind: 'accept' | 'counter' | 'refuse' | 'request_clarification' | 'message';
+  position: string;
+  concessions: string[];
+  guaranteesRequested: string[];
+  conditions: string[];
+  redLines: string[];
+  timeline: string;
+};
+
+export type AIDiplomaticMove = AIEnergyDiplomaticMove | AIGenericDiplomaticMove;
 
 export type AIPrivateDecision = {
   actorId: string;
@@ -210,14 +225,23 @@ function isPrivateDecision(value: unknown): value is AIPrivateDecision | null {
 
 function isDiplomaticMove(value: unknown): value is AIDiplomaticMove | null {
   if (value === null) return true;
-  if (!isRecord(value)
-    || typeof value.kind !== 'string' || !['accept', 'counter', 'refuse', 'message'].includes(value.kind)
-    || !(value.annualVolume === null || isNumber(value.annualVolume, 0.01, 100_000))
-    || !(value.durationYears === null || isNumber(value.durationYears, 1, 30))
-    || !(value.pricePosture === null || ['market', 'supplier_premium', 'buyer_discount'].includes(String(value.pricePosture)))
-    || !Array.isArray(value.clauses) || value.clauses.length > 3
-    || !value.clauses.every((item) => typeof item === 'string' && ['delivery_priority', 'infrastructure_investment', 'local_content', 'technology_cooperation', 'diplomatic_consultation'].includes(item))) return false;
-  return value.kind !== 'counter' || (value.annualVolume !== null && value.durationYears !== null && value.pricePosture !== null);
+  if (!isRecord(value) || (value.scope !== 'energy_contract' && value.scope !== 'general_dialogue')) return false;
+  if (value.scope === 'energy_contract') {
+    if (typeof value.kind !== 'string' || !['accept', 'counter', 'refuse', 'message'].includes(value.kind)
+      || !(value.annualVolume === null || isNumber(value.annualVolume, 0.01, 100_000))
+      || !(value.durationYears === null || isNumber(value.durationYears, 1, 30))
+      || !(value.pricePosture === null || (typeof value.pricePosture === 'string' && ['market', 'supplier_premium', 'buyer_discount'].includes(value.pricePosture)))
+      || !Array.isArray(value.clauses) || value.clauses.length > 3
+      || !value.clauses.every((item) => typeof item === 'string' && ['delivery_priority', 'infrastructure_investment', 'local_content', 'technology_cooperation', 'diplomatic_consultation'].includes(item))) return false;
+    return value.kind !== 'counter' || (value.annualVolume !== null && value.durationYears !== null && value.pricePosture !== null);
+  }
+  return typeof value.kind === 'string' && ['accept', 'counter', 'refuse', 'request_clarification', 'message'].includes(value.kind)
+    && isString(value.position, 900, 1)
+    && isStringArray(value.concessions, 5, 400)
+    && isStringArray(value.guaranteesRequested, 5, 400)
+    && isStringArray(value.conditions, 5, 400)
+    && isStringArray(value.redLines, 5, 400)
+    && isString(value.timeline, 220, 1);
 }
 
 export function isAIJobAIModelAnswer(value: unknown, kind?: AIJobKind): value is AIJobAIModelAnswer {
@@ -293,15 +317,31 @@ const privateDecisionSchema = {
   },
 } as const;
 
-const diplomaticMoveSchema = {
+const energyDiplomaticMoveSchema = {
   type: 'object', additionalProperties: false,
-  required: ['kind', 'annualVolume', 'durationYears', 'pricePosture', 'clauses'],
+  required: ['scope', 'kind', 'annualVolume', 'durationYears', 'pricePosture', 'clauses'],
   properties: {
+    scope: { type: 'string', enum: ['energy_contract'] },
     kind: { type: 'string', enum: ['accept', 'counter', 'refuse', 'message'] },
     annualVolume: { anyOf: [{ type: 'number', minimum: 0.01, maximum: 100000 }, { type: 'null' }] },
     durationYears: { anyOf: [{ type: 'number', minimum: 1, maximum: 30 }, { type: 'null' }] },
     pricePosture: { anyOf: [{ type: 'string', enum: ['market', 'supplier_premium', 'buyer_discount'] }, { type: 'null' }] },
     clauses: { type: 'array', maxItems: 3, items: { type: 'string', enum: ['delivery_priority', 'infrastructure_investment', 'local_content', 'technology_cooperation', 'diplomatic_consultation'] } },
+  },
+} as const;
+
+const generalDiplomaticMoveSchema = {
+  type: 'object', additionalProperties: false,
+  required: ['scope', 'kind', 'position', 'concessions', 'guaranteesRequested', 'conditions', 'redLines', 'timeline'],
+  properties: {
+    scope: { type: 'string', enum: ['general_dialogue'] },
+    kind: { type: 'string', enum: ['accept', 'counter', 'refuse', 'request_clarification', 'message'] },
+    position: { type: 'string', maxLength: 900 },
+    concessions: { type: 'array', maxItems: 5, items: { type: 'string', maxLength: 400 } },
+    guaranteesRequested: { type: 'array', maxItems: 5, items: { type: 'string', maxLength: 400 } },
+    conditions: { type: 'array', maxItems: 5, items: { type: 'string', maxLength: 400 } },
+    redLines: { type: 'array', maxItems: 5, items: { type: 'string', maxLength: 400 } },
+    timeline: { type: 'string', maxLength: 220 },
   },
 } as const;
 
@@ -324,7 +364,7 @@ export const aiJobAIJsonSchema = {
     } },
     requestedFacts: { type: 'array', maxItems: 5, items: { type: 'string', maxLength: 240 } },
     powerStrugglePlan: { anyOf: [powerPlanSchema, { type: 'null' }] },
-    diplomaticMove: { anyOf: [diplomaticMoveSchema, { type: 'null' }] },
+    diplomaticMove: { anyOf: [energyDiplomaticMoveSchema, generalDiplomaticMoveSchema, { type: 'null' }] },
     privateDecision: { anyOf: [privateDecisionSchema, { type: 'null' }] },
   },
 } as const;
