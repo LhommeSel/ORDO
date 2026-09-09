@@ -18,6 +18,7 @@ import {
   type StrategicDossierReview,
 } from './dossier-scheduler';
 import { rankWorldAttention, type WorldAttentionTarget } from './world-attention';
+import { queueAutonomousProgram, type AutonomousProgramInput } from './autonomous-programs';
 
 const importanceRank: Record<DossierImportance, number> = { minor: 0, moderate: 1, major: 2, critical: 3 };
 const MAX_ACTIVE_MAJOR_DOSSIERS = 12;
@@ -187,6 +188,7 @@ export type AppliedWorldPulse = {
   updatedDossierIds: string[];
   playerDecisions: number;
   relationChanges: number;
+  queuedAutonomousPrograms: number;
 };
 
 /**
@@ -205,6 +207,8 @@ export function applyWorldPulseAnswer(
   const updatedDossierIds: string[] = [];
   let playerDecisions = 0;
   let relationChanges = 0;
+  let queuedAutonomousPrograms = 0;
+  const autonomousInputs: Array<{ input: AutonomousProgramInput; id: string }> = [];
   let projectedMajorCount = activeMajorDossierCount(state);
   const scheduledDossierIds = new Set(item.context.strategicDossierQueue.map((review) => review.dossierId));
   const demotedDossierIds = new Set<string>();
@@ -305,6 +309,23 @@ export function applyWorldPulseAnswer(
     }
     if (playerDecision) playerDecisions += 1;
 
+    if (item.kind === 'world_autonomy' && proposal.autonomousAction) {
+      const autonomous = proposal.autonomousAction;
+      const validTargets = autonomous.targetIds.every((id) => actorIds.includes(id));
+      if (autonomous.actorId === actorIds[0] && autonomous.actorId !== state.playerCountryId && validTargets) {
+        autonomousInputs.push({
+          id: `${item.id}-program-${index + 1}`,
+          input: {
+            actorId: autonomous.actorId,
+            targetIds: autonomous.targetIds,
+            category: autonomous.category,
+            objective: autonomous.objective,
+            ...(autonomous.operation ? { operation: autonomous.operation } : {}),
+          },
+        });
+      }
+    }
+
     for (const change of proposal.relationEffects) {
       if (!actorIds.includes(change.from) || !actorIds.includes(change.to)
         || change.from === change.to || !state.countries[change.from] || !state.countries[change.to]) continue;
@@ -319,15 +340,20 @@ export function applyWorldPulseAnswer(
     }
   });
 
-  if (!effects.length) return { state, createdDossierIds, updatedDossierIds, playerDecisions, relationChanges };
-  const next = commitWorldAction(state, {
+  let next = effects.length ? commitWorldAction(state, {
     kind: 'historical', actorId: state.playerCountryId, origin: 'ai', visibility: 'player',
     intent: `Pouls mondial IA : ${answer.headline.trim()}`,
     assumptions: [`Mission ${item.kind}`, `Synthèse IA : ${answer.synthesis.trim()}`],
     metadata: { worldPulse: true, pulseItemId: item.id, citedFactCount: new Set(answer.proposals.flatMap((proposal) => proposal.factIds)).size },
     effects,
-  });
-  return { state: next, createdDossierIds, updatedDossierIds, playerDecisions, relationChanges };
+  }) : state;
+  for (const { input, id } of autonomousInputs) {
+    const queued = queueAutonomousProgram(next, input, id);
+    if (!queued) continue;
+    next = queued.state;
+    queuedAutonomousPrograms += 1;
+  }
+  return { state: next, createdDossierIds, updatedDossierIds, playerDecisions, relationChanges, queuedAutonomousPrograms };
 }
 
 export type WorldPulseExecutionResult = {
@@ -337,6 +363,7 @@ export type WorldPulseExecutionResult = {
   updatedDossierIds: string[];
   playerDecisions: number;
   relationChanges: number;
+  queuedAutonomousPrograms: number;
   errors: string[];
   response?: WorldPulseResponse;
 };
@@ -353,19 +380,20 @@ export async function executeWorldPulse(
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request),
     });
   } catch {
-    return { state, ok: false, createdDossierIds: [], updatedDossierIds: [], playerDecisions: 0, relationChanges: 0, errors: ['Le pouls IA est momentanément inaccessible.'] };
+    return { state, ok: false, createdDossierIds: [], updatedDossierIds: [], playerDecisions: 0, relationChanges: 0, queuedAutonomousPrograms: 0, errors: ['Le pouls IA est momentanément inaccessible.'] };
   }
   let payload: WorldPulseResponse;
   try { payload = await response.json() as WorldPulseResponse; } catch {
-    return { state, ok: false, createdDossierIds: [], updatedDossierIds: [], playerDecisions: 0, relationChanges: 0, errors: ['Le pouls IA a renvoyé une réponse illisible.'] };
+    return { state, ok: false, createdDossierIds: [], updatedDossierIds: [], playerDecisions: 0, relationChanges: 0, queuedAutonomousPrograms: 0, errors: ['Le pouls IA a renvoyé une réponse illisible.'] };
   }
-  if (!payload.ok) return { state, ok: false, createdDossierIds: [], updatedDossierIds: [], playerDecisions: 0, relationChanges: 0, errors: [payload.message], response: payload };
+  if (!payload.ok) return { state, ok: false, createdDossierIds: [], updatedDossierIds: [], playerDecisions: 0, relationChanges: 0, queuedAutonomousPrograms: 0, errors: [payload.message], response: payload };
   let next = state;
   const createdDossierIds: string[] = [];
   const updatedDossierIds: string[] = [];
   const errors: string[] = [];
   let playerDecisions = 0;
   let relationChanges = 0;
+  let queuedAutonomousPrograms = 0;
   for (const item of request.pulses) {
     const result = payload.results.find((candidate) => candidate.id === item.id);
     if (!result) { errors.push(`La mission ${item.kind} n’a pas répondu.`); continue; }
@@ -376,8 +404,9 @@ export async function executeWorldPulse(
     updatedDossierIds.push(...applied.updatedDossierIds);
     playerDecisions += applied.playerDecisions;
     relationChanges += applied.relationChanges;
+    queuedAutonomousPrograms += applied.queuedAutonomousPrograms;
   }
   return {
-    state: next, ok: errors.length === 0, createdDossierIds, updatedDossierIds, playerDecisions, relationChanges, errors, response: payload,
+    state: next, ok: errors.length === 0, createdDossierIds, updatedDossierIds, playerDecisions, relationChanges, queuedAutonomousPrograms, errors, response: payload,
   };
 }

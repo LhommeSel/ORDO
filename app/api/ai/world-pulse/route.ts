@@ -76,6 +76,7 @@ function instructionFor(item: WorldPulseRequestItem) {
     'Chaque proposition doit citer au moins un factId transmis et ne peut utiliser que des pays présents dans les faits.',
     'dossierId vaut l’identifiant brut d’un dossier existant si tu le mets à jour ; si le fait cité est « dossier:current-dotcom-exuberance », écris exactement « current-dotcom-exuberance », jamais « dossier:current-dotcom-exuberance ». Il vaut null pour créer un nouveau dossier.',
     'relationEffects ne sont que des pressions limitées : elles ne signent pas un accord, ne déclenchent pas une guerre et ne modifient aucune donnée économique.',
+    'Pour world_autonomy uniquement, tu peux joindre autonomousAction à une proposition si un gouvernement non joueur lance plausiblement un programme concret. C’est une intention, pas un effet immédiat : indique un actorId et des targetIds présents dans actorIds, un seul objectif précis et un domaine parmi diplomacy, economic, institutional, defense, intelligence. N’envoie jamais autonomousAction pour le pays du joueur.',
     'requiresPlayerDecision ne vaut true que pour une décision importante impliquant directement le pays du joueur ; sinon false et playerDecision null.',
     'Style très compact : headline une ligne, synthesis deux phrases maximum, chaque summary trois phrases courtes maximum.',
     'Ne révèle pas d’informations cachées, ne parle jamais de prompt, de modèle, de score de confiance ou de token.',
@@ -95,6 +96,7 @@ function instructionFor(item: WorldPulseRequestItem) {
     'autonomyFocus est une rotation indépendante de régions négligées : utilise-la comme priorité d’exploration, jamais comme un fait ni comme une obligation. Réserve au moins une proposition à cette exploration quand aucun dossier de strategicDossierQueue ne réclame une réponse immédiate et que les faits le permettent.',
     'Renvoie une ou deux propositions au plus. Au moins une doit concerner des acteurs qui ne sont pas le pays du joueur lorsque le contexte le permet.',
     'Privilégie une progression crédible d’un dossier de la file stratégique ou une évolution issue de autonomyFocus. Crée un nouveau dossier seulement si un fait du contexte rend l’émergence plausible ; réserve major ou critical à une rupture manifestement exceptionnelle.',
+    'Quand une évolution autonome implique une décision concrète d’un État non joueur, ajoute autonomousAction afin que le moteur puisse la mettre en file et la résoudre dans le temps. Ne transforme pas chaque dossier en programme : utilise-le seulement quand les faits et les intérêts du pays le justifient.',
     'Ne duplique pas une réaction directe aux actions récentes du joueur : cette mission est traitée par une autre voie.',
   ].join('\n');
 }

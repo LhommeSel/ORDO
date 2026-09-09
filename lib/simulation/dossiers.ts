@@ -61,6 +61,56 @@ export function markDossierViewed(state: WorldState, dossierId: string) {
   };
 }
 
+export type DossierDecisionChannel = 'local_action' | 'dialogue' | 'delegation' | 'explicit_silence';
+
+const dossierDecisionLabels: Record<DossierDecisionChannel, string> = {
+  local_action: 'Décision gouvernementale engagée',
+  dialogue: 'Ouverture d’un canal diplomatique',
+  delegation: 'Dossier délégué à l’administration',
+  explicit_silence: 'Silence explicite du gouvernement',
+};
+
+/**
+ * Résout une décision sans inventer d’effet métier : le choix est inscrit dans
+ * le dossier et le registre, puis les effets concrets peuvent être portés par
+ * un programme ou une session diplomatique dédiée. Ainsi, ignorer un dossier
+ * reste un choix jouable mais ne le fait pas disparaître silencieusement.
+ */
+export function resolveDossierDecision(
+  state: WorldState,
+  dossierId: string,
+  decision: string,
+  channel: DossierDecisionChannel,
+) {
+  const dossier = state.strategicDossiers?.[dossierId];
+  const normalized = decision.trim();
+  if (!dossier || !normalized || dossier.pendingDecisions.length === 0) return state;
+  const remaining = dossier.pendingDecisions.filter((item) => item !== normalized);
+  const label = dossierDecisionLabels[channel];
+  const entry: DossierEntry = {
+    id: `decision-${dossierId}-${state.sequence + 1}`,
+    date: state.currentDate,
+    title: label,
+    summary: `${normalized} · canal choisi : ${channel.replace('_', ' ')}.`,
+    importance: dossier.importance,
+    actorIds: dossier.actorIds,
+    requiresDecision: false,
+    visibility: 'player',
+  };
+  return commitWorldAction(state, {
+    kind: channel === 'dialogue' ? 'diplomatic' : 'political',
+    actorId: state.playerCountryId,
+    targetIds: dossier.actorIds,
+    origin: 'player',
+    intent: `${label} dans « ${dossier.title} »`,
+    visibility: 'player',
+    effects: [
+      { kind: 'dossier_patch', dossierId, patch: { pendingDecisions: remaining, playerStance: normalized }, reason: 'Le joueur tranche une décision en attente dans le dossier.', visibility: 'player' },
+      { kind: 'dossier_entry_add', dossierId, entry, reason: 'Le choix du joueur est conservé dans la chronologie du dossier.', visibility: 'player' },
+    ],
+  });
+}
+
 export function createDossier(
   state: WorldState,
   dossier: StrategicDossier,

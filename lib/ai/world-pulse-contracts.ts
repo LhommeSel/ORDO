@@ -1,5 +1,5 @@
 import type { AIContextDomain } from '../simulation/ai/context';
-import type { DossierImportance, DossierKind, ISODate } from '../simulation/types';
+import type { CommonActionCategory, DossierImportance, DossierKind, ISODate } from '../simulation/types';
 import type { AdvisorAIUsage } from './contracts';
 
 /**
@@ -107,6 +107,14 @@ export type WorldPulseProposal = {
   playerDecision: string | null;
   factIds: string[];
   relationEffects: WorldPulseRelationEffect[];
+  /** Intention optionnelle pour le monde autonome ; jamais fournie pour le joueur. */
+  autonomousAction?: {
+    actorId: string;
+    targetIds: string[];
+    category: CommonActionCategory;
+    objective: string;
+    operation?: 'contact' | 'cooperation' | 'defense_pact' | 'mediation' | 'information_sharing';
+  };
 };
 
 export type WorldPulseAnswer = {
@@ -154,6 +162,7 @@ export type WorldPulseResponse =
 const dossierKinds: DossierKind[] = ['conflict', 'diplomatic_crisis', 'economic', 'security', 'cooperation', 'historical', 'power_struggle'];
 const importance: DossierImportance[] = ['minor', 'moderate', 'major', 'critical'];
 const domains: AIContextDomain[] = ['overview', 'economy', 'energy', 'industry', 'diplomacy', 'politics', 'military', 'history', 'dossier', 'actor', 'capacity'];
+const actionCategories: CommonActionCategory[] = ['diplomacy', 'economic', 'institutional', 'defense', 'intelligence'];
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const isText = (value: unknown, maximum: number, minimum = 0) => typeof value === 'string' && value.trim().length >= minimum && value.length <= maximum;
@@ -242,6 +251,13 @@ export function isWorldPulseAnswer(value: unknown, kind: WorldPulseKind): value 
   return value.proposals.every((proposal) => {
     if (!isRecord(proposal)) return false;
     const actorIds = proposal.actorIds;
+    const autonomousAction = proposal.autonomousAction;
+    const validAutonomousAction = autonomousAction === undefined || (isRecord(autonomousAction)
+      && isText(autonomousAction.actorId, 80, 1)
+      && isTextArray(autonomousAction.targetIds, 3, 80)
+      && typeof autonomousAction.category === 'string' && actionCategories.includes(autonomousAction.category as CommonActionCategory)
+      && isText(autonomousAction.objective, 600, 12)
+      && (autonomousAction.operation === undefined || ['contact', 'cooperation', 'defense_pact', 'mediation', 'information_sharing'].includes(autonomousAction.operation)));
     return (proposal.dossierId === null || isText(proposal.dossierId, 120, 1))
       && isText(proposal.title, 180, 1)
       && typeof proposal.kind === 'string' && dossierKinds.includes(proposal.kind as DossierKind)
@@ -253,7 +269,8 @@ export function isWorldPulseAnswer(value: unknown, kind: WorldPulseKind): value 
       && typeof proposal.requiresPlayerDecision === 'boolean'
       && (proposal.playerDecision === null || isText(proposal.playerDecision, 400, 1))
       && isTextArray(proposal.factIds, 8, 160)
-      && Array.isArray(proposal.relationEffects) && proposal.relationEffects.length <= 4 && proposal.relationEffects.every(isRelationEffect);
+      && Array.isArray(proposal.relationEffects) && proposal.relationEffects.length <= 4 && proposal.relationEffects.every(isRelationEffect)
+      && validAutonomousAction;
   });
 }
 
@@ -280,6 +297,17 @@ const proposalSchema = {
     playerDecision: { anyOf: [{ type: 'string', maxLength: 400 }, { type: 'null' }] },
     factIds: { type: 'array', maxItems: 8, items: { type: 'string', maxLength: 160 } },
     relationEffects: { type: 'array', maxItems: 4, items: relationEffectSchema },
+    autonomousAction: {
+      type: 'object', additionalProperties: false,
+      required: ['actorId', 'targetIds', 'category', 'objective'],
+      properties: {
+        actorId: { type: 'string', maxLength: 80 },
+        targetIds: { type: 'array', maxItems: 3, items: { type: 'string', maxLength: 80 } },
+        category: { type: 'string', enum: actionCategories },
+        objective: { type: 'string', minLength: 12, maxLength: 600 },
+        operation: { type: 'string', enum: ['contact', 'cooperation', 'defense_pact', 'mediation', 'information_sharing'] },
+      },
+    },
   },
 } as const;
 

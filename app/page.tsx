@@ -21,7 +21,7 @@ import {
   enactPrototypeGovernmentMeasure, reactionLevelLabels, reactionTrendLabels,
   launchCommonAction, prepareCommonAction,
   nodeAvailableExport, nodeBookedVolume, nodeExpansionPotential, nodePhysicalExportCapacity,
-  sendEnergyOffer, serializeWorld, startEnergyNegotiationAI, visibleLedger, visibleStakeholderReactions,
+  resolveDossierDecision, sendEnergyOffer, serializeWorld, startEnergyNegotiationAI, visibleLedger, visibleStakeholderReactions,
   structuralDiagnosisGroups,
   classifyAdvisorQuestion,
   createWorldPulseRequest, executeWorldPulse, rankStrategicDossierReviews,
@@ -128,6 +128,10 @@ function WorldPanel({ world, onWorldChange, onNotice }: {
   const activePrograms = Object.values(world.actionPrograms ?? {})
     .filter((program) => program.actorId === player.id && program.status === 'active')
     .sort((a, b) => a.expectedCompletionAt.localeCompare(b.expectedCompletionAt));
+  const autonomousPrograms = Object.values(world.actionPrograms ?? {})
+    .filter((program) => program.actorId !== player.id && program.status === 'active')
+    .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
+    .slice(0, 8);
   const feed = buildEventFeed(world);
   return <div className="grid gap-4 xl:grid-cols-[1.15fr_.85fr]">
     <section className="space-y-4">
@@ -221,6 +225,10 @@ function WorldPanel({ world, onWorldChange, onNotice }: {
           {autonomousReviews.length ? autonomousReviews.map((action) => <div key={action.id} className="flex items-center justify-between border-b border-border/70 pb-2 text-sm">
             <span>{world.countries[action.actorId]?.flag} {world.countries[action.actorId]?.name}</span><span className="font-mono text-[10px] text-muted-foreground">{action.createdAt}</span>
           </div>) : <div className="text-sm text-muted-foreground">Avancez d’un mois pour déclencher les premières revues.</div>}
+        </div>
+        <div className="mt-5 border-t border-border/70 pt-4">
+          <div className="font-mono text-[10px] uppercase tracking-wider text-primary">Programmes autonomes en cours</div>
+          <div className="mt-2 space-y-2">{autonomousPrograms.length ? autonomousPrograms.map((program) => <div key={program.id} className="border border-border/70 bg-background/30 p-2 text-xs"><div className="flex items-start justify-between gap-2"><span>{world.countries[program.actorId]?.flag} {world.countries[program.actorId]?.name ?? program.actorId}</span><span className="font-mono text-[10px] text-primary">{program.category}</span></div><div className="mt-1 text-muted-foreground">{program.title} · résolution {program.expectedCompletionAt}</div></div>) : <div className="text-xs text-muted-foreground">Aucun programme autonome mis en file par l’IA pour le moment.</div>}</div>
         </div>
       </div>
 
@@ -929,6 +937,12 @@ function DossiersPanel({ world, selectedId, onSelect, onWorldChange, onNotice }:
     setPreparedDossierOption(null);
     onNotice(`Programme lancé depuis le dossier : résolution attendue au fil du temps.`);
   };
+  const resolveDecision = (decision: string, channel: 'local_action' | 'dialogue' | 'delegation' | 'explicit_silence') => {
+    const next = resolveDossierDecision(world, selected.id, decision, channel);
+    if (next === world) return;
+    onWorldChange(next);
+    onNotice(`Décision enregistrée dans « ${selected.title} » : ${channel === 'explicit_silence' ? 'silence explicite' : channel === 'dialogue' ? 'dialogue' : channel === 'delegation' ? 'délégation' : 'action gouvernementale'}.`);
+  };
   if (!selected) return <div className="border border-border bg-card/70 p-8 text-center text-sm text-muted-foreground">Aucun dossier stratégique connu.</div>;
   return <div className="grid gap-4 xl:grid-cols-[.72fr_1.28fr]">
     <section className="border border-border bg-card/70">
@@ -961,7 +975,7 @@ function DossiersPanel({ world, selectedId, onSelect, onWorldChange, onNotice }:
       {preparedDossierOption && <div className="border border-primary/45 bg-card/80 p-4"><div className="font-mono text-[10px] uppercase tracking-wider text-primary">Programme préparé · confirmation requise</div><h3 className="mt-1 font-semibold">{preparedDossierOption.title}</h3><div className="mt-2 grid gap-2 text-xs sm:grid-cols-3"><Stat label="Domaine" value={preparedDossierOption.action.category} /><Stat label="Durée" value={`${preparedDossierOption.action.durationMonths} mois`} /><Stat label="Budget" value={`${preparedDossierOption.action.budgetCost.toFixed(1)} unités`} /></div>{preparedDossierOption.warnings.length > 0 && <ul className="mt-2 space-y-1 text-xs text-amber-300">{preparedDossierOption.warnings.map((warning) => <li key={warning}>⚠ {warning}</li>)}</ul>}<div className="mt-3 flex flex-wrap gap-2"><Button onClick={launchDossierOption}><CheckCircle2 className="size-4" />Confirmer et lancer</Button><Button variant="outline" onClick={() => setPreparedDossierOption(null)}>Annuler</Button></div></div>}
       {dossierAIForId === selected.id && dossierAIStatus === 'error' && <div className="border border-amber-400/40 bg-card/70 p-3 text-sm text-amber-200">L’analyse IA n’a pas abouti. Le dossier et son analyse locale restent disponibles.</div>}
       {(selected.pendingDecisions.length > 0 || selected.commitments.length > 0) && <div className="grid gap-3 lg:grid-cols-2">
-        <div className="border border-border bg-card/70 p-4"><div className="font-mono text-[10px] uppercase tracking-wider text-amber-300">Décisions attendues</div><ul className="mt-2 space-y-2 text-sm">{selected.pendingDecisions.length ? selected.pendingDecisions.map((item) => <li key={item}>— {item}</li>) : <li className="text-muted-foreground">Aucun arbitrage immédiat.</li>}</ul></div>
+        <div className="border border-border bg-card/70 p-4"><div className="font-mono text-[10px] uppercase tracking-wider text-amber-300">Décisions attendues</div>{selected.pendingDecisions.length ? <div className="mt-3 space-y-3">{selected.pendingDecisions.map((item) => <div key={item} className="border border-amber-300/30 bg-amber-300/5 p-3"><div className="text-sm">{item}</div><div className="mt-3 flex flex-wrap gap-2"><Button size="sm" onClick={() => resolveDecision(item, 'local_action')}>Décider localement</Button><Button size="sm" variant="outline" onClick={() => resolveDecision(item, 'dialogue')}>Ouvrir un dialogue</Button><Button size="sm" variant="outline" onClick={() => resolveDecision(item, 'delegation')}>Déléguer</Button><Button size="sm" variant="ghost" onClick={() => resolveDecision(item, 'explicit_silence')}>Garder le silence</Button></div></div>)}</div> : <div className="mt-2 text-sm text-muted-foreground">Aucun arbitrage immédiat.</div>}</div>
         <div className="border border-border bg-card/70 p-4"><div className="font-mono text-[10px] uppercase tracking-wider text-emerald-300">Engagements mémorisés</div><ul className="mt-2 space-y-2 text-sm">{selected.commitments.length ? selected.commitments.map((item) => <li key={item}>— {item}</li>) : <li className="text-muted-foreground">Aucun engagement formel.</li>}</ul></div>
       </div>}
       {diplomaticSession && <div className="border border-border bg-card/70">
@@ -1015,9 +1029,9 @@ export default function Home() {
       const touched = pulse.createdDossierIds.length + pulse.updatedDossierIds.length;
       if (pulse.createdDossierIds.length) setSelectedDossierId(pulse.createdDossierIds[0]);
       if (pulse.ok) {
-        setNotice(`${baseNotice} · pouls IA : ${touched} dossier(s), ${pulse.relationChanges} relation(s) actualisée(s)${pulse.playerDecisions ? ` · ${pulse.playerDecisions} décision(s) attendue(s)` : ''}.`);
+        setNotice(`${baseNotice} · pouls IA : ${touched} dossier(s), ${pulse.relationChanges} relation(s) actualisée(s)${pulse.queuedAutonomousPrograms ? ` · ${pulse.queuedAutonomousPrograms} programme(s) autonome(s) en file` : ''}${pulse.playerDecisions ? ` · ${pulse.playerDecisions} décision(s) attendue(s)` : ''}.`);
       } else {
-        setNotice(`${baseNotice} · pouls IA partiel : ${touched} dossier(s) appliqué(s)${pulse.errors.length ? ` · ${pulse.errors[0]}` : ''}.`);
+        setNotice(`${baseNotice} · pouls IA partiel : ${touched} dossier(s) appliqué(s)${pulse.queuedAutonomousPrograms ? ` · ${pulse.queuedAutonomousPrograms} programme(s) autonome(s) en file` : ''}${pulse.errors.length ? ` · ${pulse.errors[0]}` : ''}.`);
       }
     } catch {
       // Le tour local reste valable même si le navigateur ne peut pas lancer le pouls.
