@@ -23,7 +23,7 @@ import {
   launchCommonAction, prepareCommonAction,
   nodeAvailableExport, nodeBookedVolume, nodeExpansionPotential, nodePhysicalExportCapacity,
   resolveDossierDecision, sendEnergyOffer, serializeWorld, startEnergyNegotiationAI, visibleLedger, visibleStakeholderReactions,
-  openDiplomaticDialogue, sendDiplomaticDialogueMessage, requestDiplomaticDialogueAI,
+  openDiplomaticDialogue, openDiplomaticDialogueForDossier, sendDiplomaticDialogueMessage, requestDiplomaticDialogueAI,
   structuralDiagnosisGroups,
   classifyAdvisorQuestion,
   createWorldPulseRequest, executeWorldPulse, rankStrategicDossierReviews,
@@ -884,8 +884,8 @@ const dossierImportanceTone: Record<StrategicDossier['importance'], string> = {
   minor: 'text-slate-300', moderate: 'text-sky-300', major: 'text-amber-300', critical: 'text-red-300',
 };
 
-function DossiersPanel({ world, selectedId, onSelect, onWorldChange, onNotice }: {
-  world: WorldState; selectedId: string | null; onSelect: (id: string) => void; onWorldChange: (world: WorldState) => void; onNotice: (message: string) => void;
+function DossiersPanel({ world, selectedId, onSelect, onWorldChange, onNotice, onOpenDiplomacy }: {
+  world: WorldState; selectedId: string | null; onSelect: (id: string) => void; onWorldChange: (world: WorldState) => void; onNotice: (message: string) => void; onOpenDiplomacy?: () => void;
 }) {
   const [dossierAIForId, setDossierAIForId] = useState<string | null>(null);
   const [dossierAIAnswer, setDossierAIAnswer] = useState<AdvisorAIAnswer | null>(null);
@@ -946,6 +946,13 @@ function DossiersPanel({ world, selectedId, onSelect, onWorldChange, onNotice }:
     onNotice(`Programme lancé depuis le dossier : résolution attendue au fil du temps.`);
   };
   const resolveDecision = (decision: string, channel: 'local_action' | 'dialogue' | 'delegation' | 'explicit_silence') => {
+    if (channel === 'dialogue') {
+      const opened = openDiplomaticDialogueForDossier(world, selected.id);
+      if (!opened.ok) { onNotice(opened.error); return; }
+      onWorldChange(opened.state); onOpenDiplomacy?.();
+      onNotice(`Dialogue ouvert depuis « ${selected.title} » : la première réponse est locale et gratuite.`);
+      return;
+    }
     const next = resolveDossierDecision(world, selected.id, decision, channel);
     if (next === world) return;
     onWorldChange(next);
@@ -1162,7 +1169,7 @@ export default function Home() {
       {panel === 'economy' && <EconomyPanel world={world} />}
       {panel === 'energy' && <EnergyPanel world={world} />}
       {panel === 'industry' && <IndustryPanel world={world} />}
-      {panel === 'dossiers' && <DossiersPanel world={world} selectedId={selectedDossierId} onSelect={setSelectedDossierId} onWorldChange={setWorld} onNotice={setNotice} />}
+      {panel === 'dossiers' && <DossiersPanel world={world} selectedId={selectedDossierId} onSelect={setSelectedDossierId} onWorldChange={setWorld} onNotice={setNotice} onOpenDiplomacy={() => setPanel('diplomacy')} />}
       {panel === 'diplomacy' && <DiplomacyPanel world={world} onWorldChange={setWorld} onNotice={setNotice} />}
       {panel === 'advisor' && <AdvisorPanel world={world} onWorldChange={setWorld} onNotice={setNotice} />}
       {panel === 'ledger' && <LedgerPanel world={world} />}

@@ -1,8 +1,9 @@
 import { enqueueAIJob } from './ai/orchestrator';
 import { commitWorldAction } from './ledger';
 import { relationBetween } from './ledger';
+import { resolveDossierDecision } from './dossiers';
 import type { DiplomaticDialogue, DiplomaticTurn, GeneralAIJob, CountryId, WorldState } from './types';
-import type { AIJobOutcome } from '../ai/job-contracts';
+import type { AIJobOutcome, AIDiplomaticMove } from '../ai/job-contracts';
 
 const unique = <T,>(items: T[]) => [...new Set(items)];
 
@@ -28,7 +29,7 @@ function turn(id: string, date: `${number}-${number}-${number}`, speakerId: Coun
 }
 
 /** Ouvre un canal bilatéral ou multilatéral. La première réponse est locale et gratuite. */
-export function openDiplomaticDialogue(state: WorldState, participantIds: CountryId[], openingMessage: string) {
+export function openDiplomaticDialogue(state: WorldState, participantIds: CountryId[], openingMessage: string, linkedDossierId?: string) {
   const participants = unique([state.playerCountryId, ...participantIds]).filter((id) => Boolean(state.countries[id]));
   const counterparts = participants.filter((id) => id !== state.playerCountryId);
   if (!openingMessage.trim() || counterparts.length === 0) return { ok: false as const, state, error: 'Ajoutez au moins un pays et un message.' };
@@ -37,7 +38,7 @@ export function openDiplomaticDialogue(state: WorldState, participantIds: Countr
   const dialogue: DiplomaticDialogue = {
     id, kind: participants.length > 2 ? 'multilateral_dialogue' : 'bilateral_dialogue',
     initiatorId: state.playerCountryId, participantIds: participants, activeSpeakerId: speaker,
-    status: 'awaiting_player', aiMode: 'local', openedAt: state.currentDate, updatedAt: state.currentDate,
+    status: 'awaiting_player', aiMode: 'local', openedAt: state.currentDate, updatedAt: state.currentDate, linkedDossierId,
     turns: [
       turn(`${id}-player-1`, state.currentDate, state.playerCountryId, 'message', openingMessage.trim()),
       turn(`${id}-${speaker}-1`, state.currentDate, speaker, 'message', localReply(state, speaker, openingMessage, participants)),
@@ -48,6 +49,21 @@ export function openDiplomaticDialogue(state: WorldState, participantIds: Countr
     intent: `Ouvrir un dialogue ${dialogue.kind === 'multilateral_dialogue' ? 'multilatéral' : 'bilatéral'}`,
     effects: [{ kind: 'diplomatic_dialogue_add', dialogue, reason: 'Le canal diplomatique conserve le premier message et la réponse locale gratuite.', visibility: 'player' }],
   }), dialogueId: id };
+}
+
+/** Ouvre un dialogue depuis une décision de dossier et consomme cette décision. */
+export function openDiplomaticDialogueForDossier(state: WorldState, dossierId: string, openingMessage?: string) {
+  const dossier = state.strategicDossiers?.[dossierId];
+  if (!dossier) return { ok: false as const, state, error: 'Dossier introuvable.' };
+  const existing = Object.values(state.diplomaticDialogues ?? {}).find((dialogue) => dialogue.linkedDossierId === dossierId && dialogue.status !== 'closed');
+  if (existing) return { ok: true as const, state, dialogueId: existing.id };
+  const counterparts = dossier.actorIds.filter((id) => id !== state.playerCountryId && Boolean(state.countries[id]));
+  const message = openingMessage?.trim() || `Le gouvernement souhaite ouvrir une consultation sur le dossier « ${dossier.title} » et recueillir vos lignes rouges.`;
+  const opened = openDiplomaticDialogue(state, counterparts, message, dossierId);
+  if (!opened.ok) return opened;
+  const decision = dossier.pendingDecisions[0];
+  const nextState = decision ? resolveDossierDecision(opened.state, dossierId, decision, 'dialogue') : opened.state;
+  return { ok: true as const, state: nextState, dialogueId: opened.dialogueId };
 }
 
 export function sendDiplomaticDialogueMessage(state: WorldState, dialogueId: string, message: string) {
@@ -85,7 +101,7 @@ export function requestDiplomaticDialogueAI(state: WorldState, dialogueId: strin
   return { ok: true as const, state: patched, jobId: job.id, speakerId: dialogue.activeSpeakerId };
 }
 
-export function applyDiplomaticDialogueAIAnswer(state: WorldState, jobId: string, outcome: AIJobOutcome) {
+export function applyDiplomaticDialogueAIAnswer(state: WorldState, jobId: string, outcome: AIJobOutcome, move?: AIDiplomaticMove | null) {
   const job = state.aiJobs[jobId];
   if (!job || job.kind !== 'diplomacy' || typeof job.context.dialogueId !== 'string') return { ok: false as const, state, error: 'Tâche de dialogue introuvable.' };
   const dialogue = state.diplomaticDialogues[job.context.dialogueId];
@@ -93,6 +109,7 @@ export function applyDiplomaticDialogueAIAnswer(state: WorldState, jobId: string
   const speaker = dialogue.activeSpeakerId;
   const nextSpeakerId = nextSpeaker(state, dialogue, [state.playerCountryId, speaker]);
   const response = outcome.publicMessage.trim();
+  const relationEffect = move?.kind === 'accept' ? { relation: 5, trust: 3 } : move?.kind === 'refuse' ? { relation: -5, trust: -3 } : move?.kind === 'counter' ? { relation: 2, trust: 1 } : null;
   const nextDialogue: DiplomaticDialogue = {
     ...dialogue, status: 'awaiting_player', aiMode: 'ai', activeSpeakerId: nextSpeakerId, updatedAt: state.currentDate,
     turns: [...dialogue.turns, turn(`${dialogue.id}-${speaker}-${dialogue.turns.length + 1}`, state.currentDate, speaker, 'message', response || outcome.assessment.slice(0, 600))],
@@ -101,6 +118,8 @@ export function applyDiplomaticDialogueAIAnswer(state: WorldState, jobId: string
     kind: 'diplomatic', actorId: speaker, targetIds: dialogue.participantIds.filter((id) => id !== speaker), origin: 'ai', visibility: 'player',
     intent: `Réponse diplomatique de ${speaker} dans « ${dialogue.id} »`, effects: [
       { kind: 'diplomatic_dialogue_patch', dialogueId: dialogue.id, patch: nextDialogue, reason: 'La réponse IA est ajoutée à la mémoire du canal diplomatique.', visibility: 'player' },
+      ...(relationEffect ? dialogue.participantIds.filter((id) => id !== speaker).map((targetId) => ({ kind: 'relation_delta' as const, from: speaker, to: targetId, relation: relationEffect.relation, trust: relationEffect.trust, reason: `Position diplomatique ${move?.kind === 'accept' ? 'favorable' : move?.kind === 'refuse' ? 'refusée' : 'contre-proposée'} dans le dialogue.`, visibility: 'player' as const })) : []),
+      ...(dialogue.linkedDossierId && state.strategicDossiers[dialogue.linkedDossierId] ? [{ kind: 'dossier_entry_add' as const, dossierId: dialogue.linkedDossierId, entry: { id: `dialogue-entry-${dialogue.id}-${dialogue.turns.length + 1}`, date: state.currentDate, title: `Réponse de ${state.countries[speaker]?.name ?? speaker}`, summary: response || outcome.assessment.slice(0, 600), importance: state.strategicDossiers[dialogue.linkedDossierId].importance, actorIds: dialogue.participantIds, requiresDecision: false, visibility: 'player' as const }, reason: 'Le dialogue associé actualise directement le dossier suivi.', visibility: 'player' as const }] : []),
       { kind: 'ai_job_patch', jobId, patch: { status: 'resolved', resolvedAt: state.currentDate, attempts: job.attempts + 1, outcome }, reason: 'La réponse diplomatique IA est conservée dans la tâche.', visibility: 'debug' },
     ],
   }) };

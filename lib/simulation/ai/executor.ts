@@ -57,7 +57,7 @@ export async function executeAIJob(
   const outcome = toAIJobOutcome(payload.answer, context);
   if (job.kind === 'diplomacy') {
     if (typeof job.context.dialogueId === 'string') {
-      const applied = applyDiplomaticDialogueAIAnswer(state, job.id, outcome);
+      const applied = applyDiplomaticDialogueAIAnswer(state, job.id, outcome, payload.answer.diplomaticMove);
       if (!applied.ok) return { ok: false, state, response: { ok: false, code: 'upstream_error', message: `Le moteur du dialogue a refusé la réponse : ${applied.error}` } };
       return { ok: true, state: applied.state, response: payload };
     }
