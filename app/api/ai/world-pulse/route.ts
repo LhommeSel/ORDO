@@ -140,7 +140,10 @@ export async function POST(request: Request) {
             ...(policy.model === 'gpt-5.6-luna' ? { reasoning: { effort: 'none' } } : {}),
             // Un pouls produit peu d'événements : cette limite garde l'interface
             // lisible sans brider la profondeur des deux appels spécialisés.
-            max_output_tokens: Math.min(policy.maxOutputTokens, 1_200),
+            // Deux propositions autonomes peuvent nécessiter davantage que le
+            // plafond historique de 1 200 tokens ; on reste borné pour éviter
+            // qu'un pouls ne monopolise le budget quotidien.
+            max_output_tokens: Math.min(policy.maxOutputTokens, 2_200),
             safety_identifier: sessionKey,
             prompt_cache_key: item.kind === 'player_reaction' ? playerReactionCacheKey : worldAutonomyCacheKey,
             instructions: instructionFor(item),
@@ -176,7 +179,26 @@ export async function POST(request: Request) {
       let answer: unknown;
       try { answer = JSON.parse(extractOutputText(payload)); } catch { answer = null; }
       if (!isWorldPulseAnswer(answer, item.kind)) {
-        console.error('ORDO world pulse invalid output', { requestId: parsed.requestId, kind: item.kind });
+        const outputRecord = answer && typeof answer === 'object' && !Array.isArray(answer) ? answer as Record<string, unknown> : null;
+        const proposalShape = Array.isArray(outputRecord?.proposals)
+          ? outputRecord.proposals.slice(0, 3).map((proposal) => proposal && typeof proposal === 'object' && !Array.isArray(proposal)
+            ? {
+              keys: Object.keys(proposal as Record<string, unknown>).slice(0, 20),
+              actorIds: Array.isArray((proposal as Record<string, unknown>).actorIds) ? (proposal as Record<string, unknown>).actorIds.length : null,
+              factIds: Array.isArray((proposal as Record<string, unknown>).factIds) ? (proposal as Record<string, unknown>).factIds.length : null,
+              relationEffects: Array.isArray((proposal as Record<string, unknown>).relationEffects) ? (proposal as Record<string, unknown>).relationEffects.length : null,
+              autonomousAction: (proposal as Record<string, unknown>).autonomousAction === null ? 'null' : typeof (proposal as Record<string, unknown>).autonomousAction,
+            } : { type: typeof proposal }) : null;
+        console.error('ORDO world pulse invalid output', {
+          requestId: parsed.requestId,
+          kind: item.kind,
+          status: typeof payload.status === 'string' ? payload.status : undefined,
+          incompleteReason: payload.incomplete_details && typeof payload.incomplete_details === 'object' && typeof (payload.incomplete_details as Record<string, unknown>).reason === 'string'
+            ? (payload.incomplete_details as Record<string, unknown>).reason : undefined,
+          outputTextLength: typeof payload.output_text === 'string' ? payload.output_text.length : null,
+          keys: outputRecord ? Object.keys(outputRecord).slice(0, 12) : null,
+          proposalShape,
+        });
         return { id: item.id, kind: item.kind, ok: false, message: 'La réponse structurée de cette voie a été rejetée.' };
       }
       const normalizedAnswer = normalizeWorldPulseAnswerDossierIds(answer);
