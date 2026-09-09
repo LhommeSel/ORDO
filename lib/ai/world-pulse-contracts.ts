@@ -3,10 +3,10 @@ import type { CommonActionCategory, DossierImportance, DossierKind, ISODate } fr
 import type { AdvisorAIUsage } from './contracts';
 
 /**
- * Un tour n'est facturé qu'une fois côté ORDO, mais il peut embarquer deux
- * regards séparés : la réaction au joueur et l'évolution autonome du monde.
- * Les deux réponses restent purement déclaratives jusqu'à leur validation par
- * lib/simulation/ai/world-pulse.ts.
+ * Un tour n'est facturé qu'une fois côté ORDO. Il peut embarquer une réaction
+ * au joueur et l'évolution autonome du monde ; la première est omise lorsqu'il
+ * n'y a aucune action récente à interpréter. Les réponses restent purement
+ * déclaratives jusqu'à leur validation par lib/simulation/ai/world-pulse.ts.
  */
 export const ORDO_WORLD_PULSE_SCHEMA_VERSION = 2 as const;
 
@@ -82,7 +82,8 @@ export type WorldPulseRequest = {
   requestId: string;
   sessionId: string;
   pulseId: string;
-  pulses: [WorldPulseRequestItem, WorldPulseRequestItem];
+  /** Le regard joueur est omis lorsqu’aucune action joueur récente n’existe. */
+  pulses: WorldPulseRequestItem[];
 };
 
 export type WorldPulseRelationEffect = {
@@ -225,14 +226,14 @@ function isContext(value: unknown): value is WorldPulseContext {
 export function parseWorldPulseRequest(value: unknown): WorldPulseRequest | null {
   if (!isRecord(value) || value.schemaVersion !== ORDO_WORLD_PULSE_SCHEMA_VERSION
     || !isText(value.requestId, 80, 8) || !isText(value.sessionId, 80, 8) || !isText(value.pulseId, 120, 8)
-    || !Array.isArray(value.pulses) || value.pulses.length !== 2) return null;
+    || !Array.isArray(value.pulses) || value.pulses.length < 1 || value.pulses.length > 2) return null;
   const items = value.pulses;
   if (!items.every((item) => isRecord(item)
     && isText(item.id, 120, 1)
     && (item.kind === 'player_reaction' || item.kind === 'world_autonomy')
     && isContext(item.context))) return null;
   const kinds = new Set(items.map((item) => item.kind));
-  if (kinds.size !== 2 || !kinds.has('player_reaction') || !kinds.has('world_autonomy')) return null;
+  if (!kinds.has('world_autonomy') || kinds.size !== value.pulses.length) return null;
   return value as WorldPulseRequest;
 }
 

@@ -13,6 +13,13 @@ export type StrategicDossierReview = {
 
 const hasDateAfter = (date: ISODate, reference: ISODate) => date > reference;
 
+/** Nombre de frontières mensuelles écoulées entre deux dates ISO. */
+function monthsSince(reference: ISODate, current: ISODate) {
+  const [referenceYear, referenceMonth] = reference.slice(0, 7).split('-').map(Number);
+  const [currentYear, currentMonth] = current.slice(0, 7).split('-').map(Number);
+  return Math.max(0, (currentYear - referenceYear) * 12 + (currentMonth - referenceMonth));
+}
+
 function touchesDossier(action: WorldAction, dossier: StrategicDossier) {
   const actors = new Set(dossier.actorIds);
   return actors.has(action.actorId) || (action.targetIds ?? []).some((id) => actors.has(id));
@@ -84,7 +91,10 @@ export function rankStrategicDossierReviews(state: WorldState, limit = 4): Strat
     })
     // Un dossier calme n'est pas supprimé : il est seulement retiré de la voie
     // IA du mois. Il reste consultable dans l'interface et peut être épinglé.
-    .filter((review) => review.reasons.length > 0)
+    .filter((review) => review.reasons.length > 0 && !(
+      monthsSince(state.strategicDossiers[review.dossierId].lastAutonomousReviewAt ?? state.strategicDossiers[review.dossierId].updatedAt, state.currentDate) < 2
+      && !review.requiresImmediateReview
+    ))
     .sort((left, right) => right.urgency - left.urgency || left.dossierId.localeCompare(right.dossierId))
     .slice(0, limit);
 }

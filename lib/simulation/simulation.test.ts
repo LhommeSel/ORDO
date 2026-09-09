@@ -945,3 +945,34 @@ test('un dialogue libre conserve la première réponse locale et réserve Luna a
   const afterExpiry = advanceWorld(accepted.state, '2002-01-01').state;
   assert.equal(afterExpiry.treaties[acceptedTreaty!.id]?.status, 'expired');
 });
+
+test('un programme autonome diplomatique ne peut pas cibler son propre État', () => {
+  const initial = createFrance2000World();
+  const request = createWorldPulseRequest(initial, initial.actions.length, 1, 'test-self-target');
+  const autonomy = request.pulses.find((candidate) => candidate.kind === 'world_autonomy')!;
+  const fact = autonomy.context.facts[0];
+  const applied = applyWorldPulseAnswer(initial, autonomy, {
+    headline: 'Test de cohérence', synthesis: 'Une proposition autonome est contrôlée avant mise en file.', requestedFactIds: [],
+    proposals: [{
+      dossierId: null, title: 'Crise interne de test', kind: 'economic', importance: 'moderate', actorIds: ['DEU'], regionTags: ['Europe'],
+      phase: 'Surveillance', trend: 'stable', summary: 'Le gouvernement allemand étudie une réponse interne.', requiresPlayerDecision: false, playerDecision: null,
+      factIds: [fact.id], relationEffects: [], autonomousAction: { actorId: 'DEU', targetIds: ['DEU'], category: 'diplomacy', operation: 'contact', objective: 'Ouvrir un canal interne de test.', },
+    }],
+  });
+  assert.equal(applied.queuedAutonomousPrograms, 0);
+});
+
+test('un même dossier majeur calme bénéficie d’un délai entre deux réévaluations', () => {
+  const initial = createFrance2000World();
+  const dotcom = initial.strategicDossiers['current-dotcom-exuberance'];
+  assert.ok(dotcom);
+  if (!dotcom) return;
+  const reviewed = { ...initial, currentDate: '2000-01-01' as const, strategicDossiers: {
+    ...initial.strategicDossiers,
+    [dotcom.id]: { ...dotcom, lastAutonomousReviewAt: '2000-01-01' as const, lastAutonomousReviewActionCount: initial.actions.length, pendingDecisions: [] },
+  } };
+  const nextMonth = { ...reviewed, currentDate: '2000-02-01' as const };
+  assert.equal(rankStrategicDossierReviews(nextMonth).some((review) => review.dossierId === dotcom.id), false);
+  const afterCooldown = { ...reviewed, currentDate: '2000-03-01' as const };
+  assert.equal(rankStrategicDossierReviews(afterCooldown).some((review) => review.dossierId === dotcom.id), false);
+});

@@ -119,9 +119,9 @@ function createContext(
 }
 
 /**
- * Prépare un seul appel HTTP par avance, contenant deux missions LLM. Le
- * serveur en décompte une seule unité de quota de partie : c'est un tour, pas
- * deux interactions explicites du joueur.
+ * Prépare un seul appel HTTP par avance. La mission joueur est incluse
+ * uniquement lorsqu’une action récente doit réellement être interprétée ;
+ * l’autonomie mondiale reste toujours active.
  */
 export function createWorldPulseRequest(
   state: WorldState,
@@ -142,10 +142,6 @@ export function createWorldPulseRequest(
       createdAt: action.createdAt,
     }));
   const pulseId = `pulse-${state.currentDate}-${crypto.randomUUID().slice(0, 8)}`;
-  const reaction: WorldPulseRequestItem = {
-    id: `${pulseId}-reaction`, kind: 'player_reaction',
-    context: createContext(state, 'player_reaction', elapsedMonths, recentPlayerActions),
-  };
   const autonomy: WorldPulseRequestItem = {
     id: `${pulseId}-autonomy`, kind: 'world_autonomy',
     context: createContext(state, 'world_autonomy', elapsedMonths, recentPlayerActions),
@@ -155,7 +151,13 @@ export function createWorldPulseRequest(
     requestId: crypto.randomUUID(),
     sessionId: sessionId.slice(0, 80),
     pulseId,
-    pulses: [reaction, autonomy],
+    pulses: [
+      ...(recentPlayerActions.length ? [{
+        id: `${pulseId}-reaction`, kind: 'player_reaction' as const,
+        context: createContext(state, 'player_reaction', elapsedMonths, recentPlayerActions),
+      }] : []),
+      autonomy,
+    ],
   };
 }
 
@@ -311,7 +313,18 @@ export function applyWorldPulseAnswer(
 
     if (item.kind === 'world_autonomy' && proposal.autonomousAction) {
       const autonomous = proposal.autonomousAction;
-      const validTargets = autonomous.targetIds.every((id) => actorIds.includes(id));
+      // Une action diplomatique ou de défense doit viser un autre acteur :
+      // l'ancienne validation laissait passer « MMR → MMR », ce qui créait
+      // des programmes autonomes absurdes dans les dossiers de dette.
+      const requiresExternalTarget = autonomous.category === 'diplomacy'
+        || autonomous.category === 'defense'
+        || autonomous.operation === 'contact'
+        || autonomous.operation === 'cooperation'
+        || autonomous.operation === 'defense_pact'
+        || autonomous.operation === 'mediation'
+        || autonomous.operation === 'information_sharing';
+      const validTargets = autonomous.targetIds.every((id) => actorIds.includes(id) && id !== autonomous.actorId)
+        && (!requiresExternalTarget || autonomous.targetIds.length > 0);
       if (autonomous.actorId === actorIds[0] && autonomous.actorId !== state.playerCountryId && validTargets) {
         autonomousInputs.push({
           id: `${item.id}-program-${index + 1}`,
@@ -385,6 +398,9 @@ export async function executeWorldPulse(
   let payload: WorldPulseResponse;
   try { payload = await response.json() as WorldPulseResponse; } catch {
     return { state, ok: false, createdDossierIds: [], updatedDossierIds: [], playerDecisions: 0, relationChanges: 0, queuedAutonomousPrograms: 0, errors: ['Le pouls IA a renvoyé une réponse illisible.'] };
+  }
+  if (!payload || typeof payload !== 'object' || typeof (payload as { ok?: unknown }).ok !== 'boolean') {
+    return { state, ok: false, createdDossierIds: [], updatedDossierIds: [], playerDecisions: 0, relationChanges: 0, queuedAutonomousPrograms: 0, errors: ['Le pouls IA a renvoyé un format inattendu.'] };
   }
   if (!payload.ok) return { state, ok: false, createdDossierIds: [], updatedDossierIds: [], playerDecisions: 0, relationChanges: 0, queuedAutonomousPrograms: 0, errors: [payload.message], response: payload };
   let next = state;

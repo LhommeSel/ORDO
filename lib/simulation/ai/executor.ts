@@ -45,7 +45,18 @@ export async function executeAIJob(
   } catch {
     return { ok: false, state, response: { ok: false, code: 'upstream_error', message: 'Le service IA est momentanément inaccessible.' } };
   }
-  const payload = await response.json() as AIJobAIResponse;
+  let payload: AIJobAIResponse;
+  try {
+    payload = await response.json() as AIJobAIResponse;
+  } catch {
+    return { ok: false, state, response: { ok: false, code: 'upstream_error', message: 'Le service IA a renvoyé une réponse illisible. Aucun effet n’a été appliqué.' } };
+  }
+  if (!payload || typeof payload !== 'object' || typeof (payload as { ok?: unknown }).ok !== 'boolean') {
+    return { ok: false, state, response: { ok: false, code: 'upstream_error', message: 'Le service IA a renvoyé un format inattendu. Aucun effet n’a été appliqué.' } };
+  }
+  if (!response.ok && payload.ok) {
+    return { ok: false, state, response: { ok: false, code: 'upstream_error', message: 'Le service IA a signalé une erreur de transport. Aucun effet n’a été appliqué.' } };
+  }
   if (!payload.ok) return { ok: false, state, response: payload };
   if (job.kind === 'power_struggle') {
     const plan = payload.answer.powerStrugglePlan;

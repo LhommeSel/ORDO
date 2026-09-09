@@ -75,10 +75,20 @@ export function openDiplomaticDialogueForDossier(state: WorldState, dossierId: s
 export function sendDiplomaticDialogueMessage(state: WorldState, dialogueId: string, message: string) {
   const dialogue = state.diplomaticDialogues?.[dialogueId];
   if (!dialogue || dialogue.status !== 'awaiting_player' || !message.trim()) return { ok: false as const, state, error: 'Ce dialogue n’attend pas de message du joueur.' };
+  const normalizedMessage = message.trim();
+  const lastTurn = dialogue.turns.at(-1);
+  // Un double clic ou un rerender ne doit jamais inscrire deux fois le même
+  // message du joueur dans l’historique facturé au prochain appel IA.
+  if (lastTurn?.speakerId === state.playerCountryId && lastTurn.publicMessage === normalizedMessage) {
+    return { ok: false as const, state, error: 'Ce message vient déjà d’être envoyé.' };
+  }
   const activeSpeaker = nextSpeaker(state, dialogue, [state.playerCountryId]);
+  if (!dialogue.participantIds.includes(activeSpeaker) || activeSpeaker === state.playerCountryId) {
+    return { ok: false as const, state, error: 'Aucun interlocuteur valide n’est disponible pour ce dialogue.' };
+  }
   const next: DiplomaticDialogue = {
     ...dialogue, status: 'awaiting_ai', aiMode: 'local', activeSpeakerId: activeSpeaker, updatedAt: state.currentDate,
-    turns: [...dialogue.turns, turn(`${dialogue.id}-player-${dialogue.turns.length + 1}`, state.currentDate, state.playerCountryId, 'message', message.trim())],
+    turns: [...dialogue.turns, turn(`${dialogue.id}-player-${dialogue.turns.length + 1}`, state.currentDate, state.playerCountryId, 'message', normalizedMessage)],
   };
   return { ok: true as const, state: commitWorldAction(state, {
     kind: 'diplomatic', actorId: state.playerCountryId, targetIds: dialogue.participantIds.filter((id) => id !== state.playerCountryId), origin: 'player', visibility: 'player',
@@ -172,6 +182,9 @@ export function resolveDiplomaticDialogueResponse(
 export function requestDiplomaticDialogueAI(state: WorldState, dialogueId: string) {
   const dialogue = state.diplomaticDialogues?.[dialogueId];
   if (!dialogue || dialogue.status !== 'awaiting_ai') return { ok: false as const, state, error: 'Aucune réponse IA n’est en attente pour ce dialogue.' };
+  if (!dialogue.participantIds.includes(dialogue.activeSpeakerId) || dialogue.activeSpeakerId === state.playerCountryId || !state.countries[dialogue.activeSpeakerId]) {
+    return { ok: false as const, state, error: 'L’interlocuteur du dialogue est invalide ; aucun appel IA n’a été lancé.' };
+  }
   const speaker = state.countries[dialogue.activeSpeakerId];
   const job: GeneralAIJob = {
     id: `diplomacy-dialogue:${dialogue.id}:${dialogue.turns.length}`,
@@ -195,6 +208,9 @@ export function applyDiplomaticDialogueAIAnswer(state: WorldState, jobId: string
   const dialogue = state.diplomaticDialogues[job.context.dialogueId];
   if (!dialogue) return { ok: false as const, state, error: 'Dialogue introuvable.' };
   const speaker = dialogue.activeSpeakerId;
+  if (job.context.respondingCountryId !== speaker || !dialogue.participantIds.includes(speaker) || speaker === state.playerCountryId || !state.countries[speaker]) {
+    return { ok: false as const, state, error: 'La réponse IA ne correspond pas à l’interlocuteur attendu.' };
+  }
   const nextSpeakerId = nextSpeaker(state, dialogue, [state.playerCountryId, speaker]);
   const response = outcome.publicMessage.trim();
   const relationEffect = move?.kind === 'accept' ? { relation: 5, trust: 3 } : move?.kind === 'refuse' ? { relation: -5, trust: -3 } : move?.kind === 'counter' ? { relation: 2, trust: 1 } : null;
