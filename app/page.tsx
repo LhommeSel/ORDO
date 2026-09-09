@@ -247,7 +247,10 @@ function buildEventFeed(world: WorldState): EventFeedItem[] {
   }
   for (const change of visibleLedger(world).slice(-160)) {
     if (change.path.startsWith('strategicDossiers.')) continue;
-    const importance = change.origin === 'ai' || change.path.includes('relations') || change.path.includes('worldEconomy') || change.path.includes('macroEconomies') ? 'moderate' : 'minor';
+    const sourceAction = world.actions.find((action) => action.id === change.actionId);
+    const importance = sourceAction?.metadata?.minorEvent === true
+      ? 'minor'
+      : change.origin === 'ai' || change.path.includes('relations') || change.path.includes('worldEconomy') || change.path.includes('macroEconomies') ? 'moderate' : 'minor';
     items.push({ id: `change:${change.id}`, date: change.date, title: change.path.split('.').at(-1) ?? 'Modification du monde', summary: change.reason, importance, source: change.origin === 'time' ? 'Évolution autonome' : change.origin === 'player' ? 'Action du joueur' : `Origine ${change.origin}` });
   }
   return items.sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id)).slice(0, 120);
