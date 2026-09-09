@@ -118,11 +118,25 @@ export function resolveDiplomaticDialogueResponse(
   ];
   if (decision === 'accept') {
     const treatyId = `dialogue-commitment-${dialogue.id}-${state.sequence + 1}`;
+    const monthlyByType: Record<typeof response.agreementType, Array<{ countryId: CountryId; metric: 'budget' | 'industry' | 'stability' | 'security'; delta: number }>> = {
+      industrial_cooperation: dialogue.participantIds.map((countryId) => ({ countryId, metric: 'industry', delta: countryId === state.playerCountryId ? 0.05 : 0.035 })),
+      information_sharing: [],
+      security_cooperation: dialogue.participantIds.map((countryId) => ({ countryId, metric: 'security', delta: countryId === state.playerCountryId ? 0.05 : 0.035 })),
+      political_guarantee: dialogue.participantIds.map((countryId) => ({ countryId, metric: 'stability', delta: countryId === state.playerCountryId ? 0.035 : 0.025 })),
+      mediation: dialogue.participantIds.map((countryId) => ({ countryId, metric: 'stability', delta: 0.02 })),
+      defense_cooperation: dialogue.participantIds.map((countryId) => ({ countryId, metric: 'security', delta: countryId === state.playerCountryId ? 0.07 : 0.045 })),
+    };
     effects.push({
       kind: 'treaty_add',
-      treaty: { id: treatyId, parties: dialogue.participantIds, label: `Engagement diplomatique · ${response.position.slice(0, 100)}`, status: 'active', monthlyEffects: [] },
+      treaty: { id: treatyId, parties: dialogue.participantIds, label: `Engagement diplomatique · ${response.agreementType.replaceAll('_', ' ')}`, status: 'active', monthlyEffects: monthlyByType[response.agreementType] },
       reason: 'L’acceptation du joueur transforme la position diplomatique en engagement persistant.', visibility: 'player',
     });
+    if (response.agreementType === 'information_sharing') {
+      effects.push(...dialogue.participantIds.filter((id) => id !== state.playerCountryId).map((targetId) => ({
+        kind: 'intelligence_delta' as const, observerId: state.playerCountryId, targetId, delta: 8,
+        reason: 'Un accord d’échange d’informations améliore la connaissance de l’interlocuteur.', visibility: 'player' as const,
+      })));
+    }
   }
   const relationEffect = decision === 'accept' ? { relation: 4, trust: 3 } : decision === 'refuse' ? { relation: -3, trust: -2 } : null;
   if (relationEffect) effects.push(...dialogue.participantIds.filter((id) => id !== state.playerCountryId).map((targetId) => ({
@@ -171,6 +185,7 @@ export function applyDiplomaticDialogueAIAnswer(state: WorldState, jobId: string
   const relationEffect = move?.kind === 'accept' ? { relation: 5, trust: 3 } : move?.kind === 'refuse' ? { relation: -5, trust: -3 } : move?.kind === 'counter' ? { relation: 2, trust: 1 } : null;
   const structuredResponse = move?.scope === 'general_dialogue' ? {
     kind: move.kind,
+    agreementType: move.agreementType,
     position: move.position,
     concessions: move.concessions,
     guaranteesRequested: move.guaranteesRequested,

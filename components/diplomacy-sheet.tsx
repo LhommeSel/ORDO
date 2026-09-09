@@ -54,6 +54,7 @@ type SheetMessage = {
 
 type StructuredDiplomaticResponse = {
   kind: 'accept' | 'counter' | 'refuse' | 'request_clarification' | 'message';
+  agreementType: 'industrial_cooperation' | 'information_sharing' | 'security_cooperation' | 'political_guarantee' | 'mediation' | 'defense_cooperation';
   position: string;
   concessions: string[];
   guaranteesRequested: string[];
@@ -132,6 +133,12 @@ function relationshipTags(country: SheetCountry) {
   if (country.trust >= 70) tags.push('Confiance élevée');
   return [...new Set(tags)];
 }
+
+const agreementTypeLabels: Record<StructuredDiplomaticResponse['agreementType'], string> = {
+  industrial_cooperation: 'Coopération industrielle', information_sharing: 'Partage d’informations',
+  security_cooperation: 'Coopération de sécurité', political_guarantee: 'Garantie politique',
+  mediation: 'Médiation', defense_cooperation: 'Coopération militaire',
+};
 
 export function DiplomacySheet({
   open,
@@ -232,7 +239,7 @@ export function DiplomacySheet({
               ))}
               {structuredResponse && (
                 <article className="message foreign border border-primary/40 bg-primary/5">
-                  <p className="mb-2 font-mono text-[9px] tracking-[0.08em] text-primary">POSITION STRUCTURÉE · {structuredResponse.kind === 'accept' ? 'ACCORD' : structuredResponse.kind === 'counter' ? 'CONTRE-PROPOSITION' : structuredResponse.kind === 'refuse' ? 'REFUS' : structuredResponse.kind === 'request_clarification' ? 'PRÉCISIONS' : 'MESSAGE'}</p>
+                  <p className="mb-2 font-mono text-[9px] tracking-[0.08em] text-primary">POSITION STRUCTURÉE · {structuredResponse.kind === 'accept' ? 'ACCORD' : structuredResponse.kind === 'counter' ? 'CONTRE-PROPOSITION' : structuredResponse.kind === 'refuse' ? 'REFUS' : structuredResponse.kind === 'request_clarification' ? 'PRÉCISIONS' : 'MESSAGE'} · {agreementTypeLabels[structuredResponse.agreementType]}</p>
                   <p className="text-sm leading-6">{structuredResponse.position}</p>
                   <div className="mt-3 grid gap-3 text-xs sm:grid-cols-2">
                     {structuredResponse.concessions.length > 0 && <div><strong>Concessions possibles</strong><ul>{structuredResponse.concessions.map((item) => <li key={item}>— {item}</li>)}</ul></div>}

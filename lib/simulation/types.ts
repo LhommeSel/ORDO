@@ -264,6 +264,7 @@ export type DiplomaticTurn = {
 /** Position structurée affichée après une réponse IA dans un dialogue politique libre. */
 export type DiplomaticDialogueResponse = {
   kind: 'accept' | 'counter' | 'refuse' | 'request_clarification' | 'message';
+  agreementType: 'industrial_cooperation' | 'information_sharing' | 'security_cooperation' | 'political_guarantee' | 'mediation' | 'defense_cooperation';
   position: string;
   concessions: string[];
   guaranteesRequested: string[];

@@ -915,6 +915,7 @@ test('un dialogue libre conserve la première réponse locale et réserve Luna a
     publicMessage: 'Nous pouvons examiner cette piste si les garanties sont écrites.', proposals: [], requestedFacts: [], contextFactIds: [], approximateInputTokens: 120,
   }, {
     scope: 'general_dialogue', kind: 'counter',
+    agreementType: 'political_guarantee',
     position: 'Nous sommes disposés à avancer, mais pas sans garanties politiques explicites.',
     concessions: ['Coordination industrielle limitée'],
     guaranteesRequested: ['Consultation préalable avant toute annonce publique'],
