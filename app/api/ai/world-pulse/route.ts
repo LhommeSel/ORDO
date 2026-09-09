@@ -101,6 +101,7 @@ export async function POST(request: Request) {
     const policy = aiRuntimePolicy();
     const callItem = async (item: WorldPulseRequestItem): Promise<WorldPulseItemResult> => {
       let upstream: Response;
+      const upstreamStartedAt = performance.now();
       try {
         upstream = await fetch('https://api.openai.com/v1/responses', {
           method: 'POST',
@@ -114,6 +115,7 @@ export async function POST(request: Request) {
             // lisible sans brider la profondeur des deux appels spécialisés.
             max_output_tokens: Math.min(policy.maxOutputTokens, 1_200),
             safety_identifier: sessionKey,
+            prompt_cache_key: sessionKey,
             instructions: instructionFor(item),
             input: JSON.stringify({ pulseId: parsed.pulseId, mission: item.kind, worldContext: item.context }),
             text: { format: { type: 'json_schema', name: 'ordo_world_pulse_answer', strict: true, schema: worldPulseAIJsonSchema } },
@@ -154,16 +156,22 @@ export async function POST(request: Request) {
       }
       return {
         id: item.id, kind: item.kind, ok: true, answer: normalizedAnswer,
-        usage: { model: policy.model, inputTokens: usage.inputTokens, outputTokens: usage.outputTokens, estimatedCostUsd },
+        usage: {
+          model: policy.model, inputTokens: usage.inputTokens, cachedInputTokens: usage.cachedTokens,
+          outputTokens: usage.outputTokens, estimatedCostUsd, latencyMs: Math.round(performance.now() - upstreamStartedAt),
+        },
       };
     };
 
     const results = await Promise.all(parsed.pulses.map(callItem));
     const usage = results.reduce((total, result) => result.ok ? {
       inputTokens: total.inputTokens + result.usage.inputTokens,
+      cachedInputTokens: total.cachedInputTokens + result.usage.cachedInputTokens,
       outputTokens: total.outputTokens + result.usage.outputTokens,
       estimatedCostUsd: total.estimatedCostUsd + result.usage.estimatedCostUsd,
-    } : total, { inputTokens: 0, outputTokens: 0, estimatedCostUsd: 0 });
+      latencyMs: total.latencyMs,
+    } : total, { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, estimatedCostUsd: 0, latencyMs: 0 });
+    usage.latencyMs = Math.max(0, ...results.filter((result) => result.ok).map((result) => result.usage.latencyMs));
     return json({
       ok: true, results,
       usage: { model: policy.model, ...usage, remainingSessionRequestsToday: admission.remainingSessionRequestsToday },

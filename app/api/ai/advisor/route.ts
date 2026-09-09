@@ -157,6 +157,7 @@ export async function POST(request: Request) {
 
   try {
     const policy = aiRuntimePolicy();
+    const upstreamStartedAt = performance.now();
     const upstream = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
       headers: {
@@ -172,6 +173,9 @@ export async function POST(request: Request) {
         ...(policy.model === 'gpt-5.6-luna' ? { reasoning: { effort: 'none' } } : {}),
         max_output_tokens: policy.maxOutputTokens,
         safety_identifier: sessionKey,
+        // Une même partie conserve les mêmes règles de réponse. Cette clé
+        // opaque aide l'API à réutiliser ce préfixe et à réduire la latence.
+        prompt_cache_key: sessionKey,
         instructions: [
           'Tu es le conseiller stratégique d’ORDO, un bac à sable géopolitique réaliste.',
           'Réponds en français. Produis des options situées : acteurs, objet précis, calendrier, concessions et réactions plausibles.',
@@ -199,7 +203,9 @@ export async function POST(request: Request) {
           },
         },
       }),
-      signal: AbortSignal.timeout(30_000),
+      // Le conseiller produit trois options structurées ; 30 s coupait des
+      // réponses valables pendant les pointes de latence de Luna.
+      signal: AbortSignal.timeout(45_000),
     });
     if (!upstream.ok) {
       const errorBody = await upstream.clone().json().catch(() => null) as Record<string, unknown> | null;
@@ -225,8 +231,10 @@ export async function POST(request: Request) {
     const usageSummary = {
       model: policy.model,
       inputTokens,
+      cachedInputTokens: cachedTokens,
       outputTokens,
       estimatedCostUsd,
+      latencyMs: Math.round(performance.now() - upstreamStartedAt),
       remainingSessionRequestsToday: admission.remainingSessionRequestsToday,
     };
     const parsedOutput = parseStructuredOutput(payload);
@@ -260,8 +268,11 @@ export async function POST(request: Request) {
       usage: usageSummary,
     });
   } catch (error) {
+    const timeout = error instanceof Error && error.name === 'TimeoutError';
     console.error('ORDO AI request failure', { requestId: parsed.requestId, name: error instanceof Error ? error.name : 'unknown' });
-    return json({ ok: false, code: 'upstream_error', message: 'Le conseiller IA est momentanément indisponible.' }, 502);
+    return json({ ok: false, code: 'upstream_error', message: timeout
+      ? 'Le conseiller IA a dépassé son délai de réponse. L’analyse locale reste disponible ; aucun nouvel essai n’est lancé automatiquement.'
+      : 'Le conseiller IA est momentanément indisponible.' }, 502);
   } finally {
     admission.release();
   }

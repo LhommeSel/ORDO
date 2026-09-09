@@ -78,8 +78,10 @@ export type AdvisorAIAnswer = {
 export type AdvisorAIUsage = {
   model: string;
   inputTokens: number;
+  cachedInputTokens: number;
   outputTokens: number;
   estimatedCostUsd: number;
+  latencyMs: number;
   remainingSessionRequestsToday: number;
 };
 

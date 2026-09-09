@@ -57,7 +57,10 @@ test('le pipeline IA compile un contexte visible, valide le contrat et conserve 
         durationYears: 15, pricePosture: 'supplier_premium', clauses: ['infrastructure_investment'],
       },
     },
-    usage: { model: 'gpt-5.6-luna', inputTokens: 800, outputTokens: 180, estimatedCostUsd: 0.000376, remainingSessionRequestsToday: 19 },
+    usage: {
+      model: 'gpt-5.6-luna', inputTokens: 800, cachedInputTokens: 0, outputTokens: 180,
+      estimatedCostUsd: 0.000376, latencyMs: 1_200, remainingSessionRequestsToday: 19,
+    },
   };
   const fakeFetch = (async () => new Response(JSON.stringify(successful), { status: 200, headers: { 'Content-Type': 'application/json' } })) as typeof fetch;
   const result = await executeAIJob(world, job.id, 'session-ordo-123456', fakeFetch);

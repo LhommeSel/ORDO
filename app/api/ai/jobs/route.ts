@@ -115,6 +115,7 @@ export async function POST(request: Request) {
   }
   try {
     const policy = aiRuntimePolicy();
+    const requestStartedAt = performance.now();
     const instructions = [
       'Tu es le moteur d’arbitrage narratif d’ORDO, un bac à sable géopolitique réaliste.',
       taskInstruction[parsed.job.kind],
@@ -145,6 +146,7 @@ export async function POST(request: Request) {
       ...(supportsReasoning(policy.model) ? { reasoning: { effort: reasoningByTier[parsed.job.budgetTier] } } : {}),
       max_output_tokens: policy.maxOutputTokens,
       safety_identifier: sessionKey,
+      prompt_cache_key: sessionKey,
       instructions,
       text: { format: { type: 'json_schema', name: 'ordo_ai_job_answer', strict: true, schema: aiJobAIJsonSchema } },
     };
@@ -212,7 +214,16 @@ export async function POST(request: Request) {
     }
     const estimatedCostUsd = estimateAICost(policy.model, totalUsage.input, totalUsage.output, totalUsage.cached);
     recordAICost(estimatedCostUsd);
-    return json({ ok: true, answer: sanitizeAIJobAIAnswer(answer), usage: { model: policy.model, inputTokens: totalUsage.input, outputTokens: totalUsage.output, estimatedCostUsd, remainingSessionRequestsToday: admission.remainingSessionRequestsToday } });
+    return json({
+      ok: true,
+      answer: sanitizeAIJobAIAnswer(answer),
+      usage: {
+        model: policy.model, inputTokens: totalUsage.input, cachedInputTokens: totalUsage.cached,
+        outputTokens: totalUsage.output, estimatedCostUsd,
+        latencyMs: Math.round(performance.now() - requestStartedAt),
+        remainingSessionRequestsToday: admission.remainingSessionRequestsToday,
+      },
+    });
   } catch (error) {
     console.error('ORDO AI job request failure', { requestId: parsed.requestId, name: error instanceof Error ? error.name : 'unknown' });
     return json({ ok: false, code: 'upstream_error', message: 'Le service IA est momentanément indisponible.' }, 502);
