@@ -29,6 +29,13 @@ export type WorldPulseActionContext = {
   createdAt: ISODate;
 };
 
+export type WorldPulseAttentionTarget = {
+  region: string;
+  priority: number;
+  reason: string;
+  countryIds: string[];
+};
+
 /** Directives privées du moteur : elles individualisent les États sans devenir des faits affichables. */
 export type WorldPulseActorGuidance = {
   countryId: string;
@@ -47,6 +54,7 @@ export type WorldPulseContext = {
   playerCountryName: string;
   recentPlayerActions: WorldPulseActionContext[];
   engineGuidance: WorldPulseActorGuidance[];
+  autonomyFocus: WorldPulseAttentionTarget[];
   facts: WorldPulseFact[];
   omittedFactCount: number;
   approximateInputTokens: number;
@@ -169,12 +177,19 @@ function isGuidance(value: unknown): value is WorldPulseActorGuidance {
     && isNumber(value.doctrine.sovereignty, -100, 100) && isNumber(value.doctrine.security, -100, 100);
 }
 
+function isAttentionTarget(value: unknown): value is WorldPulseAttentionTarget {
+  return isRecord(value)
+    && isText(value.region, 80, 1) && isNumber(value.priority, 0, 100)
+    && isText(value.reason, 180, 1) && isTextArray(value.countryIds, 12, 80);
+}
+
 function isContext(value: unknown): value is WorldPulseContext {
   return isRecord(value)
     && isText(value.currentDate, 10, 10) && isNumber(value.elapsedMonths, 0, 24)
     && isText(value.playerCountryId, 80, 1) && isText(value.playerCountryName, 120, 1)
     && Array.isArray(value.recentPlayerActions) && value.recentPlayerActions.length <= 16 && value.recentPlayerActions.every(isAction)
     && Array.isArray(value.engineGuidance) && value.engineGuidance.length >= 1 && value.engineGuidance.length <= 16 && value.engineGuidance.every(isGuidance)
+    && Array.isArray(value.autonomyFocus) && value.autonomyFocus.length <= 6 && value.autonomyFocus.every(isAttentionTarget)
     && Array.isArray(value.facts) && value.facts.length >= 1 && value.facts.length <= 110 && value.facts.every(isFact)
     && isNumber(value.omittedFactCount, 0, 100_000) && isNumber(value.approximateInputTokens, 1, 25_000);
 }

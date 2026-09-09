@@ -90,6 +90,7 @@ function instructionFor(item: WorldPulseRequestItem) {
   return [
     ...common,
     'Mission : faire évoluer le monde hors du joueur. Cherche les dossiers actifs, tendances historiques, tensions ou stratégies nationales déjà présentes.',
+    'autonomyFocus est une rotation de régions négligées calculée par le moteur : utilise-la comme priorité d’échantillonnage, jamais comme un fait ni comme une obligation. Si aucun fait ne soutient une évolution crédible, renvoie proposals: [].',
     'Renvoie une ou deux propositions au plus. Au moins une doit concerner des acteurs qui ne sont pas le pays du joueur lorsque le contexte le permet.',
     'Privilégie une progression crédible d’un dossier existant. Crée un nouveau dossier seulement si un fait du contexte rend l’émergence plausible.',
     'Ne duplique pas une réaction directe aux actions récentes du joueur : cette mission est traitée par une autre voie.',

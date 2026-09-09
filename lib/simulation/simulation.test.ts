@@ -31,6 +31,7 @@ import {
 } from './dossiers';
 import { applyWorldPulseAnswer, createWorldPulseRequest } from './ai/world-pulse';
 import { parseWorldPulseRequest } from '../ai/world-pulse-contracts';
+import { rankWorldAttention } from './ai/world-attention';
 
 test('le scénario 2000 charge un monde cohérent et jouable', () => {
   const state = createFrance2000World();
@@ -76,6 +77,18 @@ test('le pouls mondial IA ne peut créer que des mises à jour de dossiers cité
   assert.equal(relation.relation - (initial.relations['USA:FRA']?.relation ?? 50), 3);
   assert.equal(relation.trust - (initial.relations['USA:FRA']?.trust ?? 50), -3);
   assert.equal(applied.relationChanges, 1);
+});
+
+test('la rotation d’attention mondiale remonte des régions négligées sans forcer un événement', () => {
+  const state = createFrance2000World();
+  const focus = rankWorldAttention(state, []);
+  assert.ok(focus.length >= 3);
+  assert.ok(focus.every((target) => target.priority >= 0 && target.priority <= 100));
+  assert.ok(focus.some((target) => target.region === 'Afrique' || target.region === 'Asie du Sud-Est et Océanie'));
+  const request = createWorldPulseRequest(state, state.actions.length, 1, 'test-world-pulse-attention');
+  const autonomy = request.pulses.find((candidate) => candidate.kind === 'world_autonomy');
+  assert.ok(autonomy?.context.autonomyFocus.length);
+  assert.ok(parseWorldPulseRequest(request));
 });
 
 test('le pouls ne transforme jamais un dossier inconnu en nouveau dossier', () => {

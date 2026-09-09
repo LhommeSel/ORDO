@@ -832,14 +832,43 @@ const dossierImportanceTone: Record<StrategicDossier['importance'], string> = {
   minor: 'text-slate-300', moderate: 'text-sky-300', major: 'text-amber-300', critical: 'text-red-300',
 };
 
-function DossiersPanel({ world, selectedId, onSelect, onWorldChange }: {
-  world: WorldState; selectedId: string | null; onSelect: (id: string) => void; onWorldChange: (world: WorldState) => void;
+function DossiersPanel({ world, selectedId, onSelect, onWorldChange, onNotice }: {
+  world: WorldState; selectedId: string | null; onSelect: (id: string) => void; onWorldChange: (world: WorldState) => void; onNotice: (message: string) => void;
 }) {
+  const [dossierAIForId, setDossierAIForId] = useState<string | null>(null);
+  const [dossierAIAnswer, setDossierAIAnswer] = useState<AdvisorAIAnswer | null>(null);
+  const [dossierAIUsage, setDossierAIUsage] = useState<AdvisorAIUsage | null>(null);
+  const [dossierAIStatus, setDossierAIStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const rank = { minor: 0, moderate: 1, major: 2, critical: 3 } as const;
   const dossiers = Object.values(world.strategicDossiers).sort((a, b) => rank[b.importance] - rank[a.importance] || b.updatedAt.localeCompare(a.updatedAt));
   const selected = dossiers.find((dossier) => dossier.id === selectedId) ?? dossiers[0];
   const updates = selected ? dossierUpdatesSinceView(world, selected.id) : [];
   const diplomaticSession = selected ? Object.values(world.diplomaticSessions).find((session) => session.linkedDossierId === selected.id) : undefined;
+  const askDossierAI = async () => {
+    if (!selected || dossierAIStatus === 'loading') return;
+    const actors = selected.actorIds.map((id) => world.countries[id]?.name ?? id).join(', ');
+    const question = `Dossier « ${selected.title} » (${selected.importance}) concernant ${actors || 'les acteurs documentés'}. `
+      + `À la date ${world.currentDate}, propose exactement trois réponses concrètes que la France pourrait envisager. `
+      + 'Pour chacune, précise le levier, le calendrier, les réactions plausibles, les avantages, les risques et les conséquences estimées. Ne traite pas cette demande comme une action déjà exécutée.';
+    const local = answerAdvisorQuestion(world, question, { questionKind: 'strategy' });
+    setDossierAIForId(selected.id); setDossierAIAnswer(null); setDossierAIUsage(null); setDossierAIStatus('loading');
+    try {
+      const request = createAdvisorAIRequest(world, question, local, worldPulseSessionId());
+      const response = await fetch('/api/ai/advisor', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request),
+      });
+      const payload = await response.json() as AdvisorAIResponse;
+      if (!payload.ok) {
+        setDossierAIStatus('error');
+        onNotice(`Analyse du dossier indisponible : ${payload.message}`);
+        return;
+      }
+      setDossierAIAnswer(payload.answer); setDossierAIUsage(payload.usage); setDossierAIStatus('ready');
+    } catch {
+      setDossierAIStatus('error');
+      onNotice('Le serveur IA est inaccessible ; le dossier reste consultable localement.');
+    }
+  };
   if (!selected) return <div className="border border-border bg-card/70 p-8 text-center text-sm text-muted-foreground">Aucun dossier stratégique connu.</div>;
   return <div className="grid gap-4 xl:grid-cols-[.72fr_1.28fr]">
     <section className="border border-border bg-card/70">
@@ -855,11 +884,20 @@ function DossiersPanel({ world, selectedId, onSelect, onWorldChange }: {
     </section>
     <section className="space-y-4">
       <div className="border border-border bg-card/70 p-4">
-        <div className="flex flex-wrap items-start justify-between gap-3"><div><div className={`font-mono text-[10px] uppercase tracking-wider ${dossierImportanceTone[selected.importance]}`}>{selected.kind} · {selected.status}</div><h2 className="mt-1 text-xl font-semibold">{selected.title}</h2></div><Button variant="outline" onClick={() => onWorldChange(setDossierFollowed(world, selected.id, !selected.followed))}>{selected.followed ? <PinOff className="size-4" /> : <Pin className="size-4" />}{selected.followed ? 'Ne plus épingler' : 'Épingler'}</Button></div>
+        <div className="flex flex-wrap items-start justify-between gap-3"><div><div className={`font-mono text-[10px] uppercase tracking-wider ${dossierImportanceTone[selected.importance]}`}>{selected.kind} · {selected.status}</div><h2 className="mt-1 text-xl font-semibold">{selected.title}</h2></div><div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => onWorldChange(setDossierFollowed(world, selected.id, !selected.followed))}>{selected.followed ? <PinOff className="size-4" /> : <Pin className="size-4" />}{selected.followed ? 'Ne plus épingler' : 'Épingler'}</Button>{(selected.importance === 'moderate' || selected.importance === 'major' || selected.importance === 'critical') && <Button onClick={askDossierAI} disabled={dossierAIStatus === 'loading'}>{dossierAIStatus === 'loading' ? <LoaderCircle className="size-4 animate-spin" /> : <BrainCircuit className="size-4" />}Demander des options à l’IA</Button>}</div></div>
         <p className="mt-3 text-sm text-muted-foreground">{selected.publicSummary}</p>
         <div className="mt-4 grid gap-2 sm:grid-cols-3"><Stat label="Phase" value={selected.phase} /><Stat label="Tendance" value={selected.trend} /><Stat label="Acteurs" value={selected.actorIds.map((id) => world.countries[id]?.flag ?? id).join(' ')} /></div>
         {selected.playerStance && <div className="mt-3 border-l-2 border-primary pl-3 text-sm"><b>Position du joueur :</b> {selected.playerStance}</div>}
       </div>
+      {dossierAIForId === selected.id && dossierAIAnswer && <div className="border border-primary/45 bg-card/80 p-4">
+        <div className="font-mono text-[10px] uppercase tracking-wider text-primary">Options IA · consultatives</div>
+        <h3 className="mt-1 text-lg font-semibold">{dossierAIAnswer.headline}</h3>
+        <p className="mt-2 text-sm text-muted-foreground">{dossierAIAnswer.synthesis}</p>
+        <div className="mt-3 space-y-2">{dossierAIAnswer.options.map((option, index) => <details key={`${option.title}-${index}`} className="border border-border bg-background/30 p-3"><summary className="cursor-pointer font-semibold">{index + 1}. {option.title}</summary><p className="mt-2 text-sm">{option.proposal}</p><div className="mt-2 grid gap-2 text-xs sm:grid-cols-2"><p><b className="text-emerald-300">Pourquoi c’est plausible :</b> {option.whyPlausible}</p><p><b className="text-amber-300">Pourquoi cela peut échouer :</b> {option.whyRefused}</p></div><div className="mt-2 text-xs text-muted-foreground"><b>Conséquences :</b> {option.estimatedConsequences.join(' · ')}</div></details>)}</div>
+        {dossierAIUsage && <div className="mt-3 font-mono text-[10px] text-muted-foreground">{dossierAIUsage.inputTokens} jetons entrants · {dossierAIUsage.outputTokens} sortants · coût estimé ${dossierAIUsage.estimatedCostUsd.toFixed(4)} · {dossierAIUsage.latencyMs / 1000}s</div>}
+        <div className="mt-2 text-xs text-muted-foreground">Ces options n’appliquent aucun effet. Pour agir, préparez ensuite une action depuis le Conseiller.</div>
+      </div>}
+      {dossierAIForId === selected.id && dossierAIStatus === 'error' && <div className="border border-amber-400/40 bg-card/70 p-3 text-sm text-amber-200">L’analyse IA n’a pas abouti. Le dossier et son analyse locale restent disponibles.</div>}
       {(selected.pendingDecisions.length > 0 || selected.commitments.length > 0) && <div className="grid gap-3 lg:grid-cols-2">
         <div className="border border-border bg-card/70 p-4"><div className="font-mono text-[10px] uppercase tracking-wider text-amber-300">Décisions attendues</div><ul className="mt-2 space-y-2 text-sm">{selected.pendingDecisions.length ? selected.pendingDecisions.map((item) => <li key={item}>— {item}</li>) : <li className="text-muted-foreground">Aucun arbitrage immédiat.</li>}</ul></div>
         <div className="border border-border bg-card/70 p-4"><div className="font-mono text-[10px] uppercase tracking-wider text-emerald-300">Engagements mémorisés</div><ul className="mt-2 space-y-2 text-sm">{selected.commitments.length ? selected.commitments.map((item) => <li key={item}>— {item}</li>) : <li className="text-muted-foreground">Aucun engagement formel.</li>}</ul></div>
@@ -948,7 +986,7 @@ export default function Home() {
       {panel === 'economy' && <EconomyPanel world={world} />}
       {panel === 'energy' && <EnergyPanel world={world} />}
       {panel === 'industry' && <IndustryPanel world={world} />}
-      {panel === 'dossiers' && <DossiersPanel world={world} selectedId={selectedDossierId} onSelect={setSelectedDossierId} onWorldChange={setWorld} />}
+      {panel === 'dossiers' && <DossiersPanel world={world} selectedId={selectedDossierId} onSelect={setSelectedDossierId} onWorldChange={setWorld} onNotice={setNotice} />}
       {panel === 'advisor' && <AdvisorPanel world={world} onWorldChange={setWorld} onNotice={setNotice} />}
       {panel === 'ledger' && <LedgerPanel world={world} />}
     </div>

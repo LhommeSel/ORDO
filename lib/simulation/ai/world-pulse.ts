@@ -11,6 +11,7 @@ import { ORDO_WORLD_PULSE_SCHEMA_VERSION, normalizeWorldPulseDossierId } from '.
 import { commitWorldAction } from '../ledger';
 import type { DossierImportance, DossierKind, StrategicDossier, WorldEffect, WorldState } from '../types';
 import { collectFacts } from './context';
+import { rankWorldAttention, type WorldAttentionTarget } from './world-attention';
 
 const importanceRank: Record<DossierImportance, number> = { minor: 0, moderate: 1, major: 2, critical: 3 };
 
@@ -20,6 +21,7 @@ function pulseFacts(
   state: WorldState,
   kind: WorldPulseKind,
   recentPlayerActions: WorldPulseContext['recentPlayerActions'],
+  autonomyFocus: WorldAttentionTarget[],
 ): { facts: WorldPulseFact[]; omittedFactCount: number; approximateInputTokens: number } {
   const targetIds = new Set(recentPlayerActions.flatMap((action) => [action.actorId, ...action.targetIds]));
   const activeDossierActors = new Set(Object.values(state.strategicDossiers)
@@ -40,6 +42,7 @@ function pulseFacts(
         + (fact.entityIds.includes(state.playerCountryId) ? 75 : 0)
         + (fact.entityIds.some((id) => targetIds.has(id)) ? 140 : 0)
         + (kind === 'world_autonomy' && fact.entityIds.some((id) => activeDossierActors.has(id)) ? 55 : 0)
+        + (kind === 'world_autonomy' && autonomyFocus.some((focus) => focus.countryIds.some((id) => fact.entityIds.includes(id))) ? 38 : 0)
         + (fact.id.startsWith('dossier:') || fact.id.startsWith('dossier-entry:') ? 60 : 0)
         + (fact.id.startsWith('history:') ? 35 : 0),
     }))
@@ -66,7 +69,8 @@ function createContext(
   recentPlayerActions: WorldPulseContext['recentPlayerActions'],
 ): WorldPulseContext {
   const player = state.countries[state.playerCountryId];
-  const selection = pulseFacts(state, kind, recentPlayerActions);
+  const autonomyFocus = kind === 'world_autonomy' ? rankWorldAttention(state, recentPlayerActions) : [];
+  const selection = pulseFacts(state, kind, recentPlayerActions, autonomyFocus);
   const visibleActorIds = new Set(selection.facts.flatMap((fact) => fact.entityIds));
   const rankedCountries = Object.values(state.countries).slice().sort((a, b) => b.weight - a.weight).map((country) => country.id);
   const guidedCountryIds = unique([
@@ -96,6 +100,7 @@ function createContext(
     playerCountryName: player?.name ?? state.playerCountryId,
     recentPlayerActions,
     engineGuidance,
+    autonomyFocus,
     ...selection,
   };
 }
