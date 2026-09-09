@@ -8,6 +8,7 @@ import { commitWorldAction } from './ledger';
 import { advanceMacroeconomy } from './macro-economy';
 import { advancePowerStruggles, detectPowerStruggleOpportunities } from './power-struggles';
 import { advanceStakeholderReactions } from './stakeholders';
+import { runMinorEventCycle } from './minor-events';
 import type { ISODate, SimulationStop, WorldEffect, WorldState } from './types';
 
 export type AdvanceResult = {
@@ -107,6 +108,13 @@ function simulationPhases(
         const autonomy = runAutonomyCycle(state, 2);
         reviewedCountryIds.push(...autonomy.reviewedCountryIds);
         return autonomy.state;
+      },
+    },
+    {
+      id: 'minor-events',
+      advance: (state, context) => {
+        if (!context.reachedMonthBoundary) return state;
+        return runMinorEventCycle(state, 3).state;
       },
     },
   ];

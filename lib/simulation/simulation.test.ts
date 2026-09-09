@@ -31,6 +31,7 @@ import {
 } from './dossiers';
 import { applyWorldPulseAnswer, createWorldPulseRequest } from './ai/world-pulse';
 import { parseWorldPulseRequest } from '../ai/world-pulse-contracts';
+import { runMinorEventCycle } from './minor-events';
 import { rankWorldAttention } from './ai/world-attention';
 
 test('le scénario 2000 charge un monde cohérent et jouable', () => {
@@ -89,6 +90,15 @@ test('la rotation d’attention mondiale remonte des régions négligées sans f
   const autonomy = request.pulses.find((candidate) => candidate.kind === 'world_autonomy');
   assert.ok(autonomy?.context.autonomyFocus.length);
   assert.ok(parseWorldPulseRequest(request));
+});
+
+test('les événements mineurs autonomes sont peu nombreux, variés et soumis à un délai', () => {
+  const initial = createFrance2000World();
+  const first = runMinorEventCycle(initial, 3);
+  assert.equal(first.events.length, 3);
+  assert.ok(first.events.every((event) => first.state.actions.some((action) => action.metadata?.minorEventFamily === event.family)));
+  const second = runMinorEventCycle(first.state, 3);
+  assert.ok(second.events.every((event) => !first.events.some((previous) => previous.countryId === event.countryId && previous.family === event.family)));
 });
 
 test('le pouls ne transforme jamais un dossier inconnu en nouveau dossier', () => {

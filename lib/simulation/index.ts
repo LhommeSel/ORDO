@@ -16,6 +16,7 @@ export * from './engine';
 export * from './history';
 export * from './industry';
 export * from './ledger';
+export * from './minor-events';
 export * from './macro-data-2000';
 export * from './macro-economy';
 export * from './persistence';
