@@ -128,6 +128,7 @@ function WorldPanel({ world, onWorldChange, onNotice }: {
   const activePrograms = Object.values(world.actionPrograms ?? {})
     .filter((program) => program.actorId === player.id && program.status === 'active')
     .sort((a, b) => a.expectedCompletionAt.localeCompare(b.expectedCompletionAt));
+  const feed = buildEventFeed(world);
   return <div className="grid gap-4 xl:grid-cols-[1.15fr_.85fr]">
     <section className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -197,6 +198,8 @@ function WorldPanel({ world, onWorldChange, onNotice }: {
         </div>
       </div>
 
+      <EventFeedPanel feed={feed} />
+
       <div className="border border-border bg-card/70 p-4">
         <div className="flex items-center gap-2 font-semibold"><CheckCircle2 className="size-4 text-primary" /> Programmes en cours</div>
         <p className="mt-1 text-xs text-muted-foreground">Une intention engagée reste ici jusqu’à sa résolution. Ses moyens sont libérés automatiquement à l’issue du programme.</p>
@@ -228,6 +231,41 @@ function WorldPanel({ world, onWorldChange, onNotice }: {
         <ul className="mt-3 space-y-1 text-xs text-muted-foreground">{politicalTest.obstacles.map((item) => <li key={item}>— {item}</li>)}</ul>
       </div>
     </aside>
+  </div>;
+}
+
+type EventFeedItem = { id: string; date: string; title: string; summary: string; importance: 'major' | 'moderate' | 'minor'; source: string; dossierId?: string };
+
+function buildEventFeed(world: WorldState): EventFeedItem[] {
+  const items: EventFeedItem[] = [];
+  for (const dossier of Object.values(world.strategicDossiers ?? {})) {
+    for (const entry of dossier.entries) {
+      if (!['public', 'player'].includes(entry.visibility)) continue;
+      const importance = entry.importance === 'critical' || entry.importance === 'major' ? 'major' : entry.importance === 'moderate' ? 'moderate' : 'minor';
+      items.push({ id: `dossier:${entry.id}`, date: entry.date, title: entry.title, summary: entry.summary, importance, source: dossier.title, dossierId: dossier.id });
+    }
+  }
+  for (const change of visibleLedger(world).slice(-160)) {
+    if (change.path.startsWith('strategicDossiers.')) continue;
+    const importance = change.origin === 'ai' || change.path.includes('relations') || change.path.includes('worldEconomy') || change.path.includes('macroEconomies') ? 'moderate' : 'minor';
+    items.push({ id: `change:${change.id}`, date: change.date, title: change.path.split('.').at(-1) ?? 'Modification du monde', summary: change.reason, importance, source: change.origin === 'time' ? 'Évolution autonome' : change.origin === 'player' ? 'Action du joueur' : `Origine ${change.origin}` });
+  }
+  return items.sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id)).slice(0, 120);
+}
+
+function EventFeedPanel({ feed }: { feed: EventFeedItem[] }) {
+  const groups: Array<{ key: EventFeedItem['importance']; label: string; tone: string }> = [
+    { key: 'major', label: 'Majeurs', tone: 'text-red-300' },
+    { key: 'moderate', label: 'Modérés', tone: 'text-amber-300' },
+    { key: 'minor', label: 'Mineurs', tone: 'text-sky-300' },
+  ];
+  return <div className="border border-border bg-card/70 p-4">
+    <div className="flex items-center gap-2 font-semibold"><BellRing className="size-4 text-primary" /> Fil des événements</div>
+    <p className="mt-1 text-xs text-muted-foreground">Les événements majeurs restent visibles en alerte ; les événements mineurs sont simulés sans interrompre le rythme du joueur.</p>
+    <div className="mt-4 grid gap-3 lg:grid-cols-3">{groups.map((group) => {
+      const entries = feed.filter((item) => item.importance === group.key).slice(0, 8);
+      return <section key={group.key} className="border border-border/80 bg-background/25 p-3"><div className={`font-mono text-[10px] uppercase tracking-wider ${group.tone}`}>{group.label} · {entries.length}</div><div className="mt-2 space-y-2">{entries.length ? entries.map((item) => <div key={item.id} className="border-b border-border/60 pb-2 last:border-0"><div className="text-xs font-medium">{item.title}</div><div className="mt-1 text-[10px] text-muted-foreground">{item.date} · {item.source}</div><p className="mt-1 line-clamp-3 text-[11px] text-muted-foreground">{item.summary}</p></div>) : <div className="text-xs text-muted-foreground">Aucun événement dans cette catégorie.</div>}</div></section>;
+    })}</div>
   </div>;
 }
 
@@ -839,6 +877,7 @@ function DossiersPanel({ world, selectedId, onSelect, onWorldChange, onNotice }:
   const [dossierAIAnswer, setDossierAIAnswer] = useState<AdvisorAIAnswer | null>(null);
   const [dossierAIUsage, setDossierAIUsage] = useState<AdvisorAIUsage | null>(null);
   const [dossierAIStatus, setDossierAIStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  const [preparedDossierOption, setPreparedDossierOption] = useState<{ title: string; action: PreparedCommonAction; warnings: string[] } | null>(null);
   const rank = { minor: 0, moderate: 1, major: 2, critical: 3 } as const;
   const dossiers = Object.values(world.strategicDossiers).sort((a, b) => rank[b.importance] - rank[a.importance] || b.updatedAt.localeCompare(a.updatedAt));
   const selected = dossiers.find((dossier) => dossier.id === selectedId) ?? dossiers[0];
@@ -869,6 +908,23 @@ function DossiersPanel({ world, selectedId, onSelect, onWorldChange, onNotice }:
       onNotice('Le serveur IA est inaccessible ; le dossier reste consultable localement.');
     }
   };
+  const prepareDossierOption = (option: AdvisorAIOption) => {
+    const result = prepareCommonAction(world, `${option.title}. ${option.proposal}`, { source: 'ai' });
+    if (!result.ok) {
+      onNotice(`Cette proposition doit être précisée avant exécution : ${result.error}`);
+      return;
+    }
+    setPreparedDossierOption({ title: option.title, action: result.action, warnings: result.warnings });
+    onNotice('Option du dossier convertie en programme préparé ; aucun effet appliqué.');
+  };
+  const launchDossierOption = () => {
+    if (!preparedDossierOption) return;
+    const result = launchCommonAction(world, preparedDossierOption.action);
+    if (!result.ok) { onNotice(result.error); return; }
+    onWorldChange(result.state);
+    setPreparedDossierOption(null);
+    onNotice(`Programme lancé depuis le dossier : résolution attendue au fil du temps.`);
+  };
   if (!selected) return <div className="border border-border bg-card/70 p-8 text-center text-sm text-muted-foreground">Aucun dossier stratégique connu.</div>;
   return <div className="grid gap-4 xl:grid-cols-[.72fr_1.28fr]">
     <section className="border border-border bg-card/70">
@@ -893,10 +949,11 @@ function DossiersPanel({ world, selectedId, onSelect, onWorldChange, onNotice }:
         <div className="font-mono text-[10px] uppercase tracking-wider text-primary">Options IA · consultatives</div>
         <h3 className="mt-1 text-lg font-semibold">{dossierAIAnswer.headline}</h3>
         <p className="mt-2 text-sm text-muted-foreground">{dossierAIAnswer.synthesis}</p>
-        <div className="mt-3 space-y-2">{dossierAIAnswer.options.map((option, index) => <details key={`${option.title}-${index}`} className="border border-border bg-background/30 p-3"><summary className="cursor-pointer font-semibold">{index + 1}. {option.title}</summary><p className="mt-2 text-sm">{option.proposal}</p><div className="mt-2 grid gap-2 text-xs sm:grid-cols-2"><p><b className="text-emerald-300">Pourquoi c’est plausible :</b> {option.whyPlausible}</p><p><b className="text-amber-300">Pourquoi cela peut échouer :</b> {option.whyRefused}</p></div><div className="mt-2 text-xs text-muted-foreground"><b>Conséquences :</b> {option.estimatedConsequences.join(' · ')}</div></details>)}</div>
+        <div className="mt-3 space-y-2">{dossierAIAnswer.options.map((option, index) => <details key={`${option.title}-${index}`} className="border border-border bg-background/30 p-3"><summary className="cursor-pointer font-semibold">{index + 1}. {option.title}</summary><p className="mt-2 text-sm">{option.proposal}</p><div className="mt-2 grid gap-2 text-xs sm:grid-cols-2"><p><b className="text-emerald-300">Pourquoi c’est plausible :</b> {option.whyPlausible}</p><p><b className="text-amber-300">Pourquoi cela peut échouer :</b> {option.whyRefused}</p></div><div className="mt-2 text-xs text-muted-foreground"><b>Conséquences :</b> {option.estimatedConsequences.join(' · ')}</div><Button size="sm" variant="outline" className="mt-3" onClick={() => prepareDossierOption(option)}><CheckCircle2 className="size-3" />Préparer cette option</Button></details>)}</div>
         {dossierAIUsage && <div className="mt-3 font-mono text-[10px] text-muted-foreground">{dossierAIUsage.inputTokens} jetons entrants · {dossierAIUsage.outputTokens} sortants · coût estimé ${dossierAIUsage.estimatedCostUsd.toFixed(4)} · {dossierAIUsage.latencyMs / 1000}s</div>}
         <div className="mt-2 text-xs text-muted-foreground">Ces options n’appliquent aucun effet. Pour agir, préparez ensuite une action depuis le Conseiller.</div>
       </div>}
+      {preparedDossierOption && <div className="border border-primary/45 bg-card/80 p-4"><div className="font-mono text-[10px] uppercase tracking-wider text-primary">Programme préparé · confirmation requise</div><h3 className="mt-1 font-semibold">{preparedDossierOption.title}</h3><div className="mt-2 grid gap-2 text-xs sm:grid-cols-3"><Stat label="Domaine" value={preparedDossierOption.action.category} /><Stat label="Durée" value={`${preparedDossierOption.action.durationMonths} mois`} /><Stat label="Budget" value={`${preparedDossierOption.action.budgetCost.toFixed(1)} unités`} /></div>{preparedDossierOption.warnings.length > 0 && <ul className="mt-2 space-y-1 text-xs text-amber-300">{preparedDossierOption.warnings.map((warning) => <li key={warning}>⚠ {warning}</li>)}</ul>}<div className="mt-3 flex flex-wrap gap-2"><Button onClick={launchDossierOption}><CheckCircle2 className="size-4" />Confirmer et lancer</Button><Button variant="outline" onClick={() => setPreparedDossierOption(null)}>Annuler</Button></div></div>}
       {dossierAIForId === selected.id && dossierAIStatus === 'error' && <div className="border border-amber-400/40 bg-card/70 p-3 text-sm text-amber-200">L’analyse IA n’a pas abouti. Le dossier et son analyse locale restent disponibles.</div>}
       {(selected.pendingDecisions.length > 0 || selected.commitments.length > 0) && <div className="grid gap-3 lg:grid-cols-2">
         <div className="border border-border bg-card/70 p-4"><div className="font-mono text-[10px] uppercase tracking-wider text-amber-300">Décisions attendues</div><ul className="mt-2 space-y-2 text-sm">{selected.pendingDecisions.length ? selected.pendingDecisions.map((item) => <li key={item}>— {item}</li>) : <li className="text-muted-foreground">Aucun arbitrage immédiat.</li>}</ul></div>
