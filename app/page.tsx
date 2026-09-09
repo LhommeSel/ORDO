@@ -24,7 +24,7 @@ import {
   sendEnergyOffer, serializeWorld, startEnergyNegotiationAI, visibleLedger, visibleStakeholderReactions,
   structuralDiagnosisGroups,
   classifyAdvisorQuestion,
-  createWorldPulseRequest, executeWorldPulse,
+  createWorldPulseRequest, executeWorldPulse, rankStrategicDossierReviews,
   setDossierFollowed,
   countrySheet,
   type AdvisorAnswer, type AdvisorQuestionKind, type EnergyAdministrativeOffer, type EnergyCounterpartResponse,
@@ -883,6 +883,7 @@ function DossiersPanel({ world, selectedId, onSelect, onWorldChange, onNotice }:
   const [preparedDossierOption, setPreparedDossierOption] = useState<{ title: string; action: PreparedCommonAction; warnings: string[] } | null>(null);
   const rank = { minor: 0, moderate: 1, major: 2, critical: 3 } as const;
   const dossiers = Object.values(world.strategicDossiers).sort((a, b) => rank[b.importance] - rank[a.importance] || b.updatedAt.localeCompare(a.updatedAt));
+  const scheduledReviews = useMemo(() => new globalThis.Map(rankStrategicDossierReviews(world).map((review) => [review.dossierId, review])), [world]);
   const selected = dossiers.find((dossier) => dossier.id === selectedId) ?? dossiers[0];
   const updates = selected ? dossierUpdatesSinceView(world, selected.id) : [];
   const diplomaticSession = selected ? Object.values(world.diplomaticSessions).find((session) => session.linkedDossierId === selected.id) : undefined;
@@ -934,10 +935,11 @@ function DossiersPanel({ world, selectedId, onSelect, onWorldChange, onNotice }:
       <div className="border-b border-border p-4"><div className="flex items-center gap-2 font-semibold"><Swords className="size-4 text-primary" /> Situations suivies</div><p className="mt-1 text-xs text-muted-foreground">Un dossier conserve sa chronologie, même lorsqu’aucune notification n’interrompt le tour.</p></div>
       <div className="divide-y divide-border/60">{dossiers.map((dossier) => {
         const unread = dossierUnreadCount(world, dossier.id);
+        const review = scheduledReviews.get(dossier.id);
         return <button key={dossier.id} onClick={() => onSelect(dossier.id)} className={`w-full p-4 text-left transition-colors hover:bg-muted/30 ${selected.id === dossier.id ? 'bg-muted/30' : ''}`}>
           <div className="flex items-start justify-between gap-3"><div className="font-medium">{dossier.title}</div><span className={`font-mono text-[10px] uppercase ${dossierImportanceTone[dossier.importance]}`}>{dossier.importance}</span></div>
           <div className="mt-1 text-xs text-muted-foreground">{dossier.phase} · {dossier.updatedAt}</div>
-          <div className="mt-2 flex items-center gap-2 text-[11px]">{dossier.followed && <span className="text-primary">Épinglé</span>}{dossier.autoTracked && <span className="text-amber-300">Suivi majeur</span>}{unread > 0 && <span className="ml-auto bg-primary/15 px-2 py-0.5 text-primary">{unread} nouveau{unread > 1 ? 'x' : ''}</span>}</div>
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">{dossier.followed && <span className="text-primary">Épinglé</span>}{dossier.autoTracked && <span className="text-amber-300">Suivi majeur</span>}{review ? <span className={review.requiresImmediateReview ? 'text-red-300' : 'text-amber-200'}>{review.requiresImmediateReview ? 'Réévaluation prioritaire' : 'Réévaluation possible'}</span> : (dossier.importance === 'major' || dossier.importance === 'critical') && <span className="text-muted-foreground">Sous surveillance · aucun signal neuf</span>}{unread > 0 && <span className="ml-auto bg-primary/15 px-2 py-0.5 text-primary">{unread} nouveau{unread > 1 ? 'x' : ''}</span>}</div>
         </button>;
       })}</div>
     </section>

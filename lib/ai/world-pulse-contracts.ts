@@ -8,7 +8,7 @@ import type { AdvisorAIUsage } from './contracts';
  * Les deux réponses restent purement déclaratives jusqu'à leur validation par
  * lib/simulation/ai/world-pulse.ts.
  */
-export const ORDO_WORLD_PULSE_SCHEMA_VERSION = 1 as const;
+export const ORDO_WORLD_PULSE_SCHEMA_VERSION = 2 as const;
 
 export type WorldPulseKind = 'player_reaction' | 'world_autonomy';
 
@@ -36,6 +36,16 @@ export type WorldPulseAttentionTarget = {
   countryIds: string[];
 };
 
+/** File des crises majeures effectivement éligibles à une nouvelle analyse. */
+export type WorldPulseStrategicDossier = {
+  dossierId: string;
+  importance: 'major' | 'critical';
+  urgency: number;
+  requiresImmediateReview: boolean;
+  reasons: string[];
+  actorIds: string[];
+};
+
 /** Directives privées du moteur : elles individualisent les États sans devenir des faits affichables. */
 export type WorldPulseActorGuidance = {
   countryId: string;
@@ -54,6 +64,7 @@ export type WorldPulseContext = {
   playerCountryName: string;
   recentPlayerActions: WorldPulseActionContext[];
   engineGuidance: WorldPulseActorGuidance[];
+  strategicDossierQueue: WorldPulseStrategicDossier[];
   autonomyFocus: WorldPulseAttentionTarget[];
   facts: WorldPulseFact[];
   omittedFactCount: number;
@@ -183,12 +194,20 @@ function isAttentionTarget(value: unknown): value is WorldPulseAttentionTarget {
     && isText(value.reason, 180, 1) && isTextArray(value.countryIds, 12, 80);
 }
 
+function isStrategicDossier(value: unknown): value is WorldPulseStrategicDossier {
+  return isRecord(value)
+    && isText(value.dossierId, 120, 1) && (value.importance === 'major' || value.importance === 'critical')
+    && isNumber(value.urgency, 0, 100) && typeof value.requiresImmediateReview === 'boolean'
+    && isTextArray(value.reasons, 5, 220) && isTextArray(value.actorIds, 6, 80);
+}
+
 function isContext(value: unknown): value is WorldPulseContext {
   return isRecord(value)
     && isText(value.currentDate, 10, 10) && isNumber(value.elapsedMonths, 0, 24)
     && isText(value.playerCountryId, 80, 1) && isText(value.playerCountryName, 120, 1)
     && Array.isArray(value.recentPlayerActions) && value.recentPlayerActions.length <= 16 && value.recentPlayerActions.every(isAction)
     && Array.isArray(value.engineGuidance) && value.engineGuidance.length >= 1 && value.engineGuidance.length <= 16 && value.engineGuidance.every(isGuidance)
+    && Array.isArray(value.strategicDossierQueue) && value.strategicDossierQueue.length <= 4 && value.strategicDossierQueue.every(isStrategicDossier)
     && Array.isArray(value.autonomyFocus) && value.autonomyFocus.length <= 6 && value.autonomyFocus.every(isAttentionTarget)
     && Array.isArray(value.facts) && value.facts.length >= 1 && value.facts.length <= 110 && value.facts.every(isFact)
     && isNumber(value.omittedFactCount, 0, 100_000) && isNumber(value.approximateInputTokens, 1, 25_000);

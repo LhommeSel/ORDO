@@ -1051,6 +1051,10 @@ export type StrategicDossier = {
   publicSummary: string;
   followed: boolean;
   autoTracked: boolean;
+  /** Dernière fois où la voie autonome IA a réellement produit une mise à jour. */
+  lastAutonomousReviewAt?: ISODate;
+  /** Position de l'action de pouls dans le journal, pour distinguer deux faits du même mois. */
+  lastAutonomousReviewActionCount?: number;
   lastViewedEntryId?: string;
   playerStance?: string;
   commitments: string[];

@@ -11,9 +11,16 @@ import { ORDO_WORLD_PULSE_SCHEMA_VERSION, normalizeWorldPulseDossierId } from '.
 import { commitWorldAction } from '../ledger';
 import type { DossierImportance, DossierKind, StrategicDossier, WorldEffect, WorldState } from '../types';
 import { collectFacts } from './context';
+import {
+  activeMajorDossierCount,
+  dossierImportanceValue,
+  rankStrategicDossierReviews,
+  type StrategicDossierReview,
+} from './dossier-scheduler';
 import { rankWorldAttention, type WorldAttentionTarget } from './world-attention';
 
 const importanceRank: Record<DossierImportance, number> = { minor: 0, moderate: 1, major: 2, critical: 3 };
+const MAX_ACTIVE_MAJOR_DOSSIERS = 12;
 
 const approximateTokens = (value: unknown) => Math.ceil(JSON.stringify(value).length / 3.6);
 
@@ -21,12 +28,13 @@ function pulseFacts(
   state: WorldState,
   kind: WorldPulseKind,
   recentPlayerActions: WorldPulseContext['recentPlayerActions'],
+  strategicDossierQueue: StrategicDossierReview[],
   autonomyFocus: WorldAttentionTarget[],
 ): { facts: WorldPulseFact[]; omittedFactCount: number; approximateInputTokens: number } {
   const targetIds = new Set(recentPlayerActions.flatMap((action) => [action.actorId, ...action.targetIds]));
-  const activeDossierActors = new Set(Object.values(state.strategicDossiers)
-    .filter((dossier) => dossier.status !== 'resolved')
-    .flatMap((dossier) => dossier.actorIds));
+  const scheduledDossierIds = new Set(strategicDossierQueue.map((review) => review.dossierId));
+  const scheduledDossierActors = new Set(strategicDossierQueue.flatMap((review) => review.actorIds));
+  const explorationActorIds = new Set(autonomyFocus.flatMap((focus) => focus.countryIds));
   const all = collectFacts(state)
     // Le pouls n'obtient pas les secrets des gouvernements : ses sorties seront
     // affichées au joueur et doivent rester compatibles avec cette visibilité.
@@ -41,9 +49,10 @@ function pulseFacts(
         + (fact.id === 'world:date' || fact.id === 'world:economy' ? 200 : 0)
         + (fact.entityIds.includes(state.playerCountryId) ? 75 : 0)
         + (fact.entityIds.some((id) => targetIds.has(id)) ? 140 : 0)
-        + (kind === 'world_autonomy' && fact.entityIds.some((id) => activeDossierActors.has(id)) ? 55 : 0)
-        + (kind === 'world_autonomy' && autonomyFocus.some((focus) => focus.countryIds.some((id) => fact.entityIds.includes(id))) ? 38 : 0)
-        + (fact.id.startsWith('dossier:') || fact.id.startsWith('dossier-entry:') ? 60 : 0)
+        + (kind === 'world_autonomy' && fact.entityIds.some((id) => scheduledDossierActors.has(id)) ? 42 : 0)
+        + (kind === 'world_autonomy' && fact.entityIds.some((id) => explorationActorIds.has(id)) ? 74 : 0)
+        + (kind === 'world_autonomy' && fact.id.startsWith('dossier:') && scheduledDossierIds.has(fact.id.slice('dossier:'.length)) ? 92 : 0)
+        + (kind === 'world_autonomy' && fact.id.startsWith('dossier-entry:') && fact.entityIds.some((id) => scheduledDossierActors.has(id)) ? 28 : 0)
         + (fact.id.startsWith('history:') ? 35 : 0),
     }))
     .sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
@@ -70,13 +79,15 @@ function createContext(
 ): WorldPulseContext {
   const player = state.countries[state.playerCountryId];
   const autonomyFocus = kind === 'world_autonomy' ? rankWorldAttention(state, recentPlayerActions) : [];
-  const selection = pulseFacts(state, kind, recentPlayerActions, autonomyFocus);
+  const strategicDossierQueue = kind === 'world_autonomy' ? rankStrategicDossierReviews(state) : [];
+  const selection = pulseFacts(state, kind, recentPlayerActions, strategicDossierQueue, autonomyFocus);
   const visibleActorIds = new Set(selection.facts.flatMap((fact) => fact.entityIds));
   const rankedCountries = Object.values(state.countries).slice().sort((a, b) => b.weight - a.weight).map((country) => country.id);
   const guidedCountryIds = unique([
     state.playerCountryId,
     ...recentPlayerActions.flatMap((action) => [action.actorId, ...action.targetIds]),
-    ...Object.values(state.strategicDossiers).filter((dossier) => dossier.status !== 'resolved').flatMap((dossier) => dossier.actorIds),
+    ...strategicDossierQueue.flatMap((review) => review.actorIds),
+    ...autonomyFocus.flatMap((focus) => focus.countryIds),
     ...rankedCountries,
   ]).filter((id) => Boolean(state.countries[id]) && visibleActorIds.has(id)).slice(0, 16);
   const engineGuidance = guidedCountryIds.map((countryId) => {
@@ -100,6 +111,7 @@ function createContext(
     playerCountryName: player?.name ?? state.playerCountryId,
     recentPlayerActions,
     engineGuidance,
+    strategicDossierQueue,
     autonomyFocus,
     ...selection,
   };
@@ -181,6 +193,7 @@ export function applyWorldPulseAnswer(
   const updatedDossierIds: string[] = [];
   let playerDecisions = 0;
   let relationChanges = 0;
+  let projectedMajorCount = activeMajorDossierCount(state);
 
   answer.proposals.forEach((proposal, index) => {
     const actorIds = unique(proposal.actorIds).filter((id) => Boolean(state.countries[id]));
@@ -193,24 +206,32 @@ export function applyWorldPulseAnswer(
     // monde a changé depuis la compilation du contexte IA.
     if (requestedDossierId !== null && !existing) return;
     const dossierId = existing ? existing.id : `${item.id}-dossier-${index + 1}`;
+    const currentImportance = existing?.importance;
+    const raisesMajorCount = importanceRank[proposal.importance] >= importanceRank.major
+      && (!currentImportance || importanceRank[currentImportance] < importanceRank.major);
+    // La file majeure reste rare : lorsqu'elle est pleine, le nouvel élément
+    // demeure un dossier modéré consultable au lieu d'encombrer les alertes.
+    const effectiveImportance: DossierImportance = raisesMajorCount && projectedMajorCount >= MAX_ACTIVE_MAJOR_DOSSIERS
+      ? 'moderate' : proposal.importance;
+    if (importanceRank[effectiveImportance] >= importanceRank.major && raisesMajorCount) projectedMajorCount += 1;
     const playerDecision = proposal.requiresPlayerDecision
       && actorIds.includes(state.playerCountryId)
-      && importanceRank[proposal.importance] >= importanceRank.major
+      && importanceRank[effectiveImportance] >= importanceRank.major
       && proposal.playerDecision ? proposal.playerDecision.trim() : undefined;
     const entry = {
       id: `${item.id}-entry-${index + 1}`,
       date: state.currentDate,
       title: proposal.title.trim(),
       summary: proposal.summary.trim(),
-      importance: proposal.importance,
+      importance: effectiveImportance,
       actorIds,
       requiresDecision: Boolean(playerDecision),
       visibility: 'player' as const,
     };
 
     if (existing) {
-      const nextImportance = importanceRank[proposal.importance] >= importanceRank[existing.importance]
-        ? proposal.importance : existing.importance;
+      const nextImportance = dossierImportanceValue(effectiveImportance) >= dossierImportanceValue(existing.importance)
+        ? effectiveImportance : existing.importance;
       const pendingDecisions = playerDecision
         ? unique([...existing.pendingDecisions, playerDecision]).slice(-6)
         : existing.pendingDecisions;
@@ -224,6 +245,11 @@ export function applyWorldPulseAnswer(
             status: proposal.trend === 'deescalating' ? 'deescalating' : existing.status === 'resolved' ? 'resolved' : 'active',
             phase: proposal.phase.trim(), trend: proposal.trend, publicSummary: proposal.summary.trim(),
             pendingDecisions,
+            ...(item.kind === 'world_autonomy' ? {
+              lastAutonomousReviewAt: state.currentDate,
+              // L'action de pouls va être ajoutée juste après l'état courant.
+              lastAutonomousReviewActionCount: state.actions.length + 1,
+            } : {}),
           },
           reason: `Pouls IA ${item.kind} : dossier mis à jour à partir de ${citedFacts.join(', ')}.`, visibility: 'player',
         },
@@ -233,11 +259,15 @@ export function applyWorldPulseAnswer(
     } else {
       const dossier: StrategicDossier = {
         id: dossierId, title: proposal.title.trim(), kind: proposal.kind as DossierKind,
-        status: dossierStatusFor(proposal.trend), importance: proposal.importance,
+        status: dossierStatusFor(proposal.trend), importance: effectiveImportance,
         actorIds, regionTags: unique(proposal.regionTags.map((tag) => tag.trim()).filter(Boolean)).slice(0, 8),
         startedAt: state.currentDate, updatedAt: state.currentDate, phase: proposal.phase.trim(), trend: proposal.trend,
         publicSummary: proposal.summary.trim(), followed: false,
-        autoTracked: importanceRank[proposal.importance] >= importanceRank.major,
+        autoTracked: importanceRank[effectiveImportance] >= importanceRank.major,
+        ...(item.kind === 'world_autonomy' ? {
+          lastAutonomousReviewAt: state.currentDate,
+          lastAutonomousReviewActionCount: state.actions.length + 1,
+        } : {}),
         commitments: [], pendingDecisions: playerDecision ? [playerDecision] : [], relatedCurrentIds: [], relatedActionIds: [], entries: [entry],
       };
       effects.push({ kind: 'dossier_add', dossier, reason: `Pouls IA ${item.kind} : nouveau dossier fondé sur ${citedFacts.join(', ')}.`, visibility: 'player' });

@@ -90,9 +90,11 @@ function instructionFor(item: WorldPulseRequestItem) {
   return [
     ...common,
     'Mission : faire évoluer le monde hors du joueur. Cherche les dossiers actifs, tendances historiques, tensions ou stratégies nationales déjà présentes.',
-    'autonomyFocus est une rotation de régions négligées calculée par le moteur : utilise-la comme priorité d’échantillonnage, jamais comme un fait ni comme une obligation. Si aucun fait ne soutient une évolution crédible, renvoie proposals: [].',
+    'strategicDossierQueue est la seule file de dossiers majeurs qui réclament un réexamen maintenant. Si elle est vide, ne force aucune mise à jour de crise. Si elle contient un dossier requiresImmediateReview=true, tu peux prioriser sa progression uniquement si les faits la soutiennent.',
+    'Les dossiers majeurs absents de strategicDossierQueue sont volontairement au calme : ne les mets pas à jour, même s’ils figurent ailleurs dans les faits. Un silence est une information normale du jeu.',
+    'autonomyFocus est une rotation indépendante de régions négligées : utilise-la comme priorité d’exploration, jamais comme un fait ni comme une obligation. Réserve au moins une proposition à cette exploration quand aucun dossier de strategicDossierQueue ne réclame une réponse immédiate et que les faits le permettent.',
     'Renvoie une ou deux propositions au plus. Au moins une doit concerner des acteurs qui ne sont pas le pays du joueur lorsque le contexte le permet.',
-    'Privilégie une progression crédible d’un dossier existant. Crée un nouveau dossier seulement si un fait du contexte rend l’émergence plausible.',
+    'Privilégie une progression crédible d’un dossier de la file stratégique ou une évolution issue de autonomyFocus. Crée un nouveau dossier seulement si un fait du contexte rend l’émergence plausible ; réserve major ou critical à une rupture manifestement exceptionnelle.',
     'Ne duplique pas une réaction directe aux actions récentes du joueur : cette mission est traitée par une autre voie.',
   ].join('\n');
 }

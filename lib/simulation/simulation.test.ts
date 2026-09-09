@@ -33,6 +33,8 @@ import { applyWorldPulseAnswer, createWorldPulseRequest } from './ai/world-pulse
 import { parseWorldPulseRequest } from '../ai/world-pulse-contracts';
 import { runMinorEventCycle } from './minor-events';
 import { rankWorldAttention } from './ai/world-attention';
+import { activeMajorDossierCount, rankStrategicDossierReviews } from './ai/dossier-scheduler';
+import { commitWorldAction } from './ledger';
 
 test('le scénario 2000 charge un monde cohérent et jouable', () => {
   const state = createFrance2000World();
@@ -90,6 +92,92 @@ test('la rotation d’attention mondiale remonte des régions négligées sans f
   const autonomy = request.pulses.find((candidate) => candidate.kind === 'world_autonomy');
   assert.ok(autonomy?.context.autonomyFocus.length);
   assert.ok(parseWorldPulseRequest(request));
+});
+
+test('les dossiers majeurs calmes quittent la file IA, mais une décision en attente les y ramène immédiatement', () => {
+  const initial = createFrance2000World();
+  const dotcom = initial.strategicDossiers['current-dotcom-exuberance'];
+  assert.ok(dotcom);
+  if (!dotcom) return;
+  const quiet = {
+    ...initial,
+    strategicDossiers: {
+      ...initial.strategicDossiers,
+      [dotcom.id]: { ...dotcom, lastAutonomousReviewAt: initial.currentDate, pendingDecisions: [] },
+    },
+  };
+  assert.ok(!rankStrategicDossierReviews(quiet).some((review) => review.dossierId === dotcom.id));
+
+  const urgent = {
+    ...quiet,
+    strategicDossiers: {
+      ...quiet.strategicDossiers,
+      [dotcom.id]: { ...quiet.strategicDossiers[dotcom.id], pendingDecisions: ['Choisir une réponse prudentielle.'] },
+    },
+  };
+  const review = rankStrategicDossierReviews(urgent).find((candidate) => candidate.dossierId === dotcom.id);
+  assert.ok(review?.requiresImmediateReview);
+  assert.ok(review?.reasons.includes('décision du joueur en attente'));
+  const request = createWorldPulseRequest(urgent, urgent.actions.length, 1, 'test-world-pulse-queue');
+  const autonomy = request.pulses.find((candidate) => candidate.kind === 'world_autonomy');
+  assert.ok(autonomy?.context.strategicDossierQueue.some((candidate) => candidate.dossierId === dotcom.id));
+  assert.ok(parseWorldPulseRequest(request));
+});
+
+test('un choix lié à un dossier est détecté même s’il est produit au même mois que la précédente revue', () => {
+  const initial = createFrance2000World();
+  const dotcom = initial.strategicDossiers['current-dotcom-exuberance'];
+  assert.ok(dotcom);
+  if (!dotcom) return;
+  const reviewed = {
+    ...initial,
+    strategicDossiers: {
+      ...initial.strategicDossiers,
+      [dotcom.id]: {
+        ...dotcom,
+        lastAutonomousReviewAt: initial.currentDate,
+        lastAutonomousReviewActionCount: initial.actions.length,
+        pendingDecisions: [],
+      },
+    },
+  };
+  const afterChoice = commitWorldAction(reviewed, {
+    kind: 'diplomatic', actorId: 'FRA', targetIds: ['USA'], origin: 'player', visibility: 'player',
+    intent: 'Demander une consultation financière avec les États-Unis.', effects: [],
+  });
+  const review = rankStrategicDossierReviews(afterChoice).find((candidate) => candidate.dossierId === dotcom.id);
+  assert.ok(review?.requiresImmediateReview);
+});
+
+test('la file mondiale borne les nouveaux dossiers majeurs sans effacer les dossiers existants', () => {
+  const initial = createFrance2000World();
+  const source = initial.strategicDossiers['current-dotcom-exuberance'];
+  assert.ok(source);
+  if (!source) return;
+  const capped = {
+    ...initial,
+    strategicDossiers: Object.fromEntries(Array.from({ length: 12 }, (_, index) => {
+      const id = `test-major-${index + 1}`;
+      return [id, { ...source, id, title: `Dossier majeur ${index + 1}`, importance: 'major' as const, autoTracked: true, pendingDecisions: [] }];
+    })),
+  };
+  assert.equal(activeMajorDossierCount(capped), 12);
+  const request = createWorldPulseRequest(capped, capped.actions.length, 1, 'test-world-pulse-cap');
+  const item = request.pulses.find((candidate) => candidate.kind === 'world_autonomy');
+  const fact = item?.context.facts.find((candidate) => candidate.id === 'world:economy');
+  assert.ok(item && fact);
+  if (!item || !fact) return;
+  const applied = applyWorldPulseAnswer(capped, item, {
+    headline: 'Émergence économique documentée', synthesis: 'Un sujet nouveau mais non prioritaire est enregistré.', requestedFactIds: [],
+    proposals: [{
+      dossierId: null, title: 'Dossier supplémentaire', kind: 'economic', importance: 'major',
+      actorIds: ['FRA'], regionTags: ['Europe'], phase: 'Observation', trend: 'stable', summary: 'Une évolution économique est enregistrée sans saturer la file majeure.',
+      requiresPlayerDecision: false, playerDecision: null, factIds: [fact.id], relationEffects: [],
+    }],
+  });
+  const created = applied.createdDossierIds.map((id) => applied.state.strategicDossiers[id]).find(Boolean);
+  assert.equal(created?.importance, 'moderate');
+  assert.equal(activeMajorDossierCount(applied.state), 12);
 });
 
 test('les événements mineurs autonomes sont peu nombreux, variés et soumis à un délai', () => {

@@ -27,7 +27,7 @@ function addActivity(activity: Map<string, ISODate>, state: WorldState, date: IS
   for (const region of regions) if (!activity.has(region) || date > (activity.get(region) as ISODate)) activity.set(region, date);
 }
 
-/** Rotation déterministe : dossiers actifs prioritaires, régions négligées ensuite. */
+/** Rotation déterministe des régions hors de la file des crises majeures. */
 export function rankWorldAttention(state: WorldState, recentPlayerActions: Array<{ actorId: string; targetIds: string[] }>, limit = 4): WorldAttentionTarget[] {
   const countriesByRegion = new Map<string, string[]>();
   for (const country of Object.values(state.countries)) {
@@ -35,18 +35,12 @@ export function rankWorldAttention(state: WorldState, recentPlayerActions: Array
   }
   const activity = new Map<string, ISODate>();
   for (const action of state.actions) addActivity(activity, state, action.createdAt, [action.actorId, ...(action.targetIds ?? [])]);
-  const activeDossierRegions = new Set<string>();
-  for (const dossier of Object.values(state.strategicDossiers ?? {})) {
-    if (dossier.status === 'resolved') continue;
-    addActivity(activity, state, dossier.updatedAt, dossier.actorIds);
-    for (const tag of dossier.regionTags) if (countriesByRegion.has(tag)) { activeDossierRegions.add(tag); activity.set(tag, dossier.updatedAt); }
-  }
   const recentlyTouched = new Set(recentPlayerActions.flatMap((action) => [action.actorId, ...action.targetIds]).filter((id) => state.countries[id]).map(countryRegion));
   return [...countriesByRegion.entries()].map(([region, countryIds]) => {
     const last = activity.get(region); const neglectedMonths = last ? monthsBetween(last, state.currentDate) : 12;
     const weight = countryIds.reduce((sum, id) => sum + (state.countries[id]?.weight ?? 0), 0);
-    const priority = Math.min(100, Math.round(25 + Math.min(42, neglectedMonths * 5) + Math.min(24, weight / 10) + (activeDossierRegions.has(region) ? 20 : 0) - (recentlyTouched.has(region) ? 24 : 0)));
-    const reason = activeDossierRegions.has(region) ? 'dossier actif à faire progresser' : last ? `${neglectedMonths} mois sans mouvement autonome visible` : 'région jamais observée par le pouls';
+    const priority = Math.min(100, Math.round(25 + Math.min(42, neglectedMonths * 5) + Math.min(24, weight / 10) - (recentlyTouched.has(region) ? 24 : 0)));
+    const reason = last ? `${neglectedMonths} mois sans mouvement autonome visible` : 'région jamais observée par le pouls';
     return { region, priority, reason, countryIds: countryIds.slice().sort((a, b) => (state.countries[b]?.weight ?? 0) - (state.countries[a]?.weight ?? 0)).slice(0, 12) };
   }).sort((a, b) => b.priority - a.priority || a.region.localeCompare(b.region)).slice(0, limit);
 }
