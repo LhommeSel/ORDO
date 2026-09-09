@@ -14,9 +14,56 @@ export type SaveEnvelope = {
   state: WorldState;
 };
 
+const SAVE_COMPACTION_THRESHOLD = 2_000;
+const TECHNICAL_ACTION_TAIL = 240;
+const TECHNICAL_LEDGER_TAIL = 480;
+
+/**
+ * Les états courants sont déjà des snapshots complets : au-delà d'une partie
+ * longue, garder chaque écriture technique de chaque frontière mensuelle ne
+ * renforce pas la simulation et gonfle inutilement le stockage local.
+ * Les choix, réponses IA, événements visibles et une queue technique bornée
+ * restent intacts. Les index de revue autonome sont recalés sur la nouvelle
+ * liste d'actions.
+ */
+export function compactWorldForSave(state: WorldState): WorldState {
+  if (state.actions.length <= SAVE_COMPACTION_THRESHOLD) return state;
+  const firstTechnicalActionToKeep = Math.max(0, state.actions.length - TECHNICAL_ACTION_TAIL);
+  const keepAction = (action: WorldState['actions'][number], index: number) =>
+    action.origin === 'player'
+    || action.origin === 'ai'
+    || action.origin === 'historical'
+    || action.visibility === 'player'
+    || action.metadata?.minorEvent === true
+    || index >= firstTechnicalActionToKeep;
+  const keptActions = state.actions.filter(keepAction);
+  const keptActionIds = new Set(keptActions.map((action) => action.id));
+  const firstTechnicalChangeToKeep = Math.max(0, state.ledger.length - TECHNICAL_LEDGER_TAIL);
+  const keptLedger = state.ledger.filter((change, index) =>
+    keptActionIds.has(change.actionId)
+    || change.origin === 'player'
+    || change.origin === 'ai'
+    || change.origin === 'historical'
+    || change.visibility === 'player'
+    || index >= firstTechnicalChangeToKeep,
+  );
+  const newCountAtOldCount = (oldCount: number) => state.actions
+    .slice(0, Math.max(0, oldCount))
+    .reduce((count, action) => count + (keptActionIds.has(action.id) ? 1 : 0), 0);
+  const strategicDossiers = Object.fromEntries(Object.entries(state.strategicDossiers).map(([id, dossier]) => {
+    const oldCount = dossier.lastAutonomousReviewActionCount;
+    if (typeof oldCount !== 'number') return [id, dossier];
+    return [id, {
+      ...dossier,
+      lastAutonomousReviewActionCount: newCountAtOldCount(oldCount),
+    }];
+  }));
+  return { ...state, actions: keptActions, ledger: keptLedger, strategicDossiers };
+}
+
 export function serializeWorld(state: WorldState) {
   const envelope: SaveEnvelope = {
-    format: 'ordo-world', schemaVersion: 1, savedAt: new Date().toISOString(), state,
+    format: 'ordo-world', schemaVersion: 1, savedAt: new Date().toISOString(), state: compactWorldForSave(state),
   };
   return JSON.stringify(envelope);
 }

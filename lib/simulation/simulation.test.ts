@@ -8,7 +8,7 @@ import {
   acceptEnergyOffer, adjustEnergyOffer, createAdministrativeEnergyOffer, sendEnergyOffer,
 } from './energy-negotiation';
 import { advanceWorld, replayWorld } from './engine';
-import { deserializeWorld, serializeWorld } from './persistence';
+import { compactWorldForSave, deserializeWorld, serializeWorld } from './persistence';
 import { evaluatePoliticalPathway } from './politics';
 import { addEconomicShock, setEconomicPolicy } from './macro-economy';
 import { applyDebtCrisisResponse } from './sovereign-debt';
@@ -568,6 +568,35 @@ test('la sauvegarde et le registre permettent de reconstruire exactement un éta
 
   const replayed = replayWorld(createFrance2000World(), advanced.actions);
   assert.deepEqual(replayed, advanced);
+});
+
+test('une longue sauvegarde compacte les écritures techniques mais conserve les actions importantes', () => {
+  const initial = createFrance2000World();
+  const technicalActions = Array.from({ length: 2_400 }, (_, index) => ({
+    id: `technical-${index}`, createdAt: initial.currentDate, status: 'applied' as const,
+    kind: 'time_advance' as const, actorId: 'FRA', targetIds: [], origin: 'time' as const,
+    visibility: 'debug' as const, intent: `Écriture technique ${index}`, effects: [],
+  }));
+  const playerAction = {
+    ...technicalActions[0], id: 'player-important', origin: 'player' as const,
+    visibility: 'player' as const, intent: 'Action politique à conserver',
+  };
+  const large = {
+    ...initial,
+    sequence: 2_400,
+    actions: [playerAction, ...technicalActions],
+    ledger: technicalActions.map((action, index) => ({
+      id: `change-${index}`, actionId: action.id, date: initial.currentDate, actorId: 'FRA',
+      path: 'currentDate', before: initial.currentDate, after: initial.currentDate,
+      reason: action.intent, origin: 'time' as const, visibility: 'debug' as const,
+    })),
+  };
+  const compacted = compactWorldForSave(large);
+  assert.ok(compacted.actions.length < large.actions.length);
+  assert.ok(compacted.actions.some((action) => action.id === 'player-important'));
+  assert.ok(compacted.ledger.length < large.ledger.length);
+  assert.deepEqual(compacted.countries, large.countries);
+  assert.deepEqual(compacted.macroEconomies, large.macroEconomies);
 });
 
 test('le noyau macroéconomique fait évoluer réellement les économies sur un an', () => {
