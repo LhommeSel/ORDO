@@ -12,11 +12,15 @@ export type SaveEnvelope = {
   schemaVersion: 1;
   savedAt: string;
   state: WorldState;
+  historySummary?: {
+    actionsCompacted: number;
+    changesCompacted: number;
+  };
 };
 
 const SAVE_COMPACTION_THRESHOLD = 2_000;
-const TECHNICAL_ACTION_TAIL = 240;
-const TECHNICAL_LEDGER_TAIL = 480;
+const TECHNICAL_ACTION_TAIL = 120;
+const TECHNICAL_LEDGER_TAIL = 240;
 
 /**
  * Les états courants sont déjà des snapshots complets : au-delà d'une partie
@@ -33,18 +37,16 @@ export function compactWorldForSave(state: WorldState): WorldState {
     action.origin === 'player'
     || action.origin === 'ai'
     || action.origin === 'historical'
-    || action.visibility === 'player'
     || action.metadata?.minorEvent === true
+    || action.metadata?.worldPulse === true
+    || action.kind === 'diplomatic'
     || index >= firstTechnicalActionToKeep;
   const keptActions = state.actions.filter(keepAction);
   const keptActionIds = new Set(keptActions.map((action) => action.id));
   const firstTechnicalChangeToKeep = Math.max(0, state.ledger.length - TECHNICAL_LEDGER_TAIL);
   const keptLedger = state.ledger.filter((change, index) =>
     keptActionIds.has(change.actionId)
-    || change.origin === 'player'
-    || change.origin === 'ai'
-    || change.origin === 'historical'
-    || change.visibility === 'player'
+    || (change.origin !== 'time' && change.origin !== 'local_rule')
     || index >= firstTechnicalChangeToKeep,
   );
   const newCountAtOldCount = (oldCount: number) => state.actions
@@ -62,10 +64,131 @@ export function compactWorldForSave(state: WorldState): WorldState {
 }
 
 export function serializeWorld(state: WorldState) {
+  const compacted = compactWorldForSave(state);
   const envelope: SaveEnvelope = {
-    format: 'ordo-world', schemaVersion: 1, savedAt: new Date().toISOString(), state: compactWorldForSave(state),
+    format: 'ordo-world', schemaVersion: 1, savedAt: new Date().toISOString(), state: compacted,
+    ...(compacted !== state ? {
+      historySummary: {
+        actionsCompacted: state.actions.length - compacted.actions.length,
+        changesCompacted: state.ledger.length - compacted.ledger.length,
+      },
+    } : {}),
   };
   return JSON.stringify(envelope);
+}
+
+type StoredSave = {
+  format: 'ordo-world-gzip';
+  savedAt: string;
+  bytes: ArrayBuffer;
+};
+
+const SAVE_DB_NAME = 'ordo-saves-v2';
+const SAVE_STORE_NAME = 'snapshots';
+const SAVE_KEY = 'ordo-world-v2';
+
+function hasIndexedDb() {
+  return typeof indexedDB !== 'undefined';
+}
+
+async function gzipText(value: string) {
+  if (typeof CompressionStream === 'undefined') return new TextEncoder().encode(value);
+  const stream = new CompressionStream('gzip');
+  const writer = stream.writable.getWriter();
+  await writer.write(new TextEncoder().encode(value));
+  await writer.close();
+  return new Uint8Array(await new Response(stream.readable).arrayBuffer());
+}
+
+async function gunzipBytes(value: ArrayBuffer | Uint8Array) {
+  const bytes = value instanceof Uint8Array ? value : new Uint8Array(value);
+  if (typeof DecompressionStream === 'undefined') return new TextDecoder().decode(bytes);
+  const stream = new DecompressionStream('gzip');
+  const writer = stream.writable.getWriter();
+  await writer.write(bytes);
+  await writer.close();
+  return new TextDecoder().decode(await new Response(stream.readable).arrayBuffer());
+}
+
+function openSaveDb(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(SAVE_DB_NAME, 1);
+    request.onupgradeneeded = () => request.result.createObjectStore(SAVE_STORE_NAME);
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error ?? new Error('Impossible d’ouvrir la base de sauvegarde.'));
+  });
+}
+
+async function putIndexedSave(value: StoredSave) {
+  const db = await openSaveDb();
+  await new Promise<void>((resolve, reject) => {
+    const transaction = db.transaction(SAVE_STORE_NAME, 'readwrite');
+    transaction.objectStore(SAVE_STORE_NAME).put(value, SAVE_KEY);
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error ?? new Error('Impossible d’enregistrer la sauvegarde.'));
+  });
+  db.close();
+}
+
+async function getIndexedSave(): Promise<StoredSave | undefined> {
+  const db = await openSaveDb();
+  const value = await new Promise<StoredSave | undefined>((resolve, reject) => {
+    const transaction = db.transaction(SAVE_STORE_NAME, 'readonly');
+    const request = transaction.objectStore(SAVE_STORE_NAME).get(SAVE_KEY);
+    request.onsuccess = () => resolve(request.result as StoredSave | undefined);
+    request.onerror = () => reject(request.error ?? new Error('Impossible de lire la sauvegarde.'));
+  });
+  db.close();
+  return value;
+}
+
+function bytesToBase64(bytes: Uint8Array) {
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+  }
+  return btoa(binary);
+}
+
+function base64ToBytes(value: string) {
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return bytes;
+}
+
+/** Sauvegarde compressée du navigateur. IndexedDB évite la limite stricte de localStorage. */
+export async function saveWorldToBrowser(state: WorldState) {
+  const raw = serializeWorld(state);
+  const compressed = await gzipText(raw);
+  if (hasIndexedDb()) {
+    await putIndexedSave({ format: 'ordo-world-gzip', savedAt: new Date().toISOString(), bytes: compressed.buffer });
+  } else if (typeof localStorage !== 'undefined') {
+    localStorage.setItem(SAVE_KEY, JSON.stringify({ format: 'ordo-world-gzip', savedAt: new Date().toISOString(), data: bytesToBase64(compressed) }));
+  } else {
+    throw new Error('Le navigateur ne fournit aucun stockage local.');
+  }
+  return { rawBytes: new TextEncoder().encode(raw).byteLength, storedBytes: compressed.byteLength, compacted: compactWorldForSave(state).actions.length < state.actions.length };
+}
+
+/** Charge une sauvegarde v2 compressée, avec migration depuis la clé v1. */
+export async function loadWorldFromBrowser() {
+  let raw: string | undefined;
+  if (hasIndexedDb()) {
+    const stored = await getIndexedSave();
+    if (stored?.bytes) raw = await gunzipBytes(stored.bytes);
+  }
+  if (!raw && typeof localStorage !== 'undefined') {
+    const compressed = localStorage.getItem(SAVE_KEY);
+    if (compressed) {
+      const candidate = JSON.parse(compressed) as { format?: string; data?: string };
+      if (candidate.format === 'ordo-world-gzip' && candidate.data) raw = await gunzipBytes(base64ToBytes(candidate.data));
+    }
+    raw ??= localStorage.getItem('ordo-world-v1') ?? undefined;
+  }
+  if (!raw) return undefined;
+  return deserializeWorld(raw);
 }
 
 export function deserializeWorld(raw: string): WorldState {

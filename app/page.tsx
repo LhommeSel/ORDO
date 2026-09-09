@@ -16,13 +16,14 @@ import { DiplomacySheet } from '@/components/diplomacy-sheet';
 import {
   advanceWorld, answerAdvisorQuestion, armamentAdvisorFacts,
   acceptEnergyOffer, adjustEnergyOffer, assessStrategicPlan,
-  continueEnergyNegotiationAI, createAdministrativeEnergyOffer, createFrance2000World, deserializeWorld,
+  continueEnergyNegotiationAI, createAdministrativeEnergyOffer, createFrance2000World,
   dossierUnreadCount, dossiersRequiringAttention, dossierUpdatesSinceView, energyBalance,
   energyCounterpartResponseFromSession, evaluatePoliticalPathway, executeAIJob, markDossierViewed, productEvidenceSummary,
   enactPrototypeGovernmentMeasure, reactionLevelLabels, reactionTrendLabels,
   launchCommonAction, prepareCommonAction,
   nodeAvailableExport, nodeBookedVolume, nodeExpansionPotential, nodePhysicalExportCapacity,
-  resolveDossierDecision, resolveDiplomaticDialogueResponse, sendEnergyOffer, serializeWorld, startEnergyNegotiationAI, visibleLedger, visibleStakeholderReactions,
+  resolveDossierDecision, resolveDiplomaticDialogueResponse, sendEnergyOffer, startEnergyNegotiationAI, visibleLedger, visibleStakeholderReactions,
+  loadWorldFromBrowser, saveWorldToBrowser,
   openDiplomaticDialogue, openDiplomaticDialogueForDossier, sendDiplomaticDialogueMessage, requestDiplomaticDialogueAI,
   structuralDiagnosisGroups,
   classifyAdvisorQuestion,
@@ -1173,8 +1174,24 @@ export default function Home() {
       setIsAdvancing(false);
     }
   };
-  const save = () => { localStorage.setItem('ordo-world-v1', serializeWorld(world)); setNotice('Sauvegarde locale créée.'); };
-  const load = () => { const raw = localStorage.getItem('ordo-world-v1'); if (!raw) return setNotice('Aucune sauvegarde locale.'); setWorld(deserializeWorld(raw)); setNotice('Sauvegarde locale restaurée.'); };
+  const save = async () => {
+    try {
+      const result = await saveWorldToBrowser(world);
+      setNotice(`Sauvegarde compressée créée · ${(result.storedBytes / 1024 / 1024).toFixed(2)} Mo stockés (état brut ${(result.rawBytes / 1024 / 1024).toFixed(2)} Mo).`);
+    } catch {
+      setNotice('La sauvegarde locale a échoué : stockage du navigateur indisponible ou saturé.');
+    }
+  };
+  const load = async () => {
+    try {
+      const restored = await loadWorldFromBrowser();
+      if (!restored) return setNotice('Aucune sauvegarde locale.');
+      setWorld(restored);
+      setNotice('Sauvegarde locale restaurée.');
+    } catch {
+      setNotice('La sauvegarde locale est illisible ou obsolète.');
+    }
+  };
   const reset = () => { setWorld(createFrance2000World()); setNotice('Scénario 2000 réinitialisé.'); };
 
   return <main className="min-h-screen bg-background text-foreground">
