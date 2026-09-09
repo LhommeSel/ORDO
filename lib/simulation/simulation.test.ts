@@ -937,5 +937,7 @@ test('un dialogue libre conserve la première réponse locale et réserve Luna a
   if (!accepted.ok) return;
   assert.equal(accepted.state.diplomaticDialogues[opened.dialogueId].status, 'closed');
   assert.equal(accepted.state.diplomaticDialogues[opened.dialogueId].resolution?.status, 'accepted');
-  assert.ok(Object.values(accepted.state.treaties).some((treaty) => treaty.id.startsWith(`dialogue-commitment-${opened.dialogueId}`) && treaty.status === 'active'));
+  const acceptedTreaty = Object.values(accepted.state.treaties).find((treaty) => treaty.id.startsWith(`dialogue-commitment-${opened.dialogueId}`));
+  assert.equal(acceptedTreaty?.status, 'active');
+  assert.equal(acceptedTreaty?.monthlyEffects[0]?.metric, 'stability');
 });

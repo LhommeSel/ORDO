@@ -98,6 +98,7 @@ type DiplomacySheetProps = {
   activeEvent?: DiplomaticEventState;
   onResolveEvent: (channel: ResolutionChannel) => void;
   memories: string[];
+  agreements?: string[];
 };
 
 const responseCopy: Partial<Record<ResolutionChannel, { title: string; detail: string }>> = {
@@ -167,6 +168,7 @@ export function DiplomacySheet({
   activeEvent,
   onResolveEvent,
   memories,
+  agreements = [],
 }: DiplomacySheetProps) {
   const tags = relationshipTags(selectedCountry);
 
@@ -285,6 +287,7 @@ export function DiplomacySheet({
             <section><p className="recap-label"><ShieldCheck /> INTÉRÊTS CONNUS</p><ul>{selectedCountry.interests.map((interest) => <li key={interest}>{interest}</li>)}</ul></section>
             <section><p className="recap-label"><Route /> LIGNES ROUGES</p><ul>{selectedCountry.redLines.map((line) => <li key={line}>{line}</li>)}</ul></section>
             <section><p className="recap-label"><UserRoundCog /> MÉMOIRE DE LA RELATION</p>{memories.length ? <ul>{memories.map((memory) => <li key={memory}>{memory}</li>)}</ul> : <p className="ai-rationale">Aucun engagement majeur mémorisé.</p>}</section>
+            <section><p className="recap-label"><ShieldCheck /> ENGAGEMENTS ACTIFS</p>{agreements.length ? <ul>{agreements.map((agreement) => <li key={agreement}>{agreement}</li>)}</ul> : <p className="ai-rationale">Aucun accord formel actif avec ce pays.</p>}</section>
             {activeEvent?.resolved && activeEvent.countryId === selectedId && <p className="resolved-event"><Check /> Événement traité : {activeEvent.resolvedBy === 'explicit_silence' ? 'silence assumé' : 'position enregistrée'}</p>}
           </aside>
         </div>
