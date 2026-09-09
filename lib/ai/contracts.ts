@@ -79,6 +79,15 @@ export type AdvisorAIUsage = {
   model: string;
   inputTokens: number;
   cachedInputTokens: number;
+  /** Préfixe stable écrit dans le cache lors de cet appel, si l'API le signale. */
+  cacheWriteTokens?: number;
+  /** Diagnostic compact : utile pour vérifier que le cache est réellement exploitable. */
+  cacheDiagnostics?: {
+    type: 'cache_hit' | 'cache_miss' | 'not_reported';
+    reason?: string;
+    cacheMissedTokens?: number;
+    comparisonReusableTokens?: number;
+  };
   outputTokens: number;
   estimatedCostUsd: number;
   latencyMs: number;

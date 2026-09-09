@@ -17,11 +17,15 @@ const turns = [
   'Renforcer la coopération militaire avec le Royaume-Uni.',
   'Lancer une opération de renseignement sur la Russie.',
 ];
+const selectedTurns = turns.slice(0, Math.max(1, Math.min(
+  turns.length,
+  Number.parseInt(process.env.ORDO_TEST_LIMIT ?? String(turns.length), 10) || turns.length,
+)));
 
 let state = createFrance2000World();
 const results: unknown[] = [];
 
-for (const [index, intent] of turns.entries()) {
+for (const [index, intent] of selectedTurns.entries()) {
   const prepared = prepareCommonAction(state, intent);
   let action: Record<string, unknown> = { intent, prepared: prepared.ok, warnings: prepared.ok ? prepared.warnings : [], error: prepared.ok ? undefined : prepared.error };
   if (prepared.ok) {
@@ -80,7 +84,7 @@ for (const [index, intent] of turns.entries()) {
     response: payload,
     applied,
   });
-  console.log(`${index + 1}/${turns.length} status=${response.status} durationMs=${durationMs} date=${state.currentDate}`);
+  console.log(`${index + 1}/${selectedTurns.length} status=${response.status} durationMs=${durationMs} date=${state.currentDate}`);
 }
 
 await mkdir('outputs', { recursive: true });

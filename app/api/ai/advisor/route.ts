@@ -87,6 +87,29 @@ const structuredOutputShape = (payload: Record<string, unknown>) => ({
   }) : null,
 });
 
+/** Le cache est une optimisation, jamais une source de vérité. On ne remonte que
+ * sa télémétrie agrégée : aucun texte de partie ni identifiant de joueur. */
+const readPromptCacheDiagnostics = (payload: Record<string, unknown>) => {
+  const usage = payload.usage && typeof payload.usage === 'object' ? payload.usage as Record<string, unknown> : {};
+  const details = usage.input_tokens_details && typeof usage.input_tokens_details === 'object'
+    ? usage.input_tokens_details as Record<string, unknown> : {};
+  const diagnostics = payload.prompt_cache_diagnostics && typeof payload.prompt_cache_diagnostics === 'object'
+    ? payload.prompt_cache_diagnostics as Record<string, unknown> : {};
+  const type: 'cache_hit' | 'cache_miss' | 'not_reported' = diagnostics.type === 'cache_hit' || diagnostics.type === 'cache_miss'
+    ? diagnostics.type : 'not_reported';
+  return {
+    cachedTokens: typeof details.cached_tokens === 'number' ? details.cached_tokens : 0,
+    cacheWriteTokens: typeof details.cache_write_tokens === 'number' ? details.cache_write_tokens : 0,
+    cacheDiagnostics: {
+      type,
+      ...(typeof diagnostics.reason === 'string' ? { reason: diagnostics.reason } : {}),
+      ...(typeof diagnostics.cache_missed_tokens === 'number' ? { cacheMissedTokens: diagnostics.cache_missed_tokens } : {}),
+      ...(typeof diagnostics.comparison_reusable_tokens === 'number'
+        ? { comparisonReusableTokens: diagnostics.comparison_reusable_tokens } : {}),
+    },
+  };
+};
+
 /** Tolère le bruit de présentation sans accepter un JSON partiel.
  * Le balayage équilibré permet de distinguer une sortie tronquée d'un simple
  * texte introductif, ce qui évite de fabriquer un faux secours. */
@@ -145,9 +168,12 @@ export async function POST(request: Request) {
   const parsed = parseAdvisorAIRequest(body);
   if (!parsed) return json({ ok: false, code: 'invalid_request', message: 'Le contexte transmis ne respecte pas le contrat ORDO.' }, 400);
 
-  const [ipKey, sessionKey] = await Promise.all([
+  const [ipKey, sessionKey, advisorCacheKey] = await Promise.all([
     hashRateLimitKey(requestIp(request)),
     hashRateLimitKey(parsed.sessionId),
+    // Une clé distincte évite de mélanger la famille « conseiller » avec les
+    // prompts du pouls mondial : l'API peut mieux regrouper les vrais préfixes communs.
+    hashRateLimitKey(`advisor:${parsed.sessionId}`),
   ]);
   const admission = admitAIRequest(ipKey, sessionKey);
   if (!admission.ok) {
@@ -175,7 +201,7 @@ export async function POST(request: Request) {
         safety_identifier: sessionKey,
         // Une même partie conserve les mêmes règles de réponse. Cette clé
         // opaque aide l'API à réutiliser ce préfixe et à réduire la latence.
-        prompt_cache_key: sessionKey,
+        prompt_cache_key: advisorCacheKey,
         instructions: [
           'Tu es le conseiller stratégique d’ORDO, un bac à sable géopolitique réaliste.',
           'Réponds en français. Produis des options situées : acteurs, objet précis, calendrier, concessions et réactions plausibles.',
@@ -223,15 +249,16 @@ export async function POST(request: Request) {
     const usage = payload.usage && typeof payload.usage === 'object' ? payload.usage as Record<string, unknown> : {};
     const inputTokens = typeof usage.input_tokens === 'number' ? usage.input_tokens : 0;
     const outputTokens = typeof usage.output_tokens === 'number' ? usage.output_tokens : 0;
-    const details = usage.input_tokens_details && typeof usage.input_tokens_details === 'object'
-      ? usage.input_tokens_details as Record<string, unknown> : {};
-    const cachedTokens = typeof details.cached_tokens === 'number' ? details.cached_tokens : 0;
+    const cache = readPromptCacheDiagnostics(payload);
+    const cachedTokens = cache.cachedTokens;
     const estimatedCostUsd = estimateAICost(policy.model, inputTokens, outputTokens, cachedTokens);
     recordAICost(estimatedCostUsd);
     const usageSummary = {
       model: policy.model,
       inputTokens,
       cachedInputTokens: cachedTokens,
+      cacheWriteTokens: cache.cacheWriteTokens,
+      cacheDiagnostics: cache.cacheDiagnostics,
       outputTokens,
       estimatedCostUsd,
       latencyMs: Math.round(performance.now() - upstreamStartedAt),

@@ -41,10 +41,27 @@ const extractOutputText = (payload: Record<string, unknown>) => {
 const readUsage = (payload: Record<string, unknown>) => {
   const usage = payload.usage && typeof payload.usage === 'object' ? payload.usage as Record<string, unknown> : {};
   const details = usage.input_tokens_details && typeof usage.input_tokens_details === 'object' ? usage.input_tokens_details as Record<string, unknown> : {};
+  const cacheDiagnosticType: 'cache_hit' | 'cache_miss' | 'not_reported' = payload.prompt_cache_diagnostics && typeof payload.prompt_cache_diagnostics === 'object'
+    && (payload.prompt_cache_diagnostics as Record<string, unknown>).type === 'cache_hit' ? 'cache_hit'
+    : payload.prompt_cache_diagnostics && typeof payload.prompt_cache_diagnostics === 'object'
+      && (payload.prompt_cache_diagnostics as Record<string, unknown>).type === 'cache_miss' ? 'cache_miss' : 'not_reported';
   return {
     inputTokens: typeof usage.input_tokens === 'number' ? usage.input_tokens : 0,
     outputTokens: typeof usage.output_tokens === 'number' ? usage.output_tokens : 0,
     cachedTokens: typeof details.cached_tokens === 'number' ? details.cached_tokens : 0,
+    cacheWriteTokens: typeof details.cache_write_tokens === 'number' ? details.cache_write_tokens : 0,
+    cacheDiagnostics: {
+      type: cacheDiagnosticType,
+      ...(payload.prompt_cache_diagnostics && typeof payload.prompt_cache_diagnostics === 'object'
+        && typeof (payload.prompt_cache_diagnostics as Record<string, unknown>).reason === 'string'
+        ? { reason: (payload.prompt_cache_diagnostics as Record<string, unknown>).reason as string } : {}),
+      ...(payload.prompt_cache_diagnostics && typeof payload.prompt_cache_diagnostics === 'object'
+        && typeof (payload.prompt_cache_diagnostics as Record<string, unknown>).cache_missed_tokens === 'number'
+        ? { cacheMissedTokens: (payload.prompt_cache_diagnostics as Record<string, unknown>).cache_missed_tokens as number } : {}),
+      ...(payload.prompt_cache_diagnostics && typeof payload.prompt_cache_diagnostics === 'object'
+        && typeof (payload.prompt_cache_diagnostics as Record<string, unknown>).comparison_reusable_tokens === 'number'
+        ? { comparisonReusableTokens: (payload.prompt_cache_diagnostics as Record<string, unknown>).comparison_reusable_tokens as number } : {}),
+    },
   };
 };
 
@@ -89,7 +106,12 @@ export async function POST(request: Request) {
   const parsed = parseWorldPulseRequest(body);
   if (!parsed) return json({ ok: false, code: 'invalid_request', message: 'Le contrat du pouls mondial est invalide.' }, 400);
 
-  const [ipKey, sessionKey] = await Promise.all([hashRateLimitKey(requestIp(request)), hashRateLimitKey(parsed.sessionId)]);
+  const [ipKey, sessionKey, playerReactionCacheKey, worldAutonomyCacheKey] = await Promise.all([
+    hashRateLimitKey(requestIp(request)),
+    hashRateLimitKey(parsed.sessionId),
+    hashRateLimitKey(`world-pulse:player_reaction:${parsed.sessionId}`),
+    hashRateLimitKey(`world-pulse:world_autonomy:${parsed.sessionId}`),
+  ]);
   // Une avance est une unité de quota même si elle mobilise deux regards IA.
   const admission = admitAIRequest(ipKey, sessionKey);
   if (!admission.ok) {
@@ -115,7 +137,7 @@ export async function POST(request: Request) {
             // lisible sans brider la profondeur des deux appels spécialisés.
             max_output_tokens: Math.min(policy.maxOutputTokens, 1_200),
             safety_identifier: sessionKey,
-            prompt_cache_key: sessionKey,
+            prompt_cache_key: item.kind === 'player_reaction' ? playerReactionCacheKey : worldAutonomyCacheKey,
             instructions: instructionFor(item),
             input: JSON.stringify({ pulseId: parsed.pulseId, mission: item.kind, worldContext: item.context }),
             text: { format: { type: 'json_schema', name: 'ordo_world_pulse_answer', strict: true, schema: worldPulseAIJsonSchema } },
@@ -158,6 +180,7 @@ export async function POST(request: Request) {
         id: item.id, kind: item.kind, ok: true, answer: normalizedAnswer,
         usage: {
           model: policy.model, inputTokens: usage.inputTokens, cachedInputTokens: usage.cachedTokens,
+          cacheWriteTokens: usage.cacheWriteTokens, cacheDiagnostics: usage.cacheDiagnostics,
           outputTokens: usage.outputTokens, estimatedCostUsd, latencyMs: Math.round(performance.now() - upstreamStartedAt),
         },
       };
@@ -167,10 +190,11 @@ export async function POST(request: Request) {
     const usage = results.reduce((total, result) => result.ok ? {
       inputTokens: total.inputTokens + result.usage.inputTokens,
       cachedInputTokens: total.cachedInputTokens + result.usage.cachedInputTokens,
+      cacheWriteTokens: (total.cacheWriteTokens ?? 0) + (result.usage.cacheWriteTokens ?? 0),
       outputTokens: total.outputTokens + result.usage.outputTokens,
       estimatedCostUsd: total.estimatedCostUsd + result.usage.estimatedCostUsd,
       latencyMs: total.latencyMs,
-    } : total, { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, estimatedCostUsd: 0, latencyMs: 0 });
+    } : total, { inputTokens: 0, cachedInputTokens: 0, cacheWriteTokens: 0, outputTokens: 0, estimatedCostUsd: 0, latencyMs: 0 });
     usage.latencyMs = Math.max(0, ...results.filter((result) => result.ok).map((result) => result.usage.latencyMs));
     return json({
       ok: true, results,
