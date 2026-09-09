@@ -573,6 +573,7 @@ export function createFrance2000World(): WorldState {
     aiJobs: {},
     actionPrograms: {},
     diplomaticSessions: {},
+    diplomaticDialogues: {},
     sectors: structuredClone(sectors),
     armamentProducts: structuredClone(armamentProducts),
     strategicDossiers: structuredClone(strategicDossiers),

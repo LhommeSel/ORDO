@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { WorldMap } from '@/components/world-map';
 import { TerritoryExplorer } from '@/components/territory-explorer';
+import { DiplomacySheet } from '@/components/diplomacy-sheet';
 import {
   advanceWorld, answerAdvisorQuestion, armamentAdvisorFacts,
   acceptEnergyOffer, adjustEnergyOffer, assessStrategicPlan,
@@ -22,6 +23,7 @@ import {
   launchCommonAction, prepareCommonAction,
   nodeAvailableExport, nodeBookedVolume, nodeExpansionPotential, nodePhysicalExportCapacity,
   resolveDossierDecision, sendEnergyOffer, serializeWorld, startEnergyNegotiationAI, visibleLedger, visibleStakeholderReactions,
+  openDiplomaticDialogue, sendDiplomaticDialogueMessage, requestDiplomaticDialogueAI,
   structuralDiagnosisGroups,
   classifyAdvisorQuestion,
   createWorldPulseRequest, executeWorldPulse, rankStrategicDossierReviews,
@@ -40,7 +42,7 @@ import {
   type AdvisorAIUsage,
 } from '@/lib/ai/contracts';
 
-type Panel = 'world' | 'map' | 'economy' | 'energy' | 'industry' | 'dossiers' | 'advisor' | 'ledger';
+type Panel = 'world' | 'map' | 'economy' | 'energy' | 'industry' | 'dossiers' | 'diplomacy' | 'advisor' | 'ledger';
 
 type AdvisorAIAuditEntry = {
   id: string;
@@ -69,6 +71,7 @@ const panels: Array<{ id: Panel; label: string; icon: typeof Activity }> = [
   { id: 'energy', label: 'Énergie', icon: Fuel },
   { id: 'industry', label: 'Industrie', icon: Factory },
   { id: 'dossiers', label: 'Dossiers', icon: Swords },
+  { id: 'diplomacy', label: 'Diplomatie', icon: Send },
   { id: 'advisor', label: 'Conseiller', icon: BrainCircuit },
   { id: 'ledger', label: 'Registre', icon: Database },
 ];
@@ -898,9 +901,14 @@ function DossiersPanel({ world, selectedId, onSelect, onWorldChange, onNotice }:
   const askDossierAI = async () => {
     if (!selected || dossierAIStatus === 'loading') return;
     const actors = selected.actorIds.map((id) => world.countries[id]?.name ?? id).join(', ');
+    const dialogueHistory = Object.values(world.diplomaticDialogues ?? {})
+      .filter((dialogue) => dialogue.participantIds.some((id) => selected.actorIds.includes(id)))
+      .flatMap((dialogue) => dialogue.turns.slice(-4).map((turn) => `${world.countries[turn.speakerId]?.name ?? turn.speakerId}: ${turn.publicMessage}`))
+      .slice(-8);
     const question = `Dossier « ${selected.title} » (${selected.importance}) concernant ${actors || 'les acteurs documentés'}. `
       + `À la date ${world.currentDate}, propose exactement trois réponses concrètes que la France pourrait envisager. `
-      + 'Pour chacune, précise le levier, le calendrier, les réactions plausibles, les avantages, les risques et les conséquences estimées. Ne traite pas cette demande comme une action déjà exécutée.';
+      + 'Pour chacune, précise le levier, le calendrier, les réactions plausibles, les avantages, les risques et les conséquences estimées. Ne traite pas cette demande comme une action déjà exécutée.'
+      + (dialogueHistory.length ? ` Intègre aussi ces échanges diplomatiques récents, sans les inventer : ${dialogueHistory.join(' | ')}` : '');
     const local = answerAdvisorQuestion(world, question, { questionKind: 'strategy' });
     setDossierAIForId(selected.id); setDossierAIAnswer(null); setDossierAIUsage(null); setDossierAIStatus('loading');
     try {
@@ -990,6 +998,98 @@ function DossiersPanel({ world, selectedId, onSelect, onWorldChange, onNotice }:
   </div>;
 }
 
+function DiplomacyPanel({ world, onWorldChange, onNotice }: {
+  world: WorldState;
+  onWorldChange: (world: WorldState) => void;
+  onNotice: (message: string) => void;
+}) {
+  const player = world.countries[world.playerCountryId];
+  const countries = useMemo(() => Object.values(world.countries)
+    .filter((country) => country.id !== world.playerCountryId)
+    .sort((a, b) => (b.weight - a.weight) || a.name.localeCompare(b.name)), [world.countries, world.playerCountryId]);
+  const [selectedId, setSelectedId] = useState(countries[0]?.id ?? '');
+  const [participants, setParticipants] = useState<string[]>(countries[0]?.id ? [countries[0].id] : []);
+  const [dialogueId, setDialogueId] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [isThinking, setIsThinking] = useState(false);
+  const [lastAIUsage, setLastAIUsage] = useState<string | undefined>();
+  const selectedCountry = world.countries[selectedId] ?? countries[0] ?? player;
+  const dialogue = dialogueId ? world.diplomaticDialogues?.[dialogueId] : undefined;
+  const recentDialogues = Object.values(world.diplomaticDialogues ?? {}).slice().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  const sheetCountries = countries.map((country) => {
+    const relation = world.relations[`${player.id}:${country.id}`] ?? world.relations[`${country.id}:${player.id}`];
+    const sheet = countrySheet(world, country.id);
+    return {
+      id: country.id, name: country.name, flag: country.flag, role: country.politics.governmentLabel,
+      posture: relation && relation.relation >= 65 ? 'Partenaire actif' : relation && relation.relation <= 35 ? 'Rival sous tension' : 'Relation de travail',
+      relation: Math.round(relation?.relation ?? sheet?.relation?.value ?? 50), trust: Math.round(relation?.trust ?? sheet?.relation?.trust ?? 50),
+      interests: country.strategy.goals.filter((goal) => goal.status === 'active').slice(0, 4).map((goal) => goal.label),
+      redLines: country.strategy.redLines.slice(0, 4),
+    };
+  });
+  const selectedSheetCountry = sheetCountries.find((item) => item.id === selectedId) ?? sheetCountries[0] ?? {
+    id: player.id, name: player.name, flag: player.flag, role: player.politics.governmentLabel, posture: 'Canal national', relation: 50, trust: 50, interests: [], redLines: [],
+  };
+  const messages = dialogue?.turns.map((turn, index) => ({
+    id: index, author: turn.speakerId === player.id ? 'player' as const : 'foreign' as const,
+    text: turn.publicMessage, meta: `${world.countries[turn.speakerId]?.name ?? turn.speakerId} · ${turn.date}`,
+  })) ?? [];
+  const openNewDialogue = () => {
+    const ids = participants.length ? participants : (selectedId ? [selectedId] : []);
+    if (!ids.length) { onNotice('Sélectionnez au moins un interlocuteur.'); return; }
+    setDialogueId(null); setSelectedId(ids[0]); setDraft(''); setOpen(true);
+  };
+  const send = () => {
+    if (!draft.trim()) return;
+    if (dialogue) {
+      const result = sendDiplomaticDialogueMessage(world, dialogue.id, draft);
+      if (!result.ok) { onNotice(result.error); return; }
+      onWorldChange(result.state); setDraft(''); setSelectedId(result.speakerId);
+      onNotice('Message envoyé. La réponse IA reste facultative et nécessite votre confirmation.');
+      return;
+    }
+    const result = openDiplomaticDialogue(world, participants.length ? participants : [selectedId], draft);
+    if (!result.ok) { onNotice(result.error); return; }
+    onWorldChange(result.state); setDialogueId(result.dialogueId); setDraft('');
+    onNotice('Dialogue ouvert : la première réponse a été produite localement, sans appel IA.');
+  };
+  const askAI = async () => {
+    if (!dialogue || dialogue.status !== 'awaiting_ai' || isThinking) return;
+    const request = requestDiplomaticDialogueAI(world, dialogue.id);
+    if (!request.ok) { onNotice(request.error); return; }
+    onWorldChange(request.state); setIsThinking(true); setLastAIUsage(undefined);
+    try {
+      const result = await executeAIJob(request.state, request.jobId, worldPulseSessionId());
+      if (!result.ok) { onNotice(`Réponse IA indisponible : ${result.response.message}`); return; }
+      onWorldChange(result.state);
+      const usage = result.response.usage;
+      setLastAIUsage(`${usage.inputTokens} entrées · ${usage.outputTokens} sorties · $${usage.estimatedCostUsd.toFixed(4)}`);
+      const updated = result.state.diplomaticDialogues[dialogue.id];
+      if (updated) setSelectedId(updated.activeSpeakerId);
+      onNotice('Réponse diplomatique IA reçue et ajoutée à la mémoire du dialogue.');
+    } catch { onNotice('Le serveur IA est inaccessible ; aucun effet diplomatique n’a été appliqué.'); }
+    finally { setIsThinking(false); }
+  };
+  const memories = selectedId ? [
+    ...(world.relations[`${player.id}:${selectedId}`]?.memories ?? world.relations[`${selectedId}:${player.id}`]?.memories ?? []).slice(-4),
+    ...(dialogue ? [`Canal ${dialogue.kind === 'multilateral_dialogue' ? 'multilatéral' : 'bilatéral'} · ${dialogue.turns.length} échanges · ${dialogue.status}`] : []),
+  ] : [];
+  return <div className="space-y-4">
+    <section className="border border-border bg-card/70 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex items-center gap-2 font-semibold"><Send className="size-4 text-primary" /> Centre diplomatique</div><p className="mt-1 text-xs text-muted-foreground">Ouvrez un canal avec n’importe quel pays. Le premier retour est local ; chaque réponse IA ultérieure est explicitement confirmée et facturée.</p></div><Button onClick={openNewDialogue}>Nouveau dialogue</Button></div>
+      <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_1fr]">
+        <label className="text-xs text-muted-foreground">Pays participants (Ctrl/Cmd pour un groupe)
+          <select multiple value={participants} onChange={(event) => setParticipants(Array.from(event.target.selectedOptions, (option) => option.value))} className="mt-1 min-h-28 w-full border border-border bg-background p-2 text-sm">{countries.map((country) => <option key={country.id} value={country.id}>{country.flag} {country.name}</option>)}</select>
+        </label>
+        <div><div className="text-xs text-muted-foreground">Dialogues mémorisés</div><div className="mt-1 max-h-28 space-y-1 overflow-y-auto">{recentDialogues.length ? recentDialogues.slice(0, 8).map((item) => <button key={item.id} onClick={() => { setDialogueId(item.id); setSelectedId(item.activeSpeakerId === player.id ? item.participantIds.find((id) => id !== player.id) ?? item.activeSpeakerId : item.activeSpeakerId); setOpen(true); }} className={`block w-full border px-2 py-1 text-left text-xs ${dialogueId === item.id ? 'border-primary bg-primary/10' : 'border-border hover:bg-muted/30'}`}>{item.kind === 'multilateral_dialogue' ? 'Groupe' : 'Bilatéral'} · {item.participantIds.filter((id) => id !== player.id).map((id) => world.countries[id]?.name ?? id).join(', ')} · {item.status}</button>) : <p className="border border-dashed border-border p-3 text-xs text-muted-foreground">Aucun dialogue ouvert.</p>}</div></div>
+      </div>
+      {lastAIUsage && <div className="mt-3 font-mono text-[10px] text-muted-foreground">Dernier appel : {lastAIUsage}</div>}
+    </section>
+    <DiplomacySheet open={open} onOpenChange={setOpen} countries={sheetCountries} selectedId={selectedSheetCountry.id} onSelectCountry={(id) => { setSelectedId(id); if (dialogue && !dialogue.participantIds.includes(id)) setDialogueId(null); }} selectedCountry={selectedSheetCountry} messages={messages} draft={draft} onDraftChange={setDraft} onSend={send} isThinking={isThinking} playerCountryName={player.name} participantCount={dialogue?.participantIds.length ?? (participants.length + 1)} activeSpeakerLabel={dialogue ? (world.countries[dialogue.activeSpeakerId]?.name ?? dialogue.activeSpeakerId) : undefined} canRequestAI={Boolean(dialogue && dialogue.status === 'awaiting_ai')} onRequestAI={askAI} memories={memories} onResolveEvent={() => undefined} />
+  </div>;
+}
+
 function LedgerPanel({ world }: { world: WorldState }) {
   const entries = visibleLedger(world).slice(-120).reverse();
   return <div className="border border-border bg-card/70">
@@ -1063,6 +1163,7 @@ export default function Home() {
       {panel === 'energy' && <EnergyPanel world={world} />}
       {panel === 'industry' && <IndustryPanel world={world} />}
       {panel === 'dossiers' && <DossiersPanel world={world} selectedId={selectedDossierId} onSelect={setSelectedDossierId} onWorldChange={setWorld} onNotice={setNotice} />}
+      {panel === 'diplomacy' && <DiplomacyPanel world={world} onWorldChange={setWorld} onNotice={setNotice} />}
       {panel === 'advisor' && <AdvisorPanel world={world} onWorldChange={setWorld} onNotice={setNotice} />}
       {panel === 'ledger' && <LedgerPanel world={world} />}
     </div>

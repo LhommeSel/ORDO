@@ -268,6 +268,22 @@ function applyEffect(state: WorldState, action: WorldAction, effect: WorldEffect
     return appendChange(next, action, effect, `diplomaticSessions.${effect.sessionId}`, session, after);
   }
 
+  if (effect.kind === 'diplomatic_dialogue_add') {
+    const dialogues = state.diplomaticDialogues ?? {};
+    const before = dialogues[effect.dialogue.id] ?? null;
+    const after = before ?? effect.dialogue;
+    const next = { ...state, diplomaticDialogues: { ...dialogues, [effect.dialogue.id]: after } };
+    return appendChange(next, action, effect, `diplomaticDialogues.${effect.dialogue.id}`, before, after);
+  }
+
+  if (effect.kind === 'diplomatic_dialogue_patch') {
+    const dialogue = state.diplomaticDialogues?.[effect.dialogueId];
+    if (!dialogue) return state;
+    const after = { ...dialogue, ...effect.patch };
+    const next = { ...state, diplomaticDialogues: { ...state.diplomaticDialogues, [effect.dialogueId]: after } };
+    return appendChange(next, action, effect, `diplomaticDialogues.${effect.dialogueId}`, dialogue, after);
+  }
+
   if (effect.kind === 'sector_patch') {
     const sector = state.sectors[effect.sectorId];
     if (!sector) return state;

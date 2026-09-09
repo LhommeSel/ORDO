@@ -64,6 +64,12 @@ type DiplomacySheetProps = {
   onDraftChange: (value: string) => void;
   onSend: () => void;
   isThinking: boolean;
+  playerCountryName: string;
+  participantCount?: number;
+  activeSpeakerLabel?: string;
+  canRequestAI?: boolean;
+  onRequestAI?: () => void;
+  aiRequestLabel?: string;
   activeEvent?: DiplomaticEventState;
   onResolveEvent: (channel: ResolutionChannel) => void;
   memories: string[];
@@ -94,10 +100,12 @@ const responseCopy: Partial<Record<ResolutionChannel, { title: string; detail: s
 
 function relationshipTags(country: SheetCountry) {
   const tags = [country.role];
-  if (country.id === 'deu' || country.id === 'ita') tags.push('Partenaire commercial');
-  if (country.id === 'deu' || country.id === 'ita') tags.push('Allié européen');
-  if (country.id === 'pol') tags.push('Partenaire en rapprochement');
-  if (country.id === 'usa') tags.push('Allié stratégique', 'Partenaire de sécurité');
+  if (country.relation >= 75) tags.push('Partenaire privilégié');
+  else if (country.relation >= 60) tags.push('Partenaire');
+  else if (country.relation <= 30) tags.push('Rival sous tension');
+  else if (country.relation < 45) tags.push('Relation à surveiller');
+  else tags.push('Relation de travail');
+  if (country.trust >= 70) tags.push('Confiance élevée');
   return [...new Set(tags)];
 }
 
@@ -113,6 +121,12 @@ export function DiplomacySheet({
   onDraftChange,
   onSend,
   isThinking,
+  playerCountryName,
+  participantCount = 2,
+  activeSpeakerLabel,
+  canRequestAI,
+  onRequestAI,
+  aiRequestLabel = 'Demander la réponse IA',
   activeEvent,
   onResolveEvent,
   memories,
@@ -149,7 +163,7 @@ export function DiplomacySheet({
           <section className="diplomacy-conversation">
             <div className="diplomacy-country-heading">
               <span className="text-3xl" aria-hidden="true">{selectedCountry.flag}</span>
-              <div><p className="font-mono text-[8px] tracking-[0.12em] text-muted-foreground">CANAL BILATÉRAL CHIFFRÉ</p><h2>France — {selectedCountry.name}</h2></div>
+              <div><p className="font-mono text-[8px] tracking-[0.12em] text-muted-foreground">CANAL {participantCount > 2 ? 'MULTILATÉRAL' : 'BILATÉRAL'} CHIFFRÉ</p><h2>{playerCountryName} — {selectedCountry.name}</h2>{activeSpeakerLabel && <p className="mt-1 text-xs text-amber-300">Prochain intervenant : {activeSpeakerLabel}</p>}</div>
             </div>
 
             {activeEvent && activeEvent.countryId === selectedId && !activeEvent.resolved && (
@@ -191,6 +205,7 @@ export function DiplomacySheet({
 
             <div className="diplomacy-composer">
               <label htmlFor="diplomacy-sheet-message">DIRECTIVE LIBRE — ÉCRIVEZ VOTRE POSITION OU VOTRE PROPOSITION</label>
+              {canRequestAI && onRequestAI && <Button type="button" variant="outline" onClick={onRequestAI} disabled={isThinking} className="mb-2 h-auto w-full justify-start rounded-none py-2 text-left"><Bot className="size-4" />{aiRequestLabel}</Button>}
               <div className="flex items-end gap-2">
                 <Textarea
                   id="diplomacy-sheet-message"

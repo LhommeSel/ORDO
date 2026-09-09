@@ -2,6 +2,7 @@ import { createAIJobAIRequest, toAIJobOutcome, type AIJobAIResponse } from '../.
 import { commitWorldAction } from '../ledger';
 import { applyPowerStruggleAIProposal } from '../power-struggles';
 import { applyEnergyDiplomacyAIAnswer } from '../energy-negotiation';
+import { applyDiplomaticDialogueAIAnswer } from '../diplomacy-dialogue';
 import type { AIJob, ActionKind, WorldState } from '../types';
 import { compileContextForAIJob } from './context';
 
@@ -55,6 +56,11 @@ export async function executeAIJob(
   }
   const outcome = toAIJobOutcome(payload.answer, context);
   if (job.kind === 'diplomacy') {
+    if (typeof job.context.dialogueId === 'string') {
+      const applied = applyDiplomaticDialogueAIAnswer(state, job.id, outcome);
+      if (!applied.ok) return { ok: false, state, response: { ok: false, code: 'upstream_error', message: `Le moteur du dialogue a refusé la réponse : ${applied.error}` } };
+      return { ok: true, state: applied.state, response: payload };
+    }
     const applied = applyEnergyDiplomacyAIAnswer(state, job.id, payload.answer, outcome);
     if (!applied.ok) return { ok: false, state, response: { ok: false, code: 'upstream_error', message: `Le moteur diplomatique a refusé la réponse : ${applied.errors.join(' ')}` } };
     return { ok: true, state: applied.state, response: payload };

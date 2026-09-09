@@ -35,6 +35,7 @@ import { runMinorEventCycle } from './minor-events';
 import { rankWorldAttention } from './ai/world-attention';
 import { activeMajorDossierCount, rankStrategicDossierReviews } from './ai/dossier-scheduler';
 import { commitWorldAction } from './ledger';
+import { applyDiplomaticDialogueAIAnswer, openDiplomaticDialogue, requestDiplomaticDialogueAI, sendDiplomaticDialogueMessage } from './diplomacy-dialogue';
 
 test('le scénario 2000 charge un monde cohérent et jouable', () => {
   const state = createFrance2000World();
@@ -886,4 +887,37 @@ test('les tensions émergentes sont plafonnées par passage pour préserver le b
   const detected = detectPowerStruggleOpportunities(state);
   const pending = Object.values(detected.aiJobs).filter((job) => job.kind === 'power_struggle' && job.purpose === 'materialize_actor' && job.status === 'pending');
   assert.ok(pending.length <= 3);
+});
+
+test('un dialogue libre conserve la première réponse locale et réserve Luna aux tours confirmés', () => {
+  const initial = createFrance2000World();
+  const opened = openDiplomaticDialogue(initial, ['DEU', 'ITA'], 'Nous proposons une coordination industrielle avant le prochain Conseil européen.');
+  assert.equal(opened.ok, true);
+  if (!opened.ok) return;
+  const first = opened.state.diplomaticDialogues[opened.dialogueId];
+  assert.equal(first.kind, 'multilateral_dialogue');
+  assert.equal(first.status, 'awaiting_player');
+  assert.equal(first.turns.length, 2);
+
+  const sent = sendDiplomaticDialogueMessage(opened.state, opened.dialogueId, 'Nous sommes prêts à discuter des garanties et du calendrier.');
+  assert.equal(sent.ok, true);
+  if (!sent.ok) return;
+  assert.equal(sent.state.diplomaticDialogues[opened.dialogueId].status, 'awaiting_ai');
+
+  const queued = requestDiplomaticDialogueAI(sent.state, opened.dialogueId);
+  assert.equal(queued.ok, true);
+  if (!queued.ok) return;
+  assert.equal(queued.state.diplomaticDialogues[opened.dialogueId].aiMode, 'ai');
+  assert.equal(queued.state.aiJobs[queued.jobId].kind, 'diplomacy');
+
+  const applied = applyDiplomaticDialogueAIAnswer(queued.state, queued.jobId, {
+    headline: 'Position prudente', assessment: 'Une réponse conditionnelle est envisageable.',
+    publicMessage: 'Nous pouvons examiner cette piste si les garanties sont écrites.', proposals: [], requestedFacts: [], contextFactIds: [], approximateInputTokens: 120,
+  });
+  assert.equal(applied.ok, true);
+  if (!applied.ok) return;
+  const finalDialogue = applied.state.diplomaticDialogues[opened.dialogueId];
+  assert.equal(finalDialogue.status, 'awaiting_player');
+  assert.equal(finalDialogue.turns.length, 4);
+  assert.equal(applied.state.aiJobs[queued.jobId].status, 'resolved');
 });

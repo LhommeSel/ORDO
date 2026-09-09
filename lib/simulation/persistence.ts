@@ -129,6 +129,7 @@ export function deserializeWorld(raw: string): WorldState {
     aiJobs: restored.aiJobs ?? (restored as unknown as { powerStruggleAIRequests?: WorldState['aiJobs'] }).powerStruggleAIRequests ?? {},
     actionPrograms: restored.actionPrograms ?? {},
     diplomaticSessions: restored.diplomaticSessions ?? {},
+    diplomaticDialogues: restored.diplomaticDialogues ?? {},
   };
 }
 

@@ -284,6 +284,21 @@ export type DiplomaticSession = {
   linkedContractId?: string;
 };
 
+/** Dialogue politique libre, distinct d’une négociation énergétique chiffrée. */
+export type DiplomaticDialogue = {
+  id: string;
+  kind: 'bilateral_dialogue' | 'multilateral_dialogue';
+  initiatorId: CountryId;
+  participantIds: CountryId[];
+  activeSpeakerId: CountryId;
+  status: 'awaiting_player' | 'awaiting_ai' | 'closed';
+  aiMode: 'local' | 'ai';
+  openedAt: ISODate;
+  updatedAt: ISODate;
+  turns: DiplomaticTurn[];
+  linkedDossierId?: string;
+};
+
 export type CountryEnergyState = {
   countryId: CountryId;
   annualDemand: Record<EnergyResource, number>;
@@ -961,6 +976,8 @@ export type WorldEffect =
   | { kind: 'energy_stock_delta'; countryId: CountryId; resource: EnergyResource; delta: number; reason: string; visibility?: Visibility }
   | { kind: 'diplomatic_session_add'; session: DiplomaticSession; reason: string; visibility?: Visibility }
   | { kind: 'diplomatic_session_patch'; sessionId: string; patch: Partial<DiplomaticSession>; reason: string; visibility?: Visibility }
+  | { kind: 'diplomatic_dialogue_add'; dialogue: DiplomaticDialogue; reason: string; visibility?: Visibility }
+  | { kind: 'diplomatic_dialogue_patch'; dialogueId: string; patch: Partial<DiplomaticDialogue>; reason: string; visibility?: Visibility }
   | { kind: 'sector_patch'; sectorId: string; patch: Partial<StrategicSectorState>; reason: string; visibility?: Visibility }
   | { kind: 'sector_delta'; sectorId: string; delta: Partial<Record<'capacity' | 'utilization' | 'workloadMonths' | 'health' | 'foreignDependency' | 'technology', number>>; reason: string; visibility?: Visibility }
   | { kind: 'armament_patch'; productId: string; patch: Partial<ArmamentProduct>; reason: string; visibility?: Visibility }
@@ -1097,6 +1114,7 @@ export type WorldState = {
   aiJobs: Record<string, AIJob>;
   actionPrograms: Record<string, ActionProgram>;
   diplomaticSessions: Record<string, DiplomaticSession>;
+  diplomaticDialogues: Record<string, DiplomaticDialogue>;
   sectors: Record<string, StrategicSectorState>;
   armamentProducts: Record<string, ArmamentProduct>;
   strategicDossiers: Record<string, StrategicDossier>;
