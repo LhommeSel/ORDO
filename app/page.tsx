@@ -731,12 +731,12 @@ function AdvisorPanel({ world, onWorldChange, onNotice }: { world: WorldState; o
       setAiMessage('Le serveur IA est inaccessible. La réponse locale reste disponible.');
     }
   };
-  const resolveResponse = (decision: 'accept' | 'refuse' | 'request_revision') => {
+  const resolveResponse = (decision: 'accept' | 'refuse' | 'request_revision' | 'acknowledge') => {
     if (!dialogue) return;
     const result = resolveDiplomaticDialogueResponse(world, dialogue.id, decision);
     if (!result.ok) { onNotice(result.error); return; }
     onWorldChange(result.state);
-    onNotice(decision === 'accept' ? 'Engagement diplomatique inscrit dans le moteur et le registre.' : decision === 'refuse' ? 'Position refusée : le canal est fermé.' : 'Révision demandée : confirmez ensuite l’appel IA pour obtenir une nouvelle réponse.');
+    onNotice(decision === 'accept' ? 'Engagement diplomatique inscrit dans le moteur et le registre.' : decision === 'refuse' ? 'Position refusée : le canal est fermé.' : decision === 'acknowledge' ? 'Position reçue : aucun engagement formel n’a été créé.' : 'Révision demandée : confirmez ensuite l’appel IA pour obtenir une nouvelle réponse.');
   };
   const prepare = (plan: StrategicPlan) => {
     if (!plan.execution) return;

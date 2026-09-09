@@ -7,6 +7,12 @@ import type { AIDiplomaticMove } from '../ai/job-contracts';
 
 const unique = <T,>(items: T[]) => [...new Set(items)];
 
+function addMonths(date: `${number}-${number}-${number}`, months: number): `${number}-${number}-${number}` {
+  const value = new Date(`${date}T12:00:00Z`);
+  value.setUTCMonth(value.getUTCMonth() + months);
+  return value.toISOString().slice(0, 10) as `${number}-${number}-${number}`;
+}
+
 function nextSpeaker(state: WorldState, dialogue: Pick<DiplomaticDialogue, 'participantIds' | 'activeSpeakerId' | 'initiatorId'>, exclude: CountryId[] = []) {
   const candidates = dialogue.participantIds.filter((id) => !exclude.includes(id) && id !== dialogue.activeSpeakerId && Boolean(state.countries[id]));
   return candidates.sort((a, b) => {
@@ -88,36 +94,45 @@ export function sendDiplomaticDialogueMessage(state: WorldState, dialogueId: str
 export function resolveDiplomaticDialogueResponse(
   state: WorldState,
   dialogueId: string,
-  decision: 'accept' | 'refuse' | 'request_revision',
+  decision: 'accept' | 'refuse' | 'request_revision' | 'acknowledge',
 ) {
   const dialogue = state.diplomaticDialogues?.[dialogueId];
   const response = dialogue?.lastResponse;
   if (!dialogue || !response || dialogue.status !== 'awaiting_player' || dialogue.resolution) {
     return { ok: false as const, state, error: 'Aucune position structurée ne peut être tranchée pour ce dialogue.' };
   }
+  if (decision === 'accept' && response.kind !== 'accept' && response.kind !== 'counter') {
+    return { ok: false as const, state, error: 'Cette réponse est une prise de position, pas une proposition formalisable.' };
+  }
   const labels = {
     accept: 'Position acceptée : un engagement diplomatique est inscrit.',
     refuse: 'Position refusée : le canal diplomatique est fermé.',
     request_revision: 'Révision demandée : une nouvelle réponse de l’interlocuteur est attendue.',
+    acknowledge: 'Position reçue : aucun engagement formel n’est créé.',
   } as const;
   const messages = {
     accept: 'Nous acceptons cette position et souhaitons l’inscrire comme engagement diplomatique.',
     refuse: 'Nous refusons cette position dans sa forme actuelle et ne pouvons pas l’inscrire comme engagement.',
     request_revision: 'Nous demandons une révision de cette position, notamment sur les garanties et les conditions proposées.',
+    acknowledge: 'Nous prenons acte de votre position. Aucun engagement formel n’est conclu à ce stade.',
   } as const;
   const nextStatus = decision === 'request_revision' ? 'awaiting_ai' as const : 'closed' as const;
   const nextDialogue: DiplomaticDialogue = {
     ...dialogue,
     status: nextStatus,
     updatedAt: state.currentDate,
-    resolution: { status: decision === 'request_revision' ? 'revision_requested' : decision === 'accept' ? 'accepted' : 'refused', decidedAt: state.currentDate, summary: labels[decision] },
+    resolution: { status: decision === 'request_revision' ? 'revision_requested' : decision === 'accept' ? 'accepted' : decision === 'refuse' ? 'refused' : 'acknowledged', decidedAt: state.currentDate, summary: labels[decision] },
     turns: [...dialogue.turns, turn(`${dialogue.id}-player-resolution-${dialogue.turns.length + 1}`, state.currentDate, state.playerCountryId, decision === 'accept' ? 'acceptance' : decision === 'refuse' ? 'refusal' : 'counterproposal', messages[decision])],
   };
   const effects: import('./types').WorldEffect[] = [
     { kind: 'diplomatic_dialogue_patch', dialogueId, patch: nextDialogue, reason: labels[decision], visibility: 'player' },
   ];
-  if (decision === 'accept') {
+  if (decision === 'accept' && (response.kind === 'accept' || response.kind === 'counter')) {
     const treatyId = `dialogue-commitment-${dialogue.id}-${state.sequence + 1}`;
+    const durationByType: Record<typeof response.agreementType, number> = {
+      industrial_cooperation: 36, information_sharing: 24, security_cooperation: 24,
+      political_guarantee: 18, mediation: 12, defense_cooperation: 36,
+    };
     const monthlyByType: Record<typeof response.agreementType, Array<{ countryId: CountryId; metric: 'budget' | 'industry' | 'stability' | 'security'; delta: number }>> = {
       industrial_cooperation: dialogue.participantIds.map((countryId) => ({ countryId, metric: 'industry', delta: countryId === state.playerCountryId ? 0.05 : 0.035 })),
       information_sharing: [],
@@ -128,7 +143,7 @@ export function resolveDiplomaticDialogueResponse(
     };
     effects.push({
       kind: 'treaty_add',
-      treaty: { id: treatyId, parties: dialogue.participantIds, label: `Engagement diplomatique · ${response.agreementType.replaceAll('_', ' ')}`, status: 'active', monthlyEffects: monthlyByType[response.agreementType] },
+      treaty: { id: treatyId, parties: dialogue.participantIds, label: `Engagement diplomatique · ${response.agreementType.replaceAll('_', ' ')}`, status: 'active', startDate: state.currentDate, endDate: addMonths(state.currentDate, durationByType[response.agreementType]), monthlyEffects: monthlyByType[response.agreementType] },
       reason: 'L’acceptation du joueur transforme la position diplomatique en engagement persistant.', visibility: 'player',
     });
     if (response.agreementType === 'information_sharing') {
@@ -138,7 +153,7 @@ export function resolveDiplomaticDialogueResponse(
       })));
     }
   }
-  const relationEffect = decision === 'accept' ? { relation: 4, trust: 3 } : decision === 'refuse' ? { relation: -3, trust: -2 } : null;
+  const relationEffect = decision === 'accept' && (response.kind === 'accept' || response.kind === 'counter') ? { relation: 4, trust: 3 } : decision === 'refuse' ? { relation: -3, trust: -2 } : null;
   if (relationEffect) effects.push(...dialogue.participantIds.filter((id) => id !== state.playerCountryId).map((targetId) => ({
     kind: 'relation_delta' as const, from: state.playerCountryId, to: targetId, relation: relationEffect.relation, trust: relationEffect.trust,
     reason: decision === 'accept' ? 'L’acceptation d’un engagement diplomatique renforce la relation.' : 'Le refus d’une position diplomatique dégrade la relation.', visibility: 'player' as const,
@@ -146,7 +161,7 @@ export function resolveDiplomaticDialogueResponse(
   if (dialogue.linkedDossierId && state.strategicDossiers[dialogue.linkedDossierId]) {
     const dossier = state.strategicDossiers[dialogue.linkedDossierId];
     effects.push(
-      { kind: 'dossier_patch', dossierId: dossier.id, patch: { commitments: decision === 'accept' ? [...dossier.commitments, `Engagement diplomatique : ${response.position}`] : dossier.commitments, playerStance: messages[decision] }, reason: 'La décision du joueur actualise les engagements du dossier.', visibility: 'player' },
+      { kind: 'dossier_patch', dossierId: dossier.id, patch: { commitments: decision === 'accept' && (response.kind === 'accept' || response.kind === 'counter') ? [...dossier.commitments, `Engagement diplomatique : ${response.position}`] : dossier.commitments, playerStance: messages[decision] }, reason: 'La décision du joueur actualise les engagements du dossier.', visibility: 'player' },
       { kind: 'dossier_entry_add', dossierId: dossier.id, entry: { id: `dialogue-resolution-${dialogue.id}-${state.sequence + 1}`, date: state.currentDate, title: labels[decision], summary: messages[decision], importance: dossier.importance, actorIds: dialogue.participantIds, requiresDecision: false, visibility: 'player' }, reason: 'La résolution du dialogue est conservée dans la chronologie du dossier.', visibility: 'player' },
     );
   }

@@ -940,4 +940,8 @@ test('un dialogue libre conserve la première réponse locale et réserve Luna a
   const acceptedTreaty = Object.values(accepted.state.treaties).find((treaty) => treaty.id.startsWith(`dialogue-commitment-${opened.dialogueId}`));
   assert.equal(acceptedTreaty?.status, 'active');
   assert.equal(acceptedTreaty?.monthlyEffects[0]?.metric, 'stability');
+  assert.equal(acceptedTreaty?.startDate, accepted.state.currentDate);
+  assert.ok((acceptedTreaty?.endDate ?? '') > accepted.state.currentDate);
+  const afterExpiry = advanceWorld(accepted.state, '2002-01-01').state;
+  assert.equal(afterExpiry.treaties[acceptedTreaty!.id]?.status, 'expired');
 });

@@ -33,6 +33,14 @@ function advanceTreaties(state: WorldState, elapsedMonths: number) {
   let next = state;
   for (const treaty of Object.values(state.treaties)) {
     if (treaty.status !== 'active') continue;
+    if (treaty.endDate && treaty.endDate <= state.currentDate) {
+      next = commitWorldAction(next, {
+        kind: 'diplomatic', actorId: treaty.parties[0], targetIds: treaty.parties.slice(1), origin: 'time',
+        intent: `Échoir l’accord ${treaty.label}`,
+        effects: [{ kind: 'treaty_patch', treatyId: treaty.id, patch: { status: 'expired' }, reason: 'La durée prévue de l’accord est arrivée à échéance.', visibility: 'player' }],
+      });
+      continue;
+    }
     const effects: WorldEffect[] = treaty.monthlyEffects.map((effect) => ({
       kind: 'metric_delta', countryId: effect.countryId, metric: effect.metric,
       delta: effect.delta * elapsedMonths,
