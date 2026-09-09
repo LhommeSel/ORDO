@@ -178,6 +178,19 @@ test('la file mondiale borne les nouveaux dossiers majeurs sans effacer les doss
   const created = applied.createdDossierIds.map((id) => applied.state.strategicDossiers[id]).find(Boolean);
   assert.equal(created?.importance, 'moderate');
   assert.equal(activeMajorDossierCount(applied.state), 12);
+
+  const critical = applyWorldPulseAnswer(capped, item, {
+    headline: 'Rupture critique documentée', synthesis: 'Une crise exceptionnelle doit rester visible.', requestedFactIds: [],
+    proposals: [{
+      dossierId: null, title: 'Crise critique supplémentaire', kind: 'security', importance: 'critical',
+      actorIds: ['FRA'], regionTags: ['Europe'], phase: 'Alerte', trend: 'escalating', summary: 'Une crise critique remplace le suivi le moins urgent sans faire croître la file.',
+      requiresPlayerDecision: false, playerDecision: null, factIds: [fact.id], relationEffects: [],
+    }],
+  });
+  const createdCritical = critical.createdDossierIds.map((id) => critical.state.strategicDossiers[id]).find(Boolean);
+  assert.equal(createdCritical?.importance, 'critical');
+  assert.equal(activeMajorDossierCount(critical.state), 12);
+  assert.equal(Object.values(critical.state.strategicDossiers).filter((dossier) => dossier.importance === 'moderate').length, 1);
 });
 
 test('les événements mineurs autonomes sont peu nombreux, variés et soumis à un délai', () => {

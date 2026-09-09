@@ -169,6 +169,18 @@ function clampEffect(value: number) {
   return Math.max(-3, Math.min(3, Math.round(value)));
 }
 
+/** Une crise critique peut remplacer un dossier majeur au calme, jamais disparaître derrière une limite d'interface. */
+function quietMajorToDemote(state: WorldState, scheduledDossierIds: Set<string>, alreadyDemoted: Set<string>) {
+  return Object.values(state.strategicDossiers)
+    .filter((dossier) => dossier.status !== 'resolved' && dossier.importance === 'major')
+    .filter((dossier) => !dossier.followed && dossier.pendingDecisions.length === 0 && !alreadyDemoted.has(dossier.id))
+    .sort((left, right) =>
+      Number(scheduledDossierIds.has(left.id)) - Number(scheduledDossierIds.has(right.id))
+      || left.updatedAt.localeCompare(right.updatedAt)
+      || left.id.localeCompare(right.id),
+    )[0];
+}
+
 export type AppliedWorldPulse = {
   state: WorldState;
   createdDossierIds: string[];
@@ -194,6 +206,8 @@ export function applyWorldPulseAnswer(
   let playerDecisions = 0;
   let relationChanges = 0;
   let projectedMajorCount = activeMajorDossierCount(state);
+  const scheduledDossierIds = new Set(item.context.strategicDossierQueue.map((review) => review.dossierId));
+  const demotedDossierIds = new Set<string>();
 
   answer.proposals.forEach((proposal, index) => {
     const actorIds = unique(proposal.actorIds).filter((id) => Boolean(state.countries[id]));
@@ -209,10 +223,26 @@ export function applyWorldPulseAnswer(
     const currentImportance = existing?.importance;
     const raisesMajorCount = importanceRank[proposal.importance] >= importanceRank.major
       && (!currentImportance || importanceRank[currentImportance] < importanceRank.major);
-    // La file majeure reste rare : lorsqu'elle est pleine, le nouvel élément
-    // demeure un dossier modéré consultable au lieu d'encombrer les alertes.
-    const effectiveImportance: DossierImportance = raisesMajorCount && projectedMajorCount >= MAX_ACTIVE_MAJOR_DOSSIERS
-      ? 'moderate' : proposal.importance;
+    let effectiveImportance: DossierImportance = proposal.importance;
+    if (raisesMajorCount && projectedMajorCount >= MAX_ACTIVE_MAJOR_DOSSIERS) {
+      if (proposal.importance === 'critical') {
+        const displaced = quietMajorToDemote(state, scheduledDossierIds, demotedDossierIds);
+        if (displaced) {
+          effects.push({
+            kind: 'dossier_patch', dossierId: displaced.id,
+            patch: { importance: 'moderate', autoTracked: false },
+            reason: `La crise critique « ${proposal.title.trim()} » remplace un dossier majeur sans signal neuf dans la file prioritaire.`,
+            visibility: 'player',
+          });
+          demotedDossierIds.add(displaced.id);
+          projectedMajorCount -= 1;
+        }
+      } else {
+        // La file majeure reste rare : le sujet demeure un dossier modéré
+        // consultable au lieu d'encombrer durablement les alertes.
+        effectiveImportance = 'moderate';
+      }
+    }
     if (importanceRank[effectiveImportance] >= importanceRank.major && raisesMajorCount) projectedMajorCount += 1;
     const playerDecision = proposal.requiresPlayerDecision
       && actorIds.includes(state.playerCountryId)
