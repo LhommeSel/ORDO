@@ -22,7 +22,7 @@ import {
   enactPrototypeGovernmentMeasure, reactionLevelLabels, reactionTrendLabels,
   launchCommonAction, prepareCommonAction,
   nodeAvailableExport, nodeBookedVolume, nodeExpansionPotential, nodePhysicalExportCapacity,
-  resolveDossierDecision, sendEnergyOffer, serializeWorld, startEnergyNegotiationAI, visibleLedger, visibleStakeholderReactions,
+  resolveDossierDecision, resolveDiplomaticDialogueResponse, sendEnergyOffer, serializeWorld, startEnergyNegotiationAI, visibleLedger, visibleStakeholderReactions,
   openDiplomaticDialogue, openDiplomaticDialogueForDossier, sendDiplomaticDialogueMessage, requestDiplomaticDialogueAI,
   structuralDiagnosisGroups,
   classifyAdvisorQuestion,
@@ -731,6 +731,13 @@ function AdvisorPanel({ world, onWorldChange, onNotice }: { world: WorldState; o
       setAiMessage('Le serveur IA est inaccessible. La réponse locale reste disponible.');
     }
   };
+  const resolveResponse = (decision: 'accept' | 'refuse' | 'request_revision') => {
+    if (!dialogue) return;
+    const result = resolveDiplomaticDialogueResponse(world, dialogue.id, decision);
+    if (!result.ok) { onNotice(result.error); return; }
+    onWorldChange(result.state);
+    onNotice(decision === 'accept' ? 'Engagement diplomatique inscrit dans le moteur et le registre.' : decision === 'refuse' ? 'Position refusée : le canal est fermé.' : 'Révision demandée : confirmez ensuite l’appel IA pour obtenir une nouvelle réponse.');
+  };
   const prepare = (plan: StrategicPlan) => {
     if (!plan.execution) return;
     const result = createAdministrativeEnergyOffer(world, plan.execution.supplierId, plan.execution.resource);
@@ -1107,7 +1114,7 @@ function DiplomacyPanel({ world, onWorldChange, onNotice, initialDialogueId }: {
       </div>
       {lastAIUsage && <div className="mt-3 font-mono text-[10px] text-muted-foreground">Dernier appel : {lastAIUsage}</div>}
     </section>
-    <DiplomacySheet open={open} onOpenChange={setOpen} countries={sheetCountries} selectedId={selectedSheetCountry.id} onSelectCountry={(id) => { setSelectedId(id); if (dialogue && !dialogue.participantIds.includes(id)) setDialogueId(null); }} selectedCountry={selectedSheetCountry} messages={messages} structuredResponse={dialogue?.lastResponse} draft={draft} onDraftChange={setDraft} onSend={send} isThinking={isThinking} playerCountryName={player.name} participantCount={dialogue?.participantIds.length ?? (participants.length + 1)} activeSpeakerLabel={dialogue ? (world.countries[dialogue.activeSpeakerId]?.name ?? dialogue.activeSpeakerId) : undefined} statusLabel={!dialogue ? 'Aucun canal ouvert — rédigez le premier message' : dialogue.status === 'awaiting_ai' ? 'Réponse IA disponible — validation explicite nécessaire' : dialogue.status === 'awaiting_player' ? 'Votre tour — vous pouvez répondre ou demander une option structurée' : 'Canal fermé'} quickReplies={dialogue?.status === 'awaiting_player' ? quickReplies : []} onQuickReply={(value) => setDraft(value)} canRequestAI={Boolean(dialogue && dialogue.status === 'awaiting_ai')} onRequestAI={askAI} memories={memories} onResolveEvent={() => undefined} />
+    <DiplomacySheet open={open} onOpenChange={setOpen} countries={sheetCountries} selectedId={selectedSheetCountry.id} onSelectCountry={(id) => { setSelectedId(id); if (dialogue && !dialogue.participantIds.includes(id)) setDialogueId(null); }} selectedCountry={selectedSheetCountry} messages={messages} structuredResponse={dialogue?.lastResponse} responseResolution={dialogue?.resolution} onResolveResponse={dialogue?.status === 'awaiting_player' && dialogue?.lastResponse && !dialogue?.resolution ? resolveResponse : undefined} draft={draft} onDraftChange={setDraft} onSend={send} isThinking={isThinking} playerCountryName={player.name} participantCount={dialogue?.participantIds.length ?? (participants.length + 1)} activeSpeakerLabel={dialogue ? (world.countries[dialogue.activeSpeakerId]?.name ?? dialogue.activeSpeakerId) : undefined} statusLabel={!dialogue ? 'Aucun canal ouvert — rédigez le premier message' : dialogue.status === 'awaiting_ai' ? 'Réponse IA disponible — validation explicite nécessaire' : dialogue.status === 'awaiting_player' ? 'Votre tour — vous pouvez répondre ou demander une option structurée' : 'Canal fermé'} quickReplies={dialogue?.status === 'awaiting_player' ? quickReplies : []} onQuickReply={(value) => setDraft(value)} canRequestAI={Boolean(dialogue && dialogue.status === 'awaiting_ai')} onRequestAI={askAI} memories={memories} onResolveEvent={() => undefined} />
   </div>;
 }
 

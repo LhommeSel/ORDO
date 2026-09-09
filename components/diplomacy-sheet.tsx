@@ -62,6 +62,12 @@ type StructuredDiplomaticResponse = {
   timeline: string;
 };
 
+type DiplomaticResponseResolution = {
+  status: 'accepted' | 'refused' | 'revision_requested';
+  decidedAt: string;
+  summary: string;
+};
+
 type QuickReply = { label: string; value: string };
 
 type DiplomacySheetProps = {
@@ -73,6 +79,8 @@ type DiplomacySheetProps = {
   selectedCountry: SheetCountry;
   messages: SheetMessage[];
   structuredResponse?: StructuredDiplomaticResponse;
+  responseResolution?: DiplomaticResponseResolution;
+  onResolveResponse?: (decision: 'accept' | 'refuse' | 'request_revision') => void;
   draft: string;
   onDraftChange: (value: string) => void;
   onSend: () => void;
@@ -134,6 +142,8 @@ export function DiplomacySheet({
   selectedCountry,
   messages,
   structuredResponse,
+  responseResolution,
+  onResolveResponse,
   draft,
   onDraftChange,
   onSend,
@@ -231,6 +241,7 @@ export function DiplomacySheet({
                     {structuredResponse.redLines.length > 0 && <div><strong>Lignes rouges</strong><ul>{structuredResponse.redLines.map((item) => <li key={item}>— {item}</li>)}</ul></div>}
                   </div>
                   <p className="mt-3 text-xs text-muted-foreground"><strong>Calendrier :</strong> {structuredResponse.timeline}</p>
+                  {responseResolution ? <p className="mt-3 border-t border-border pt-2 text-xs text-primary">{responseResolution.summary}</p> : onResolveResponse && <div className="mt-3 flex flex-wrap gap-2 border-t border-border pt-3"><Button type="button" size="sm" onClick={() => onResolveResponse('accept')}>Accepter l’engagement</Button><Button type="button" size="sm" variant="outline" onClick={() => onResolveResponse('request_revision')}>Demander une révision</Button><Button type="button" size="sm" variant="ghost" onClick={() => onResolveResponse('refuse')}>Refuser</Button></div>}
                 </article>
               )}
               {isThinking && <div className="message foreign"><p className="font-mono text-[9px] text-muted-foreground">ANALYSE DES INTÉRÊTS EN COURS…</p></div>}

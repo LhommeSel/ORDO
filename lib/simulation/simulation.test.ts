@@ -35,7 +35,7 @@ import { runMinorEventCycle } from './minor-events';
 import { rankWorldAttention } from './ai/world-attention';
 import { activeMajorDossierCount, rankStrategicDossierReviews } from './ai/dossier-scheduler';
 import { commitWorldAction } from './ledger';
-import { applyDiplomaticDialogueAIAnswer, openDiplomaticDialogue, requestDiplomaticDialogueAI, sendDiplomaticDialogueMessage } from './diplomacy-dialogue';
+import { applyDiplomaticDialogueAIAnswer, openDiplomaticDialogue, requestDiplomaticDialogueAI, resolveDiplomaticDialogueResponse, sendDiplomaticDialogueMessage } from './diplomacy-dialogue';
 
 test('le scénario 2000 charge un monde cohérent et jouable', () => {
   const state = createFrance2000World();
@@ -930,4 +930,11 @@ test('un dialogue libre conserve la première réponse locale et réserve Luna a
   assert.equal(finalDialogue.lastResponse?.kind, 'counter');
   assert.match(finalDialogue.lastResponse?.position ?? '', /garanties politiques/);
   assert.equal(applied.state.aiJobs[queued.jobId].status, 'resolved');
+
+  const accepted = resolveDiplomaticDialogueResponse(applied.state, opened.dialogueId, 'accept');
+  assert.equal(accepted.ok, true);
+  if (!accepted.ok) return;
+  assert.equal(accepted.state.diplomaticDialogues[opened.dialogueId].status, 'closed');
+  assert.equal(accepted.state.diplomaticDialogues[opened.dialogueId].resolution?.status, 'accepted');
+  assert.ok(Object.values(accepted.state.treaties).some((treaty) => treaty.id.startsWith(`dialogue-commitment-${opened.dialogueId}`) && treaty.status === 'active'));
 });

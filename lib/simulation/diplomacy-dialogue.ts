@@ -80,6 +80,65 @@ export function sendDiplomaticDialogueMessage(state: WorldState, dialogueId: str
   }), speakerId: activeSpeaker };
 }
 
+/**
+ * Le joueur tranche la dernière position structurée reçue. Une acceptation
+ * crée un engagement diplomatique persistant ; un refus ferme le canal ; une
+ * demande de révision relance explicitement un tour IA sans appliquer d'effet.
+ */
+export function resolveDiplomaticDialogueResponse(
+  state: WorldState,
+  dialogueId: string,
+  decision: 'accept' | 'refuse' | 'request_revision',
+) {
+  const dialogue = state.diplomaticDialogues?.[dialogueId];
+  const response = dialogue?.lastResponse;
+  if (!dialogue || !response || dialogue.status !== 'awaiting_player' || dialogue.resolution) {
+    return { ok: false as const, state, error: 'Aucune position structurée ne peut être tranchée pour ce dialogue.' };
+  }
+  const labels = {
+    accept: 'Position acceptée : un engagement diplomatique est inscrit.',
+    refuse: 'Position refusée : le canal diplomatique est fermé.',
+    request_revision: 'Révision demandée : une nouvelle réponse de l’interlocuteur est attendue.',
+  } as const;
+  const messages = {
+    accept: 'Nous acceptons cette position et souhaitons l’inscrire comme engagement diplomatique.',
+    refuse: 'Nous refusons cette position dans sa forme actuelle et ne pouvons pas l’inscrire comme engagement.',
+    request_revision: 'Nous demandons une révision de cette position, notamment sur les garanties et les conditions proposées.',
+  } as const;
+  const nextStatus = decision === 'request_revision' ? 'awaiting_ai' as const : 'closed' as const;
+  const nextDialogue: DiplomaticDialogue = {
+    ...dialogue,
+    status: nextStatus,
+    updatedAt: state.currentDate,
+    resolution: { status: decision === 'request_revision' ? 'revision_requested' : decision === 'accept' ? 'accepted' : 'refused', decidedAt: state.currentDate, summary: labels[decision] },
+    turns: [...dialogue.turns, turn(`${dialogue.id}-player-resolution-${dialogue.turns.length + 1}`, state.currentDate, state.playerCountryId, decision === 'accept' ? 'acceptance' : decision === 'refuse' ? 'refusal' : 'counterproposal', messages[decision])],
+  };
+  const effects: import('./types').WorldEffect[] = [
+    { kind: 'diplomatic_dialogue_patch', dialogueId, patch: nextDialogue, reason: labels[decision], visibility: 'player' },
+  ];
+  if (decision === 'accept') {
+    const treatyId = `dialogue-commitment-${dialogue.id}-${state.sequence + 1}`;
+    effects.push({
+      kind: 'treaty_add',
+      treaty: { id: treatyId, parties: dialogue.participantIds, label: `Engagement diplomatique · ${response.position.slice(0, 100)}`, status: 'active', monthlyEffects: [] },
+      reason: 'L’acceptation du joueur transforme la position diplomatique en engagement persistant.', visibility: 'player',
+    });
+  }
+  const relationEffect = decision === 'accept' ? { relation: 4, trust: 3 } : decision === 'refuse' ? { relation: -3, trust: -2 } : null;
+  if (relationEffect) effects.push(...dialogue.participantIds.filter((id) => id !== state.playerCountryId).map((targetId) => ({
+    kind: 'relation_delta' as const, from: state.playerCountryId, to: targetId, relation: relationEffect.relation, trust: relationEffect.trust,
+    reason: decision === 'accept' ? 'L’acceptation d’un engagement diplomatique renforce la relation.' : 'Le refus d’une position diplomatique dégrade la relation.', visibility: 'player' as const,
+  })));
+  if (dialogue.linkedDossierId && state.strategicDossiers[dialogue.linkedDossierId]) {
+    const dossier = state.strategicDossiers[dialogue.linkedDossierId];
+    effects.push(
+      { kind: 'dossier_patch', dossierId: dossier.id, patch: { commitments: decision === 'accept' ? [...dossier.commitments, `Engagement diplomatique : ${response.position}`] : dossier.commitments, playerStance: messages[decision] }, reason: 'La décision du joueur actualise les engagements du dossier.', visibility: 'player' },
+      { kind: 'dossier_entry_add', dossierId: dossier.id, entry: { id: `dialogue-resolution-${dialogue.id}-${state.sequence + 1}`, date: state.currentDate, title: labels[decision], summary: messages[decision], importance: dossier.importance, actorIds: dialogue.participantIds, requiresDecision: false, visibility: 'player' }, reason: 'La résolution du dialogue est conservée dans la chronologie du dossier.', visibility: 'player' },
+    );
+  }
+  return { ok: true as const, state: commitWorldAction(state, { kind: 'diplomatic', actorId: state.playerCountryId, targetIds: dialogue.participantIds.filter((id) => id !== state.playerCountryId), origin: 'player', visibility: 'player', intent: labels[decision], effects }), decision };
+}
+
 /** Crée une tâche IA seulement après l’accord explicite du joueur. */
 export function requestDiplomaticDialogueAI(state: WorldState, dialogueId: string) {
   const dialogue = state.diplomaticDialogues?.[dialogueId];
@@ -121,6 +180,7 @@ export function applyDiplomaticDialogueAIAnswer(state: WorldState, jobId: string
   } : dialogue.lastResponse;
   const nextDialogue: DiplomaticDialogue = {
     ...dialogue, status: 'awaiting_player', aiMode: 'ai', activeSpeakerId: nextSpeakerId, updatedAt: state.currentDate,
+    resolution: undefined,
     lastResponse: structuredResponse,
     turns: [...dialogue.turns, turn(`${dialogue.id}-${speaker}-${dialogue.turns.length + 1}`, state.currentDate, speaker, 'message', response || outcome.assessment.slice(0, 600))],
   };

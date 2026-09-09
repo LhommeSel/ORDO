@@ -272,6 +272,12 @@ export type DiplomaticDialogueResponse = {
   timeline: string;
 };
 
+export type DiplomaticDialogueResolution = {
+  status: 'accepted' | 'refused' | 'revision_requested';
+  decidedAt: ISODate;
+  summary: string;
+};
+
 export type DiplomaticSession = {
   id: string;
   kind: 'energy_contract';
@@ -308,6 +314,7 @@ export type DiplomaticDialogue = {
   updatedAt: ISODate;
   turns: DiplomaticTurn[];
   lastResponse?: DiplomaticDialogueResponse;
+  resolution?: DiplomaticDialogueResolution;
   linkedDossierId?: string;
 };
 
