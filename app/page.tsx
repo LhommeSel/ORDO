@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Activity, Archive, BrainCircuit, ChevronRight, Database, Factory,
   BellRing, CheckCircle2, Eye, FlaskConical, Fuel, History, Landmark, Map, Pin,
@@ -885,7 +885,7 @@ const dossierImportanceTone: Record<StrategicDossier['importance'], string> = {
 };
 
 function DossiersPanel({ world, selectedId, onSelect, onWorldChange, onNotice, onOpenDiplomacy }: {
-  world: WorldState; selectedId: string | null; onSelect: (id: string) => void; onWorldChange: (world: WorldState) => void; onNotice: (message: string) => void; onOpenDiplomacy?: () => void;
+  world: WorldState; selectedId: string | null; onSelect: (id: string) => void; onWorldChange: (world: WorldState) => void; onNotice: (message: string) => void; onOpenDiplomacy?: (dialogueId: string) => void;
 }) {
   const [dossierAIForId, setDossierAIForId] = useState<string | null>(null);
   const [dossierAIAnswer, setDossierAIAnswer] = useState<AdvisorAIAnswer | null>(null);
@@ -949,7 +949,7 @@ function DossiersPanel({ world, selectedId, onSelect, onWorldChange, onNotice, o
     if (channel === 'dialogue') {
       const opened = openDiplomaticDialogueForDossier(world, selected.id);
       if (!opened.ok) { onNotice(opened.error); return; }
-      onWorldChange(opened.state); onOpenDiplomacy?.();
+      onWorldChange(opened.state); onOpenDiplomacy?.(opened.dialogueId);
       onNotice(`Dialogue ouvert depuis « ${selected.title} » : la première réponse est locale et gratuite.`);
       return;
     }
@@ -1005,10 +1005,11 @@ function DossiersPanel({ world, selectedId, onSelect, onWorldChange, onNotice, o
   </div>;
 }
 
-function DiplomacyPanel({ world, onWorldChange, onNotice }: {
+function DiplomacyPanel({ world, onWorldChange, onNotice, initialDialogueId }: {
   world: WorldState;
   onWorldChange: (world: WorldState) => void;
   onNotice: (message: string) => void;
+  initialDialogueId?: string | null;
 }) {
   const player = world.countries[world.playerCountryId];
   const countries = useMemo(() => Object.values(world.countries)
@@ -1023,6 +1024,13 @@ function DiplomacyPanel({ world, onWorldChange, onNotice }: {
   const [lastAIUsage, setLastAIUsage] = useState<string | undefined>();
   const selectedCountry = world.countries[selectedId] ?? countries[0] ?? player;
   const dialogue = dialogueId ? world.diplomaticDialogues?.[dialogueId] : undefined;
+  useEffect(() => {
+    if (!initialDialogueId || !world.diplomaticDialogues?.[initialDialogueId]) return;
+    const target = world.diplomaticDialogues[initialDialogueId];
+    setDialogueId(initialDialogueId);
+    setSelectedId(target.activeSpeakerId === player.id ? target.participantIds.find((id) => id !== player.id) ?? target.activeSpeakerId : target.activeSpeakerId);
+    setOpen(true);
+  }, [initialDialogueId, world.diplomaticDialogues, player.id]);
   const recentDialogues = Object.values(world.diplomaticDialogues ?? {}).slice().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   const sheetCountries = countries.map((country) => {
     const relation = world.relations[`${player.id}:${country.id}`] ?? world.relations[`${country.id}:${player.id}`];
@@ -1042,6 +1050,12 @@ function DiplomacyPanel({ world, onWorldChange, onNotice }: {
     id: index, author: turn.speakerId === player.id ? 'player' as const : 'foreign' as const,
     text: turn.publicMessage, meta: `${world.countries[turn.speakerId]?.name ?? turn.speakerId} · ${turn.date}`,
   })) ?? [];
+  const quickReplies = dialogue ? [
+    { label: 'Accepter', value: 'Nous acceptons cette orientation sous réserve de formaliser les garanties proposées.' },
+    { label: 'Refuser', value: 'Nous ne pouvons pas accepter cette proposition dans sa forme actuelle.' },
+    { label: 'Contre-proposer', value: 'Nous formulons une contre-proposition et vous invitons à préciser vos conditions minimales.' },
+    { label: 'Demander des précisions', value: 'Avant de nous engager, nous demandons des précisions sur les garanties, le calendrier et les conséquences.' },
+  ] : [];
   const openNewDialogue = () => {
     const ids = participants.length ? participants : (selectedId ? [selectedId] : []);
     if (!ids.length) { onNotice('Sélectionnez au moins un interlocuteur.'); return; }
@@ -1093,7 +1107,7 @@ function DiplomacyPanel({ world, onWorldChange, onNotice }: {
       </div>
       {lastAIUsage && <div className="mt-3 font-mono text-[10px] text-muted-foreground">Dernier appel : {lastAIUsage}</div>}
     </section>
-    <DiplomacySheet open={open} onOpenChange={setOpen} countries={sheetCountries} selectedId={selectedSheetCountry.id} onSelectCountry={(id) => { setSelectedId(id); if (dialogue && !dialogue.participantIds.includes(id)) setDialogueId(null); }} selectedCountry={selectedSheetCountry} messages={messages} draft={draft} onDraftChange={setDraft} onSend={send} isThinking={isThinking} playerCountryName={player.name} participantCount={dialogue?.participantIds.length ?? (participants.length + 1)} activeSpeakerLabel={dialogue ? (world.countries[dialogue.activeSpeakerId]?.name ?? dialogue.activeSpeakerId) : undefined} canRequestAI={Boolean(dialogue && dialogue.status === 'awaiting_ai')} onRequestAI={askAI} memories={memories} onResolveEvent={() => undefined} />
+    <DiplomacySheet open={open} onOpenChange={setOpen} countries={sheetCountries} selectedId={selectedSheetCountry.id} onSelectCountry={(id) => { setSelectedId(id); if (dialogue && !dialogue.participantIds.includes(id)) setDialogueId(null); }} selectedCountry={selectedSheetCountry} messages={messages} draft={draft} onDraftChange={setDraft} onSend={send} isThinking={isThinking} playerCountryName={player.name} participantCount={dialogue?.participantIds.length ?? (participants.length + 1)} activeSpeakerLabel={dialogue ? (world.countries[dialogue.activeSpeakerId]?.name ?? dialogue.activeSpeakerId) : undefined} statusLabel={!dialogue ? 'Aucun canal ouvert — rédigez le premier message' : dialogue.status === 'awaiting_ai' ? 'Réponse IA disponible — validation explicite nécessaire' : dialogue.status === 'awaiting_player' ? 'Votre tour — vous pouvez répondre ou demander une option structurée' : 'Canal fermé'} quickReplies={dialogue?.status === 'awaiting_player' ? quickReplies : []} onQuickReply={(value) => setDraft(value)} canRequestAI={Boolean(dialogue && dialogue.status === 'awaiting_ai')} onRequestAI={askAI} memories={memories} onResolveEvent={() => undefined} />
   </div>;
 }
 
@@ -1109,6 +1123,7 @@ export default function Home() {
   const [world, setWorld] = useState<WorldState>(() => createFrance2000World());
   const [panel, setPanel] = useState<Panel>('world');
   const [selectedDossierId, setSelectedDossierId] = useState<string | null>(null);
+  const [selectedDialogueId, setSelectedDialogueId] = useState<string | null>(null);
   const [notice, setNotice] = useState('Scénario France · 1er janvier 2000 chargé.');
   const [isAdvancing, setIsAdvancing] = useState(false);
   const player = world.countries[world.playerCountryId];
@@ -1169,8 +1184,8 @@ export default function Home() {
       {panel === 'economy' && <EconomyPanel world={world} />}
       {panel === 'energy' && <EnergyPanel world={world} />}
       {panel === 'industry' && <IndustryPanel world={world} />}
-      {panel === 'dossiers' && <DossiersPanel world={world} selectedId={selectedDossierId} onSelect={setSelectedDossierId} onWorldChange={setWorld} onNotice={setNotice} onOpenDiplomacy={() => setPanel('diplomacy')} />}
-      {panel === 'diplomacy' && <DiplomacyPanel world={world} onWorldChange={setWorld} onNotice={setNotice} />}
+      {panel === 'dossiers' && <DossiersPanel world={world} selectedId={selectedDossierId} onSelect={setSelectedDossierId} onWorldChange={setWorld} onNotice={setNotice} onOpenDiplomacy={(dialogueId) => { setSelectedDialogueId(dialogueId); setPanel('diplomacy'); }} />}
+      {panel === 'diplomacy' && <DiplomacyPanel world={world} onWorldChange={setWorld} onNotice={setNotice} initialDialogueId={selectedDialogueId} />}
       {panel === 'advisor' && <AdvisorPanel world={world} onWorldChange={setWorld} onNotice={setNotice} />}
       {panel === 'ledger' && <LedgerPanel world={world} />}
     </div>

@@ -52,6 +52,8 @@ type SheetMessage = {
   meta?: string;
 };
 
+type QuickReply = { label: string; value: string };
+
 type DiplomacySheetProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -67,6 +69,9 @@ type DiplomacySheetProps = {
   playerCountryName: string;
   participantCount?: number;
   activeSpeakerLabel?: string;
+  statusLabel?: string;
+  quickReplies?: QuickReply[];
+  onQuickReply?: (value: string) => void;
   canRequestAI?: boolean;
   onRequestAI?: () => void;
   aiRequestLabel?: string;
@@ -124,6 +129,9 @@ export function DiplomacySheet({
   playerCountryName,
   participantCount = 2,
   activeSpeakerLabel,
+  statusLabel,
+  quickReplies = [],
+  onQuickReply,
   canRequestAI,
   onRequestAI,
   aiRequestLabel = 'Demander la réponse IA',
@@ -163,7 +171,7 @@ export function DiplomacySheet({
           <section className="diplomacy-conversation">
             <div className="diplomacy-country-heading">
               <span className="text-3xl" aria-hidden="true">{selectedCountry.flag}</span>
-              <div><p className="font-mono text-[8px] tracking-[0.12em] text-muted-foreground">CANAL {participantCount > 2 ? 'MULTILATÉRAL' : 'BILATÉRAL'} CHIFFRÉ</p><h2>{playerCountryName} — {selectedCountry.name}</h2>{activeSpeakerLabel && <p className="mt-1 text-xs text-amber-300">Prochain intervenant : {activeSpeakerLabel}</p>}</div>
+              <div><p className="font-mono text-[8px] tracking-[0.12em] text-muted-foreground">CANAL {participantCount > 2 ? 'MULTILATÉRAL' : 'BILATÉRAL'} CHIFFRÉ</p><h2>{playerCountryName} — {selectedCountry.name}</h2>{statusLabel && <p className="mt-1 text-xs text-sky-300">{statusLabel}</p>}{activeSpeakerLabel && <p className="mt-1 text-xs text-amber-300">Prochain intervenant : {activeSpeakerLabel}</p>}</div>
             </div>
 
             {activeEvent && activeEvent.countryId === selectedId && !activeEvent.resolved && (
@@ -206,6 +214,7 @@ export function DiplomacySheet({
             <div className="diplomacy-composer">
               <label htmlFor="diplomacy-sheet-message">DIRECTIVE LIBRE — ÉCRIVEZ VOTRE POSITION OU VOTRE PROPOSITION</label>
               {canRequestAI && onRequestAI && <Button type="button" variant="outline" onClick={onRequestAI} disabled={isThinking} className="mb-2 h-auto w-full justify-start rounded-none py-2 text-left"><Bot className="size-4" />{aiRequestLabel}</Button>}
+              {quickReplies.length > 0 && onQuickReply && <div className="mb-2 flex flex-wrap gap-2">{quickReplies.map((reply) => <Button key={reply.label} type="button" size="sm" variant="outline" onClick={() => onQuickReply(reply.value)} disabled={isThinking}>{reply.label}</Button>)}</div>}
               <div className="flex items-end gap-2">
                 <Textarea
                   id="diplomacy-sheet-message"
