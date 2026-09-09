@@ -57,7 +57,9 @@ test('le pouls mondial IA ne peut créer que des mises à jour de dossiers cité
     synthesis: 'Les autorités financières réévaluent les risques. Le dossier reste évolutif.',
     requestedFactIds: [],
     proposals: [{
-      dossierId: 'current-dotcom-exuberance', title: 'Vigilance financière accrue', kind: 'economic', importance: 'major',
+      // Luna recopiait naturellement le factId. Le moteur doit accepter ce
+      // préfixe sans créer un second dossier.
+      dossierId: 'dossier:current-dotcom-exuberance', title: 'Vigilance financière accrue', kind: 'economic', importance: 'major',
       actorIds: ['USA', 'FRA'], regionTags: ['Europe', 'Amérique du Nord'], phase: 'Réévaluation des expositions', trend: 'escalating',
       summary: 'Les autorités et investisseurs réévaluent progressivement leur exposition aux valeurs technologiques.',
       requiresPlayerDecision: true, playerDecision: 'Déterminer si la France prépare une surveillance prudentielle ciblée.',
@@ -68,11 +70,34 @@ test('le pouls mondial IA ne peut créer que des mises à jour de dossiers cité
   const dossier = applied.state.strategicDossiers['current-dotcom-exuberance'];
   assert.ok(dossier.entries.some((entry) => entry.title === 'Vigilance financière accrue'));
   assert.ok(dossier.pendingDecisions.includes('Déterminer si la France prépare une surveillance prudentielle ciblée.'));
+  assert.deepEqual(applied.updatedDossierIds, ['current-dotcom-exuberance']);
   const relation = applied.state.relations['USA:FRA'];
   assert.ok(relation);
   assert.equal(relation.relation - (initial.relations['USA:FRA']?.relation ?? 50), 3);
   assert.equal(relation.trust - (initial.relations['USA:FRA']?.trust ?? 50), -3);
   assert.equal(applied.relationChanges, 1);
+});
+
+test('le pouls ne transforme jamais un dossier inconnu en nouveau dossier', () => {
+  const initial = createFrance2000World();
+  const request = createWorldPulseRequest(initial, initial.actions.length, 1, 'test-world-pulse-session');
+  const item = request.pulses.find((candidate) => candidate.kind === 'world_autonomy');
+  assert.ok(item);
+  if (!item) return;
+  const fact = item.context.facts.find((candidate) => candidate.id === 'world:economy');
+  assert.ok(fact);
+  if (!fact) return;
+  const applied = applyWorldPulseAnswer(initial, item, {
+    headline: 'Tentative invalide', synthesis: 'Cette mise à jour ne doit rien créer.', requestedFactIds: [],
+    proposals: [{
+      dossierId: 'dossier-inexistant', title: 'Mise à jour invalide', kind: 'economic', importance: 'moderate',
+      actorIds: ['FRA'], regionTags: [], phase: 'Sans effet', trend: 'stable', summary: 'Le moteur doit ignorer ce dossier absent.',
+      requiresPlayerDecision: false, playerDecision: null, factIds: [fact.id], relationEffects: [],
+    }],
+  });
+  assert.equal(Object.keys(applied.state.strategicDossiers).length, Object.keys(initial.strategicDossiers).length);
+  assert.deepEqual(applied.createdDossierIds, []);
+  assert.deepEqual(applied.updatedDossierIds, []);
 });
 
 test('le pouls de réaction conserve les choix du joueur faits avant le clic d’avance', () => {

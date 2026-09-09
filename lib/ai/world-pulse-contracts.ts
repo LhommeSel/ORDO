@@ -97,6 +97,28 @@ export type WorldPulseAnswer = {
   requestedFactIds: string[];
 };
 
+/**
+ * Les faits de dossier sont préfixés par `dossier:` pour rester identifiables
+ * dans le contexte, alors que la sauvegarde est indexée par l'identifiant nu.
+ * Le modèle peut recopier le factId : on retire donc un unique préfixe connu.
+ */
+export function normalizeWorldPulseDossierId(value: string | null): string | null {
+  if (value === null) return null;
+  const trimmed = value.trim();
+  return trimmed.startsWith('dossier:') ? trimmed.slice('dossier:'.length) : trimmed;
+}
+
+/** Rend les réponses compatibles avec l'index des dossiers du moteur. */
+export function normalizeWorldPulseAnswerDossierIds(answer: WorldPulseAnswer): WorldPulseAnswer {
+  return {
+    ...answer,
+    proposals: answer.proposals.map((proposal) => ({
+      ...proposal,
+      dossierId: normalizeWorldPulseDossierId(proposal.dossierId),
+    })),
+  };
+}
+
 export type WorldPulseItemResult =
   | { id: string; kind: WorldPulseKind; ok: true; answer: WorldPulseAnswer; usage: Omit<AdvisorAIUsage, 'remainingSessionRequestsToday'> }
   | { id: string; kind: WorldPulseKind; ok: false; message: string };

@@ -7,7 +7,7 @@ import type {
   WorldPulseRequestItem,
   WorldPulseResponse,
 } from '../../ai/world-pulse-contracts';
-import { ORDO_WORLD_PULSE_SCHEMA_VERSION } from '../../ai/world-pulse-contracts';
+import { ORDO_WORLD_PULSE_SCHEMA_VERSION, normalizeWorldPulseDossierId } from '../../ai/world-pulse-contracts';
 import { commitWorldAction } from '../ledger';
 import type { DossierImportance, DossierKind, StrategicDossier, WorldEffect, WorldState } from '../types';
 import { collectFacts } from './context';
@@ -180,9 +180,13 @@ export function applyWorldPulseAnswer(
   answer.proposals.forEach((proposal, index) => {
     const actorIds = unique(proposal.actorIds).filter((id) => Boolean(state.countries[id]));
     const citedFacts = unique(proposal.factIds).filter((id) => knownFactIds.has(id));
+    const requestedDossierId = normalizeWorldPulseDossierId(proposal.dossierId);
     if (actorIds.length === 0 || citedFacts.length === 0
-      || (proposal.dossierId !== null && !knownFactIds.has(`dossier:${proposal.dossierId}`))) return;
-    const existing = proposal.dossierId ? state.strategicDossiers[proposal.dossierId] : undefined;
+      || (requestedDossierId !== null && !knownFactIds.has(`dossier:${requestedDossierId}`))) return;
+    const existing = requestedDossierId ? state.strategicDossiers[requestedDossierId] : undefined;
+    // Une mise à jour déclarée ne doit jamais devenir un nouveau dossier si le
+    // monde a changé depuis la compilation du contexte IA.
+    if (requestedDossierId !== null && !existing) return;
     const dossierId = existing ? existing.id : `${item.id}-dossier-${index + 1}`;
     const playerDecision = proposal.requiresPlayerDecision
       && actorIds.includes(state.playerCountryId)

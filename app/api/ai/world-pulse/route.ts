@@ -1,5 +1,6 @@
 import {
   isWorldPulseAnswer,
+  normalizeWorldPulseAnswerDossierIds,
   parseWorldPulseRequest,
   worldPulseAIJsonSchema,
   type WorldPulseItemResult,
@@ -56,7 +57,7 @@ function instructionFor(item: WorldPulseRequestItem) {
     'N’invente aucun chiffre, acteur, traité, guerre, fait historique ou résultat déjà acquis.',
     'Tu peux imaginer une suite nouvelle seulement comme évolution prospective à inscrire au monde simulé, jamais comme un fait réel extérieur à ORDO.',
     'Chaque proposition doit citer au moins un factId transmis et ne peut utiliser que des pays présents dans les faits.',
-    'dossierId vaut exactement un dossier existant cité dans les faits si tu le mets à jour ; il vaut null pour créer un nouveau dossier.',
+    'dossierId vaut l’identifiant brut d’un dossier existant si tu le mets à jour ; si le fait cité est « dossier:current-dotcom-exuberance », écris exactement « current-dotcom-exuberance », jamais « dossier:current-dotcom-exuberance ». Il vaut null pour créer un nouveau dossier.',
     'relationEffects ne sont que des pressions limitées : elles ne signent pas un accord, ne déclenchent pas une guerre et ne modifient aucune donnée économique.',
     'requiresPlayerDecision ne vaut true que pour une décision importante impliquant directement le pays du joueur ; sinon false et playerDecision null.',
     'Style très compact : headline une ligne, synthesis deux phrases maximum, chaque summary trois phrases courtes maximum.',
@@ -140,17 +141,19 @@ export async function POST(request: Request) {
         console.error('ORDO world pulse invalid output', { requestId: parsed.requestId, kind: item.kind });
         return { id: item.id, kind: item.kind, ok: false, message: 'La réponse structurée de cette voie a été rejetée.' };
       }
+      const normalizedAnswer = normalizeWorldPulseAnswerDossierIds(answer);
       const factIds = new Set(item.context.facts.map((fact) => fact.id));
       const actorIds = new Set(item.context.facts.flatMap((fact) => fact.entityIds));
-      const grounded = answer.proposals.every((proposal) => proposal.factIds.some((id) => factIds.has(id))
+      const grounded = normalizedAnswer.proposals.every((proposal) => proposal.factIds.some((id) => factIds.has(id))
         && proposal.actorIds.every((id) => actorIds.has(id))
-        && proposal.relationEffects.every((effect) => actorIds.has(effect.from) && actorIds.has(effect.to)));
+        && proposal.relationEffects.every((effect) => actorIds.has(effect.from) && actorIds.has(effect.to))
+        && (proposal.dossierId === null || factIds.has(`dossier:${proposal.dossierId}`)));
       if (!grounded) {
         console.error('ORDO world pulse grounding failure', { requestId: parsed.requestId, kind: item.kind });
         return { id: item.id, kind: item.kind, ok: false, message: 'La réponse de cette voie cite des éléments absents du contexte.' };
       }
       return {
-        id: item.id, kind: item.kind, ok: true, answer,
+        id: item.id, kind: item.kind, ok: true, answer: normalizedAnswer,
         usage: { model: policy.model, inputTokens: usage.inputTokens, outputTokens: usage.outputTokens, estimatedCostUsd },
       };
     };
