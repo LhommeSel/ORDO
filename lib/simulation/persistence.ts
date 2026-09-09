@@ -105,7 +105,7 @@ async function gunzipBytes(value: ArrayBuffer | Uint8Array) {
   if (typeof DecompressionStream === 'undefined') return new TextDecoder().decode(bytes);
   const stream = new DecompressionStream('gzip');
   const writer = stream.writable.getWriter();
-  await writer.write(bytes);
+  await writer.write(bytes as unknown as BufferSource);
   await writer.close();
   return new TextDecoder().decode(await new Response(stream.readable).arrayBuffer());
 }

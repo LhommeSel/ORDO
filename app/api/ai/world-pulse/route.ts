@@ -154,7 +154,16 @@ export async function POST(request: Request) {
         return { id: item.id, kind: item.kind, ok: false, message: 'La voie IA n’a pas pu être jointe.' };
       }
       if (!upstream.ok) {
-        console.error('ORDO world pulse upstream failure', { requestId: parsed.requestId, kind: item.kind, status: upstream.status });
+        const errorBody = await upstream.clone().json().catch(() => null) as Record<string, unknown> | null;
+        const upstreamError = errorBody?.error && typeof errorBody.error === 'object' ? errorBody.error as Record<string, unknown> : {};
+        console.error('ORDO world pulse upstream failure', {
+          requestId: parsed.requestId,
+          kind: item.kind,
+          status: upstream.status,
+          type: typeof upstreamError.type === 'string' ? upstreamError.type : undefined,
+          code: typeof upstreamError.code === 'string' ? upstreamError.code : undefined,
+          message: typeof upstreamError.message === 'string' ? upstreamError.message.slice(0, 240) : undefined,
+        });
         return { id: item.id, kind: item.kind, ok: false, message: 'La voie IA n’a pas pu traiter cette partie du tour.' };
       }
       let payload: Record<string, unknown>;

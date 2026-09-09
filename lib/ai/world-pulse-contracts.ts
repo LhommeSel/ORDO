@@ -252,7 +252,7 @@ export function isWorldPulseAnswer(value: unknown, kind: WorldPulseKind): value 
     if (!isRecord(proposal)) return false;
     const actorIds = proposal.actorIds;
     const autonomousAction = proposal.autonomousAction;
-    const validAutonomousAction = autonomousAction === undefined || (isRecord(autonomousAction)
+    const validAutonomousAction = autonomousAction === undefined || autonomousAction === null || (isRecord(autonomousAction)
       && isText(autonomousAction.actorId, 80, 1)
       && isTextArray(autonomousAction.targetIds, 3, 80)
       && typeof autonomousAction.category === 'string' && actionCategories.includes(autonomousAction.category as CommonActionCategory)
@@ -286,7 +286,7 @@ const relationEffectSchema = {
 
 const proposalSchema = {
   type: 'object', additionalProperties: false,
-  required: ['dossierId', 'title', 'kind', 'importance', 'actorIds', 'regionTags', 'phase', 'trend', 'summary', 'requiresPlayerDecision', 'playerDecision', 'factIds', 'relationEffects'],
+  required: ['dossierId', 'title', 'kind', 'importance', 'actorIds', 'regionTags', 'phase', 'trend', 'summary', 'requiresPlayerDecision', 'playerDecision', 'factIds', 'relationEffects', 'autonomousAction'],
   properties: {
     dossierId: { anyOf: [{ type: 'string', maxLength: 120 }, { type: 'null' }] },
     title: { type: 'string', maxLength: 180 }, kind: { type: 'string', enum: dossierKinds }, importance: { type: 'string', enum: importance },
@@ -298,15 +298,17 @@ const proposalSchema = {
     factIds: { type: 'array', maxItems: 8, items: { type: 'string', maxLength: 160 } },
     relationEffects: { type: 'array', maxItems: 4, items: relationEffectSchema },
     autonomousAction: {
+      anyOf: [{ type: 'null' }, {
       type: 'object', additionalProperties: false,
-      required: ['actorId', 'targetIds', 'category', 'objective'],
+      required: ['actorId', 'targetIds', 'category', 'objective', 'operation'],
       properties: {
         actorId: { type: 'string', maxLength: 80 },
         targetIds: { type: 'array', maxItems: 3, items: { type: 'string', maxLength: 80 } },
         category: { type: 'string', enum: actionCategories },
         objective: { type: 'string', minLength: 12, maxLength: 600 },
-        operation: { type: 'string', enum: ['contact', 'cooperation', 'defense_pact', 'mediation', 'information_sharing'] },
+        operation: { anyOf: [{ type: 'string', enum: ['contact', 'cooperation', 'defense_pact', 'mediation', 'information_sharing'] }, { type: 'null' }] },
       },
+      }],
     },
   },
 } as const;
