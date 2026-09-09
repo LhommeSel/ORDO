@@ -42,6 +42,7 @@ import {
   type AdvisorAIResponse,
   type AdvisorAIUsage,
 } from '@/lib/ai/contracts';
+import type { WorldPulseResponse } from '@/lib/ai/world-pulse-contracts';
 
 type Panel = 'world' | 'map' | 'economy' | 'energy' | 'industry' | 'dossiers' | 'diplomacy' | 'advisor' | 'ledger';
 
@@ -52,14 +53,33 @@ type AdvisorAIAuditEntry = {
   result: { ok: true; answer: AdvisorAIAnswer; usage: AdvisorAIUsage; source?: 'llm' | 'local_fallback' } | { ok: false; message: string; usage?: AdvisorAIUsage; diagnostics?: { issues: string[]; truncated: boolean } };
 };
 
+type WorldPulseAIAuditEntry = {
+  id: string;
+  createdAt: string;
+  currentDate: ISODate;
+  response: WorldPulseResponse;
+};
+
 const advisorAuditStorageKey = 'ordo-advisor-ai-audit-v1';
 const advisorAuditMaximumEntries = 20;
+const worldPulseAuditStorageKey = 'ordo-world-pulse-ai-audit-v1';
+const worldPulseAuditMaximumEntries = 24;
 
 function readAdvisorAudit(): AdvisorAIAuditEntry[] {
   if (typeof window === 'undefined') return [];
   try {
     const parsed: unknown = JSON.parse(localStorage.getItem(advisorAuditStorageKey) ?? '[]');
     return Array.isArray(parsed) ? parsed.slice(0, advisorAuditMaximumEntries) as AdvisorAIAuditEntry[] : [];
+  } catch {
+    return [];
+  }
+}
+
+function readWorldPulseAudit(): WorldPulseAIAuditEntry[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(worldPulseAuditStorageKey) ?? '[]');
+    return Array.isArray(parsed) ? parsed.slice(0, worldPulseAuditMaximumEntries) as WorldPulseAIAuditEntry[] : [];
   } catch {
     return [];
   }
@@ -579,6 +599,17 @@ function EnergyNegotiationPanel({
         <Button variant="ghost" onClick={onClose}>Abandonner</Button>
       </div>}
     </div>
+  </section>;
+}
+
+function WorldPulseAuditPanel({ entries, onClear }: { entries: WorldPulseAIAuditEntry[]; onClear: () => void }) {
+  return <section className="border border-sky-400/35 bg-card/70 p-4">
+    <div className="flex flex-wrap items-start justify-between gap-3"><div><div className="font-mono text-[10px] uppercase tracking-wider text-sky-300">Traçabilité des pouls mondiaux</div><h2 className="mt-1 text-lg font-semibold">Réponses IA reçues à chaque avancée</h2><p className="mt-1 text-xs text-muted-foreground">Journal local de test : les réponses complètes sont conservées sur cet appareil, jamais la clé API.</p></div>{entries.length > 0 && <Button size="sm" variant="outline" onClick={onClear}>Effacer le journal</Button>}</div>
+    {!entries.length && <div className="mt-4 border border-dashed border-border p-4 text-sm text-muted-foreground">Aucun pouls IA enregistré. Avancez la simulation pour capturer les deux voies spécialisées.</div>}
+    <div className="mt-4 space-y-3">{entries.map((entry, index) => <details key={entry.id} className="border border-border bg-background/35 p-3" open={index === 0}>
+      <summary className="cursor-pointer list-none"><div className="flex flex-wrap items-center justify-between gap-2 pr-5"><span className="font-semibold">Pouls du {entry.currentDate}</span><span className={`font-mono text-[10px] ${entry.response.ok ? 'text-emerald-300' : 'text-amber-300'}`}>{entry.response.ok ? `${entry.response.usage.model} · $${entry.response.usage.estimatedCostUsd.toFixed(4)}` : `échec · ${entry.response.code}`}</span></div><div className="mt-1 font-mono text-[10px] text-muted-foreground">{new Date(entry.createdAt).toLocaleString('fr-FR')} · {entry.response.ok ? `${entry.response.results.length} voie(s)` : 'réponse globale indisponible'}</div></summary>
+      {entry.response.ok ? <div className="mt-3 space-y-3">{entry.response.results.map((result) => <div key={result.id} className="border border-border bg-muted/15 p-3"><div className="flex flex-wrap items-center justify-between gap-2"><b>{result.kind === 'player_reaction' ? 'Réaction aux actions du joueur' : 'Autonomie du monde'}</b><span className="font-mono text-[10px] text-muted-foreground">{result.ok ? `${result.usage.inputTokens} in · ${result.usage.outputTokens} out · ${(result.usage.latencyMs / 1000).toFixed(1)} s` : 'réponse rejetée'}</span></div>{result.ok ? <pre className="mt-2 max-h-[34rem] overflow-auto whitespace-pre-wrap break-words font-mono text-[10px] text-muted-foreground">{JSON.stringify(result.answer, null, 2)}</pre> : <div className="mt-2 text-xs text-amber-200">{result.message}</div>}</div>)}</div> : <div className="mt-3 text-xs text-amber-200">{entry.response.message}</div>}
+    </details>)}</div>
   </section>;
 }
 
@@ -1133,6 +1164,7 @@ function LedgerPanel({ world }: { world: WorldState }) {
 
 export default function Home() {
   const [world, setWorld] = useState<WorldState>(() => createFrance2000World());
+  const [pulseAudit, setPulseAudit] = useState<WorldPulseAIAuditEntry[]>(readWorldPulseAudit);
   const [panel, setPanel] = useState<Panel>('world');
   const [selectedDossierId, setSelectedDossierId] = useState<string | null>(null);
   const [selectedDialogueId, setSelectedDialogueId] = useState<string | null>(null);
@@ -1159,6 +1191,13 @@ export default function Home() {
       const lastTimeAdvance = before.actions.map((action) => action.kind).lastIndexOf('time_advance');
       const request = createWorldPulseRequest(result.state, lastTimeAdvance + 1, result.elapsedMonths, worldPulseSessionId());
       const pulse = await executeWorldPulse(result.state, request);
+      if (pulse.response) {
+        setPulseAudit((previous) => {
+          const next = [{ id: `${request.pulseId}-${Date.now()}`, createdAt: new Date().toISOString(), currentDate: result.state.currentDate, response: pulse.response! }, ...previous].slice(0, worldPulseAuditMaximumEntries);
+          localStorage.setItem(worldPulseAuditStorageKey, JSON.stringify(next));
+          return next;
+        });
+      }
       setWorld(pulse.state);
       const touched = pulse.createdDossierIds.length + pulse.updatedDossierIds.length;
       if (pulse.createdDossierIds.length) setSelectedDossierId(pulse.createdDossierIds[0]);
@@ -1193,6 +1232,7 @@ export default function Home() {
     }
   };
   const reset = () => { setWorld(createFrance2000World()); setNotice('Scénario 2000 réinitialisé.'); };
+  const clearPulseAudit = () => { localStorage.removeItem(worldPulseAuditStorageKey); setPulseAudit([]); };
 
   return <main className="min-h-screen bg-background text-foreground">
     <header className="sticky top-0 z-20 border-b border-border bg-background/95 backdrop-blur">
@@ -1207,7 +1247,7 @@ export default function Home() {
     </header>
     <div className="border-b border-border bg-muted/20"><div className="mx-auto flex max-w-[1600px] items-center justify-between gap-4 px-4 py-2 text-xs text-muted-foreground lg:px-6"><span>{notice}</span><span className="hidden font-mono sm:block">{autonomousCount} acteurs autonomes · seed {world.seed} · séquence {world.sequence}</span></div></div>
     <div className="mx-auto max-w-[1600px] p-4 lg:p-6">
-      {panel === 'world' && <WorldPanel world={world} onWorldChange={setWorld} onNotice={setNotice} />}
+      {panel === 'world' && <><WorldPanel world={world} onWorldChange={setWorld} onNotice={setNotice} /><div className="mt-4"><WorldPulseAuditPanel entries={pulseAudit} onClear={clearPulseAudit} /></div></>}
       {panel === 'map' && <MapPanel world={world} />}
       {panel === 'economy' && <EconomyPanel world={world} />}
       {panel === 'energy' && <EnergyPanel world={world} />}
