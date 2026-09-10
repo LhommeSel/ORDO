@@ -1092,6 +1092,7 @@ export type DossierDecision = {
   availableChannels: DossierDecisionChannel[];
   status: 'pending' | 'resolved' | 'expired';
   resolvedAt?: ISODate;
+  expiredAt?: ISODate;
   resolutionChannel?: DossierDecisionChannel;
 };
 
@@ -1124,6 +1125,8 @@ export type StrategicDossier = {
   escalationCount?: number;
   /** Dernière date à laquelle le moteur a relancé ce dossier. */
   lastEscalatedAt?: ISODate;
+  /** Date de mise en sommeil d’un dossier secondaire sans décision active. */
+  sleepingAt?: ISODate;
   relatedCurrentIds: string[];
   relatedActionIds: string[];
   entries: DossierEntry[];

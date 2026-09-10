@@ -56,7 +56,7 @@ function meaningfulSignalsSince(state: WorldState, dossier: StrategicDossier, si
 export function rankStrategicDossierReviews(state: WorldState, limit = 4): StrategicDossierReview[] {
   return Object.values(state.strategicDossiers ?? {})
     .filter((dossier): dossier is StrategicDossier & { importance: 'major' | 'critical' } =>
-      dossier.status !== 'resolved' && importanceRank[dossier.importance] >= importanceRank.major,
+      dossier.status !== 'resolved' && !dossier.sleepingAt && importanceRank[dossier.importance] >= importanceRank.major,
     )
     .map((dossier) => {
       const lastReview = dossier.lastAutonomousReviewAt ?? dossier.updatedAt;

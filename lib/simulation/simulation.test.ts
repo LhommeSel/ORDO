@@ -27,7 +27,7 @@ import {
 } from './power-struggles';
 import { interpretPlayerIntent, rankEnergySuppliers } from './intent';
 import {
-  advanceDossierEscalation, dossierUnreadCount, dossiersRequiringAttention, markDossierViewed, resolveDossierDecision, setDossierFollowed,
+  advanceDossierEscalation, advanceDossierLifecycle, dossierUnreadCount, dossiersRequiringAttention, markDossierViewed, reactivateDossier, resolveDossierDecision, setDossierFollowed,
 } from './dossiers';
 import { applyWorldPulseAnswer, createWorldPulseRequest, executeWorldPulse } from './ai/world-pulse';
 import { parseWorldPulseRequest } from '../ai/world-pulse-contracts';
@@ -618,6 +618,21 @@ test('le silence explicite résout la décision mais dégrade le canal sur un do
   assert.equal(dossier.pendingDecisions.length, 0);
   assert.equal(dossier.decisionRecords?.at(-1)?.resolutionChannel, 'explicit_silence');
   assert.equal(dossier.trend, 'escalating');
+});
+
+test('un dossier secondaire ancien passe en sommeil sans perdre son historique', () => {
+  const initial = createFrance2000World();
+  const source = initial.strategicDossiers['current-lisbon-convergence'];
+  const pending = { ...source, pendingDecisions: ['Choisir un calendrier de coopération.'], updatedAt: '2000-01-01' as const };
+  const stale = { ...initial, currentDate: '2000-08-01' as const, strategicDossiers: { ...initial.strategicDossiers, [source.id]: pending } };
+  const sleeping = advanceDossierLifecycle(stale).strategicDossiers[source.id];
+  assert.equal(sleeping.pendingDecisions.length, 0);
+  assert.equal(sleeping.sleepingAt, '2000-08-01');
+  assert.equal(sleeping.decisionRecords?.at(-1)?.status, 'expired');
+  assert.equal(sleeping.entries.at(-1)?.title, 'Dossier mis en sommeil');
+  const active = reactivateDossier(advanceDossierLifecycle(stale), source.id).strategicDossiers[source.id];
+  assert.equal(active.sleepingAt, undefined);
+  assert.equal(active.phase, 'Réactivé par le joueur');
 });
 
 test('la sauvegarde et le registre permettent de reconstruire exactement un état', () => {

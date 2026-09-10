@@ -28,6 +28,7 @@ export function dossierUnreadCount(state: WorldState, dossierId: string) {
 export function dossiersRequiringAttention(state: WorldState) {
   return Object.values(state.strategicDossiers ?? {})
     .filter((dossier) => dossier.status !== 'resolved' && (dossier.followed || dossier.autoTracked))
+    .filter((dossier) => !dossier.sleepingAt || dossier.followed)
     .filter((dossier) => dossier.pendingDecisions.length > 0 || dossierUnreadCount(state, dossier.id) > 0)
     .sort((a, b) =>
       Number(b.pendingDecisions.length > 0) - Number(a.pendingDecisions.length > 0)
@@ -156,6 +157,65 @@ export function advanceDossierEscalation(state: WorldState) {
     });
   }
   return next;
+}
+
+/**
+ * Met en sommeil les arbitrages secondaires réellement abandonnés. Cela ne
+ * s’applique ni aux dossiers majeurs/critique, ni aux dossiers épinglés, et ne
+ * supprime jamais l’historique : les décisions passent simplement à expired.
+ */
+export function advanceDossierLifecycle(state: WorldState) {
+  let next = state;
+  for (const dossier of Object.values(state.strategicDossiers ?? {})) {
+    if (dossier.status === 'resolved' || dossier.sleepingAt || dossier.followed || dossier.autoTracked) continue;
+    if (dossier.importance === 'major' || dossier.importance === 'critical' || dossier.pendingDecisions.length === 0) continue;
+    const records = dossierDecisionRecords(dossier);
+    const stale = records.length > 0 && records.every((record) => record.urgency === 'low' || record.urgency === 'medium')
+      && records.every((record) => monthsBetween(record.createdAt, state.currentDate) >= 6);
+    if (!stale) continue;
+    const expiredPrompts = new Set(dossier.pendingDecisions);
+    const decisionRecords = [
+      ...(dossier.decisionRecords ?? []).filter((record) => !expiredPrompts.has(record.prompt)),
+      ...records.map((record) => ({ ...record, status: 'expired' as const, expiredAt: state.currentDate })),
+    ];
+    next = commitWorldAction(next, {
+      kind: 'political', actorId: state.playerCountryId,
+      targetIds: dossier.actorIds.filter((id) => id !== state.playerCountryId), origin: 'time', visibility: 'player',
+      intent: `Mettre en sommeil le dossier « ${dossier.title} »`,
+      effects: [
+        {
+          kind: 'dossier_patch', dossierId: dossier.id,
+          patch: { pendingDecisions: [], decisionRecords, sleepingAt: state.currentDate, status: 'deescalating', trend: 'deescalating', phase: 'Mise en sommeil' },
+          reason: 'Une décision secondaire trop ancienne est mise en sommeil sans effacer l’historique.', visibility: 'player',
+        },
+        {
+          kind: 'dossier_entry_add', dossierId: dossier.id,
+          entry: {
+            id: `dossier-sleep-${dossier.id}-${state.currentDate}`,
+            date: state.currentDate, title: 'Dossier mis en sommeil',
+            summary: 'Aucun arbitrage récent ne justifie de maintenir ce dossier dans les alertes actives. Il reste réactivable à tout moment.',
+            importance: dossier.importance, actorIds: dossier.actorIds, requiresDecision: false, visibility: 'player',
+          },
+          reason: 'Le cycle de vie réduit le bruit des dossiers secondaires inactifs.', visibility: 'player',
+        },
+      ],
+    });
+  }
+  return next;
+}
+
+export function reactivateDossier(state: WorldState, dossierId: string) {
+  const dossier = state.strategicDossiers?.[dossierId];
+  if (!dossier?.sleepingAt) return state;
+  return commitWorldAction(state, {
+    kind: 'political', actorId: state.playerCountryId,
+    targetIds: dossier.actorIds.filter((id) => id !== state.playerCountryId), origin: 'player', visibility: 'player',
+    intent: `Réactiver le dossier « ${dossier.title} »`,
+    effects: [
+      { kind: 'dossier_patch', dossierId, patch: { sleepingAt: undefined, status: 'active', trend: 'stable', phase: 'Réactivé par le joueur' }, reason: 'Le joueur remet un dossier secondaire dans le suivi actif.', visibility: 'player' },
+      { kind: 'dossier_entry_add', dossierId, entry: { id: `dossier-reactivate-${dossierId}-${state.sequence + 1}`, date: state.currentDate, title: 'Dossier réactivé', summary: 'Le joueur demande à reprendre le suivi actif de cette situation.', importance: dossier.importance, actorIds: dossier.actorIds, requiresDecision: false, visibility: 'player' }, reason: 'La réactivation est conservée dans la chronologie.', visibility: 'player' },
+    ],
+  });
 }
 
 const dossierDecisionLabels: Record<DossierDecisionChannel, string> = {
