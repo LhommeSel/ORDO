@@ -12,6 +12,7 @@ import type {
   WorldProductMarket,
 } from './types';
 import { nationalBaseline2000 } from './national-baseline-2000';
+import { globalNationalBaseline2000 } from './global-baseline-2000';
 
 type Baseline = {
   gdp: number; growth: number; population: number; populationGrowth: number;
@@ -119,7 +120,7 @@ Object.assign(debtCalibration, { ESP: { effectiveRate: 5.4, spread: 35, maturity
 // The global fiches intentionally use rounded, internally consistent scenario
 // inputs. They unlock the same macro engine without pretending that every
 // country has French-level regional statistics on 1 January 2000.
-for (const item of nationalBaseline2000) {
+for (const item of [...nationalBaseline2000, ...globalNationalBaseline2000]) {
   baseline[item.id] = {
     gdp: item.gdp, growth: item.growth, population: item.population, populationGrowth: item.populationGrowth,
     inflation: item.inflation, unemployment: item.unemployment, investment: Math.min(36, Math.max(12, 17 + item.industry * 0.22)),
@@ -285,7 +286,9 @@ export function createMacroEconomies2000(): Record<CountryId, MacroeconomicState
       policy: createPolicy(countryId, item),
       sectors: createSectors(countryId, item), products: createProducts(countryId, item),
       source: {
-        provider: 'World Bank — WDI pour le socle ; calibration ORDO pour les stocks non directement observés', observationYear: 2000,
+        provider: globalNationalBaseline2000.some((entry) => entry.id === countryId)
+          ? 'Catalogue mondial ORDO — archétype de scénario 2000 ; à enrichir par séries nationales'
+          : 'World Bank — WDI pour le socle ; calibration ORDO pour les stocks non directement observés', observationYear: 2000,
         indicatorCodes: ['NY.GDP.MKTP.CD', 'NY.GDP.MKTP.KD.ZG', 'SP.POP.TOTL', 'SP.POP.GROW', 'FP.CPI.TOTL.ZG', 'SL.UEM.TOTL.ZS', 'NE.GDI.TOTL.ZS', 'NE.EXP.GNFS.ZS', 'NE.IMP.GNFS.ZS', 'NV.IND.TOTL.ZS'],
         estimatedIndicatorCodes: ['ORDO_OUTPUT_GAP', 'ORDO_SECTOR_CAPACITY', 'ORDO_PRODUCT_BALANCE', 'ORDO_FINANCIAL_STRESS'],
         confidence: item.confidence,

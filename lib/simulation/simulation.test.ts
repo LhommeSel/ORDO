@@ -37,12 +37,14 @@ import { rankWorldAttention } from './ai/world-attention';
 import { activeMajorDossierCount, rankStrategicDossierReviews } from './ai/dossier-scheduler';
 import { commitWorldAction } from './ledger';
 import { applyDiplomaticDialogueAIAnswer, openDiplomaticDialogue, requestDiplomaticDialogueAI, resolveDiplomaticDialogueResponse, sendDiplomaticDialogueMessage } from './diplomacy-dialogue';
+import { validateCountryRegistry } from './data-validator';
 
 test('le scénario 2000 charge un monde cohérent et jouable', () => {
   const state = createFrance2000World();
   assert.equal(state.currentDate, '2000-01-01');
   assert.equal(state.playerCountryId, 'FRA');
-  assert.ok(Object.keys(state.countries).length >= 10);
+  assert.equal(Object.keys(state.countries).length, 195);
+  assert.equal(validateCountryRegistry(state.countries, state.macroEconomies).filter((issue) => issue.severity === 'error').length, 0);
   assert.ok(Object.keys(state.historicalCurrents).length >= 3);
   assert.ok(Object.keys(state.armamentProducts).length >= 6);
   assert.ok(Object.keys(state.strategicDossiers).length >= 2);
@@ -713,7 +715,7 @@ test('une longue sauvegarde compacte les écritures techniques mais conserve les
 test('le noyau macroéconomique fait évoluer réellement les économies sur un an', () => {
   const initial = createFrance2000World();
   const advanced = advanceWorld(initial, '2001-01-01').state;
-  assert.equal(Object.keys(initial.macroEconomies).length, 100);
+  assert.equal(Object.keys(initial.macroEconomies).length, 195);
   assert.equal(initial.macroEconomies.FRA.realGdpBillion2000Usd, 1360.959);
   assert.ok(advanced.macroEconomies.FRA.realGdpBillion2000Usd > initial.macroEconomies.FRA.realGdpBillion2000Usd);
   assert.notEqual(advanced.macroEconomies.FRA.realGrowthAnnualPct, initial.macroEconomies.FRA.realGrowthAnnualPct);
@@ -884,7 +886,7 @@ test('le bilan structurel dérive ses diagnostics des données du monde', () => 
   const france = deriveStructuralDiagnostics(state, 'FRA');
   const norway = deriveStructuralDiagnostics(state, 'NOR');
 
-  assert.equal(Object.keys(state.structuralProfiles).length, 100);
+  assert.equal(Object.keys(state.structuralProfiles).length, 195);
   assert.ok(france.some((item) => item.id === 'energy-import-dependency'));
   assert.ok(france.some((item) => item.id === 'industrial-depth'));
   assert.ok(norway.some((item) => item.id === 'energy-export-capacity'));
@@ -896,7 +898,7 @@ test('le bilan structurel dérive ses diagnostics des données du monde', () => 
 
 test('les mesures successives font émerger une défiance qualitative puis celle-ci s’use', () => {
   let state = createFrance2000World();
-  assert.equal(Object.keys(state.stakeholderGroups).length, 400);
+  assert.equal(Object.keys(state.stakeholderGroups).length, 780);
   assert.equal(visibleStakeholderReactions(state).length, 0);
 
   state = enactPrototypeGovernmentMeasure(state, 'labor_restrictions');

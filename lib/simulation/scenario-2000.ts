@@ -19,6 +19,8 @@ import { createTradeFlows2000 } from './trade-data-2000';
 import { createDecisionProfiles2000 } from './decision-data-2000';
 import { createLeadership2000, createPoliticalApparatus2000 } from './political-identity-data-2000';
 import { createNationalBaselineCountries2000 } from './national-baseline-2000';
+import { createGlobalBaselineCountries2000 } from './global-baseline-2000';
+import { assertValidCountryRegistry } from './data-validator';
 
 const capacities = (values: Partial<Record<keyof CapacityState, [number, number]>> = {}): CapacityState => ({
   government: { maximum: values.government?.[0] ?? 55, committed: values.government?.[1] ?? 25 },
@@ -347,6 +349,7 @@ const countries: Record<string, CountryState> = {
 };
 
 const allCountries: Record<string, CountryState> = {
+  ...createGlobalBaselineCountries2000(),
   ...countries,
   ...createNationalBaselineCountries2000(),
   ESP: country({
@@ -509,6 +512,7 @@ function defaultCountryEnergy2000(country: CountryState): CountryEnergyState {
 export function createFrance2000World(): WorldState {
   const structuralProfiles = createStructuralProfiles2000(allCountries);
   const macroEconomies = createMacroEconomies2000();
+  assertValidCountryRegistry(allCountries, macroEconomies);
   return {
     version: 1,
     territorial: createTerritorialState({ countries: allCountries, macroEconomies }),
