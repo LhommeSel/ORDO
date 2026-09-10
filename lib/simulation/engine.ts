@@ -2,7 +2,7 @@ import { runAutonomyCycle } from './autonomy';
 import { advanceCommonActionPrograms } from './action-programs';
 import { runSimulationPipeline, type SimulationPhase } from './core';
 import { advanceEnergySystem } from './energy';
-import { advanceHistoricalCurrents, type HistoricalManifestation } from './history';
+import { advanceHistoricalAnchors, advanceHistoricalCurrents, type HistoricalManifestation } from './history';
 import { advanceIndustrySystem } from './industry';
 import { commitWorldAction } from './ledger';
 import { advanceMacroeconomy } from './macro-economy';
@@ -126,6 +126,15 @@ function simulationPhases(
     { id: 'power-struggles', advance: (state, context) => advancePowerStruggles(state, context.elapsedMonths) },
     { id: 'energy', advance: (state, context) => advanceEnergySystem(state, context.elapsedMonths) },
     { id: 'industry', advance: (state, context) => advanceIndustrySystem(state, context.elapsedMonths) },
+    {
+      id: 'historical-anchors',
+      advance: (state, context) => {
+        const anchors = advanceHistoricalAnchors(state, context.elapsedMonths, context.chunkEnd);
+        // Les candidats sont persistés dans les ancrages et exposés au pouls
+        // IA via collectFacts. Aucune manifestation n’est forcée localement.
+        return anchors.state;
+      },
+    },
     {
       id: 'history',
       advance: (state, context) => {

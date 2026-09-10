@@ -74,6 +74,7 @@ function instructionFor(item: WorldPulseRequestItem) {
     'N’invente aucun chiffre, acteur, traité, guerre, fait historique ou résultat déjà acquis.',
     'Tu peux imaginer une suite nouvelle seulement comme évolution prospective à inscrire au monde simulé, jamais comme un fait réel extérieur à ORDO.',
     'Chaque proposition doit citer au moins un factId transmis et ne peut utiliser que des pays présents dans les faits.',
+    'Les faits history-anchor:... représentent des ancrages historiques bornés. Si une proposition concrétise réellement un ancrage dans sa fenêtre, renseigne historicalAnchorId avec son identifiant ; sinon omets ce champ. Ne révèle pas le titre historique exact lorsque le fait ne le rend pas public.',
     'dossierId vaut l’identifiant brut d’un dossier existant si tu le mets à jour ; si le fait cité est « dossier:current-dotcom-exuberance », écris exactement « current-dotcom-exuberance », jamais « dossier:current-dotcom-exuberance ». Il vaut null pour créer un nouveau dossier.',
     'relationEffects ne sont que des pressions limitées : elles ne signent pas un accord, ne déclenchent pas une guerre et ne modifient aucune donnée économique.',
     'Pour world_autonomy uniquement, tu peux joindre autonomousAction à une proposition si un gouvernement non joueur lance plausiblement un programme concret. C’est une intention, pas un effet immédiat : indique un actorId et des targetIds présents dans actorIds, un seul objectif précis et un domaine parmi diplomacy, economic, institutional, defense, intelligence. N’envoie jamais autonomousAction pour le pays du joueur.',
@@ -181,14 +182,17 @@ export async function POST(request: Request) {
       if (!isWorldPulseAnswer(answer, item.kind)) {
         const outputRecord = answer && typeof answer === 'object' && !Array.isArray(answer) ? answer as Record<string, unknown> : null;
         const proposalShape = Array.isArray(outputRecord?.proposals)
-          ? outputRecord.proposals.slice(0, 3).map((proposal) => proposal && typeof proposal === 'object' && !Array.isArray(proposal)
-            ? {
-              keys: Object.keys(proposal as Record<string, unknown>).slice(0, 20),
-              actorIds: Array.isArray((proposal as Record<string, unknown>).actorIds) ? (proposal as Record<string, unknown>).actorIds.length : null,
-              factIds: Array.isArray((proposal as Record<string, unknown>).factIds) ? (proposal as Record<string, unknown>).factIds.length : null,
-              relationEffects: Array.isArray((proposal as Record<string, unknown>).relationEffects) ? (proposal as Record<string, unknown>).relationEffects.length : null,
-              autonomousAction: (proposal as Record<string, unknown>).autonomousAction === null ? 'null' : typeof (proposal as Record<string, unknown>).autonomousAction,
-            } : { type: typeof proposal }) : null;
+          ? outputRecord.proposals.slice(0, 3).map((proposal) => {
+            if (!proposal || typeof proposal !== 'object' || Array.isArray(proposal)) return { type: typeof proposal };
+            const record = proposal as Record<string, unknown>;
+            return {
+              keys: Object.keys(record).slice(0, 20),
+              actorIds: Array.isArray(record.actorIds) ? record.actorIds.length : null,
+              factIds: Array.isArray(record.factIds) ? record.factIds.length : null,
+              relationEffects: Array.isArray(record.relationEffects) ? record.relationEffects.length : null,
+              autonomousAction: record.autonomousAction === null ? 'null' : typeof record.autonomousAction,
+            };
+          }) : null;
         console.error('ORDO world pulse invalid output', {
           requestId: parsed.requestId,
           kind: item.kind,

@@ -198,6 +198,17 @@ function applyEffect(state: WorldState, action: WorldAction, effect: WorldEffect
     return appendChange(next, action, effect, `historicalCurrents.${effect.currentId}.pressure`, before, after);
   }
 
+  if (effect.kind === 'historical_anchor_patch') {
+    const anchor = state.historicalAnchors?.[effect.anchorId];
+    if (!anchor) return state;
+    const after = { ...anchor, ...effect.patch };
+    const next = {
+      ...state,
+      historicalAnchors: { ...state.historicalAnchors, [effect.anchorId]: after },
+    };
+    return appendChange(next, action, effect, `historicalAnchors.${effect.anchorId}`, anchor, after);
+  }
+
   if (effect.kind === 'latent_process_patch') {
     const process = state.latentProcesses[effect.processId];
     if (!process) return state;

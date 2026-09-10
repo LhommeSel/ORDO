@@ -1036,6 +1036,7 @@ function DossiersPanel({ world, selectedId, onSelect, onWorldChange, onNotice, o
   const updates = selected ? dossierUpdatesSinceView(world, selected.id) : [];
   const decisionRecords = selected ? dossierDecisionRecords(selected) : [];
   const diplomaticSession = selected ? Object.values(world.diplomaticSessions).find((session) => session.linkedDossierId === selected.id) : undefined;
+  const historicalAnchor = selected?.relatedAnchorId ? world.historicalAnchors?.[selected.relatedAnchorId] : undefined;
   const askDossierAI = async () => {
     if (!selected || dossierAIStatus === 'loading') return;
     const actors = selected.actorIds.map((id) => world.countries[id]?.name ?? id).join(', ');
@@ -1167,6 +1168,13 @@ function DossiersPanel({ world, selectedId, onSelect, onWorldChange, onNotice, o
         <p className="mt-3 text-sm text-muted-foreground">{selected.publicSummary}</p>
         <div className="mt-4 grid gap-2 sm:grid-cols-4"><Stat label="Phase" value={selected.phase} /><Stat label="Tendance" value={selected.trend} /><Stat label="Acteurs" value={selected.actorIds.map((id) => world.countries[id]?.flag ?? id).join(' ')} /><Stat label="Relances" value={String(selected.escalationCount ?? 0)} detail={selected.lastEscalatedAt ? `dernière : ${selected.lastEscalatedAt}` : 'aucune'} /></div>
         {selected.playerStance && <div className="mt-3 border-l-2 border-primary pl-3 text-sm"><b>Position du joueur :</b> {selected.playerStance}</div>}
+        {historicalAnchor && <div className="mt-4 border border-cyan-400/25 bg-cyan-400/5 p-3 text-xs">
+          <div className="font-mono text-[10px] uppercase tracking-wider text-cyan-200">Ancrage historique · {historicalAnchor.status}</div>
+          <p className="mt-2"><b>Tendance de fond :</b> {historicalAnchor.trendSummary}</p>
+          <p className="mt-2"><b>Invariants :</b> {historicalAnchor.invariants.join(' · ')}</p>
+          <p className="mt-2"><b>Manifestations possibles :</b> {historicalAnchor.possibleManifestations.join(' · ')}</p>
+          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[10px] text-muted-foreground"><span>Fenêtre : {historicalAnchor.probableWindow.start} → {historicalAnchor.probableWindow.end}</span><span>Pression : {historicalAnchor.pressure.toFixed(0)}/100</span><span>Influence joueur : {historicalAnchor.playerInfluence}</span></div>
+        </div>}
       </div>
       {dossierAIForId === selected.id && dossierAIAnswer && <div className="border border-primary/45 bg-card/80 p-4">
         <div className="font-mono text-[10px] uppercase tracking-wider text-primary">Options IA · consultatives</div>

@@ -21,6 +21,7 @@ import { createLeadership2000, createPoliticalApparatus2000 } from './political-
 import { createNationalBaselineCountries2000 } from './national-baseline-2000';
 import { createGlobalBaselineCountries2000 } from './global-baseline-2000';
 import { assertValidCountryRegistry } from './data-validator';
+import { createHistoricalAnchors2000 } from './historical-anchors-2000';
 
 const capacities = (values: Partial<Record<keyof CapacityState, [number, number]>> = {}): CapacityState => ({
   government: { maximum: values.government?.[0] ?? 55, committed: values.government?.[1] ?? 25 },
@@ -536,6 +537,7 @@ export function createFrance2000World(): WorldState {
       'industrial-protocol': { id: 'industrial-protocol', parties: ['FRA', 'DEU'], label: 'Protocole industriel', status: 'draft', monthlyEffects: [{ countryId: 'FRA', metric: 'industry', delta: 0.6 }] },
     },
     historicalCurrents: structuredClone(currents),
+    historicalAnchors: createHistoricalAnchors2000(),
     latentProcesses: structuredClone(latentProcesses),
     energyNodes: structuredClone(energyNodes),
     energyContracts: {},

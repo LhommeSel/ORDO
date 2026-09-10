@@ -192,6 +192,7 @@ export type AppliedWorldPulse = {
   playerDecisions: number;
   relationChanges: number;
   queuedAutonomousPrograms: number;
+  manifestedAnchorIds: string[];
 };
 
 /**
@@ -211,6 +212,7 @@ export function applyWorldPulseAnswer(
   let playerDecisions = 0;
   let relationChanges = 0;
   let queuedAutonomousPrograms = 0;
+  const manifestedAnchorIds: string[] = [];
   const autonomousInputs: Array<{ input: AutonomousProgramInput; id: string }> = [];
   let projectedMajorCount = activeMajorDossierCount(state);
   const scheduledDossierIds = new Set(item.context.strategicDossierQueue.map((review) => review.dossierId));
@@ -220,8 +222,14 @@ export function applyWorldPulseAnswer(
     const actorIds = unique(proposal.actorIds).filter((id) => Boolean(state.countries[id]));
     const citedFacts = unique(proposal.factIds).filter((id) => knownFactIds.has(id));
     const requestedDossierId = normalizeWorldPulseDossierId(proposal.dossierId);
+    const requestedAnchorId = proposal.historicalAnchorId?.trim() || null;
     if (actorIds.length === 0 || citedFacts.length === 0
       || (requestedDossierId !== null && !knownFactIds.has(`dossier:${requestedDossierId}`))) return;
+    const historicalAnchor = requestedAnchorId ? state.historicalAnchors?.[requestedAnchorId] : undefined;
+    const validHistoricalAnchor = Boolean(historicalAnchor
+      && citedFacts.includes(`history-anchor:${requestedAnchorId}`)
+      && actorIds.some((id) => historicalAnchor.affectedActors.includes(id))
+      && historicalAnchor.status !== 'manifested');
     const existing = requestedDossierId ? state.strategicDossiers[requestedDossierId] : undefined;
     // Une mise à jour déclarée ne doit jamais devenir un nouveau dossier si le
     // monde a changé depuis la compilation du contexte IA.
@@ -328,6 +336,19 @@ export function applyWorldPulseAnswer(
     }
     if (playerDecision) playerDecisions += 1;
 
+    if (validHistoricalAnchor && historicalAnchor) {
+      effects.push({
+        kind: 'historical_anchor_patch', anchorId: historicalAnchor.id,
+        patch: {
+          status: 'manifested', manifestedAt: state.currentDate,
+          manifestation: proposal.title.trim(), dossierId,
+        },
+        reason: `L’IA propose une manifestation concrète de l’ancrage historique « ${historicalAnchor.trendTitle} ».`,
+        visibility: 'player',
+      });
+      manifestedAnchorIds.push(historicalAnchor.id);
+    }
+
     if (item.kind === 'world_autonomy' && proposal.autonomousAction) {
       const autonomous = proposal.autonomousAction;
       // Une action diplomatique ou de défense doit viser un autre acteur :
@@ -384,7 +405,7 @@ export function applyWorldPulseAnswer(
     next = queued.state;
     queuedAutonomousPrograms += 1;
   }
-  return { state: next, createdDossierIds, updatedDossierIds, playerDecisions, relationChanges, queuedAutonomousPrograms };
+  return { state: next, createdDossierIds, updatedDossierIds, playerDecisions, relationChanges, queuedAutonomousPrograms, manifestedAnchorIds };
 }
 
 export type WorldPulseExecutionResult = {
@@ -395,6 +416,7 @@ export type WorldPulseExecutionResult = {
   playerDecisions: number;
   relationChanges: number;
   queuedAutonomousPrograms: number;
+  manifestedAnchorIds: string[];
   errors: string[];
   /** Nombre de missions conservées en secours local après un rejet IA. */
   fallbackApplied?: number;
@@ -404,7 +426,7 @@ export type WorldPulseExecutionResult = {
 function failedPulse(state: WorldState, message: string, fallbackApplied: number, response?: WorldPulseResponse): WorldPulseExecutionResult {
   return {
     state, ok: false, createdDossierIds: [], updatedDossierIds: [], playerDecisions: 0,
-    relationChanges: 0, queuedAutonomousPrograms: 0, errors: [message], fallbackApplied, response,
+    relationChanges: 0, queuedAutonomousPrograms: 0, manifestedAnchorIds: [], errors: [message], fallbackApplied, response,
   };
 }
 
@@ -437,6 +459,7 @@ export async function executeWorldPulse(
   let playerDecisions = 0;
   let relationChanges = 0;
   let queuedAutonomousPrograms = 0;
+  const manifestedAnchorIds: string[] = [];
   let fallbackApplied = 0;
   for (const item of request.pulses) {
     const result = payload.results.find((candidate) => candidate.id === item.id);
@@ -449,8 +472,9 @@ export async function executeWorldPulse(
     playerDecisions += applied.playerDecisions;
     relationChanges += applied.relationChanges;
     queuedAutonomousPrograms += applied.queuedAutonomousPrograms;
+    manifestedAnchorIds.push(...applied.manifestedAnchorIds);
   }
   return {
-    state: next, ok: errors.length === 0, createdDossierIds, updatedDossierIds, playerDecisions, relationChanges, queuedAutonomousPrograms, errors, fallbackApplied, response: payload,
+    state: next, ok: errors.length === 0, createdDossierIds, updatedDossierIds, playerDecisions, relationChanges, queuedAutonomousPrograms, manifestedAnchorIds, errors, fallbackApplied, response: payload,
   };
 }

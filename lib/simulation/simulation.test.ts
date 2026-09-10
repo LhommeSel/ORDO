@@ -48,6 +48,47 @@ test('le scénario 2000 charge un monde cohérent et jouable', () => {
   assert.ok(Object.keys(state.historicalCurrents).length >= 3);
   assert.ok(Object.keys(state.armamentProducts).length >= 6);
   assert.ok(Object.keys(state.strategicDossiers).length >= 2);
+  assert.ok(Object.keys(state.historicalAnchors).length >= 20);
+});
+
+test('les ancrages historiques ouvrent un dossier sur signal sans imposer immédiatement une manifestation', () => {
+  const initial = createFrance2000World();
+  const afterTwoMonths = advanceWorld(initial, '2000-03-01').state;
+  const russia = afterTwoMonths.historicalAnchors['russia-recentralization'];
+  const china = afterTwoMonths.historicalAnchors['china-wto-integration'];
+  assert.ok(russia && china);
+  assert.notEqual(russia?.status, 'dormant');
+  assert.notEqual(china?.status, 'dormant');
+  assert.ok(afterTwoMonths.strategicDossiers['historical-russia-recentralization']);
+  assert.ok(afterTwoMonths.strategicDossiers['historical-china-wto-integration']);
+  assert.equal(afterTwoMonths.historicalAnchors['mass-casualty-terrorism']?.status, 'dormant');
+});
+
+test('un ancrage historique peut être concrétisé par l IA uniquement dans sa fenêtre', () => {
+  const initial = createFrance2000World();
+  const prepared = advanceWorld(initial, '2001-03-01').state;
+  const item = createWorldPulseRequest(prepared, prepared.actions.length, 1, 'historical-anchor-test').pulses.find((pulse) => pulse.kind === 'world_autonomy');
+  assert.ok(item);
+  if (!item) return;
+  const fact = item.context.facts.find((candidate) => candidate.id === 'history-anchor:mass-casualty-terrorism');
+  const dossier = prepared.strategicDossiers['historical-mass-casualty-terrorism'];
+  assert.ok(fact && dossier);
+  if (!fact || !dossier) return;
+  const applied = applyWorldPulseAnswer(prepared, item, {
+    headline: 'Opération terroriste majeure',
+    synthesis: 'Une manifestation concrète est désormais observée dans la fenêtre historique.',
+    requestedFactIds: [],
+    proposals: [{
+      dossierId: dossier.id,
+      historicalAnchorId: 'mass-casualty-terrorism',
+      title: 'Attaque coordonnée contre une infrastructure stratégique',
+      kind: 'security', importance: 'critical', actorIds: ['USA', 'GBR', 'FRA'], regionTags: ['Monde'],
+      phase: 'Manifestation', trend: 'escalating', summary: 'Une opération coordonnée révèle la capacité extérieure du réseau.',
+      requiresPlayerDecision: false, playerDecision: null, factIds: [fact.id], relationEffects: [],
+    }],
+  });
+  assert.equal(applied.manifestedAnchorIds[0], 'mass-casualty-terrorism');
+  assert.equal(applied.state.historicalAnchors['mass-casualty-terrorism']?.status, 'manifested');
 });
 
 test('le pouls mondial IA ne peut créer que des mises à jour de dossiers citées et relationnelles bornées', () => {

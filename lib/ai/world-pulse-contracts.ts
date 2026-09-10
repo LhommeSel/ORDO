@@ -96,6 +96,8 @@ export type WorldPulseRelationEffect = {
 
 export type WorldPulseProposal = {
   dossierId: string | null;
+  /** Identifiant d’un ancrage historique dont l’IA propose la manifestation. */
+  historicalAnchorId?: string | null;
   title: string;
   kind: DossierKind;
   importance: DossierImportance;
@@ -258,8 +260,10 @@ export function isWorldPulseAnswer(value: unknown, kind: WorldPulseKind): value 
       && isTextArray(autonomousAction.targetIds, 3, 80)
       && typeof autonomousAction.category === 'string' && actionCategories.includes(autonomousAction.category as CommonActionCategory)
       && isText(autonomousAction.objective, 600, 12)
-      && (autonomousAction.operation === undefined || ['contact', 'cooperation', 'defense_pact', 'mediation', 'information_sharing'].includes(autonomousAction.operation)));
+      && (autonomousAction.operation === undefined || (typeof autonomousAction.operation === 'string'
+        && ['contact', 'cooperation', 'defense_pact', 'mediation', 'information_sharing'].includes(autonomousAction.operation))));
     return (proposal.dossierId === null || isText(proposal.dossierId, 120, 1))
+      && (proposal.historicalAnchorId === undefined || proposal.historicalAnchorId === null || isText(proposal.historicalAnchorId, 120, 1))
       && isText(proposal.title, 180, 1)
       && typeof proposal.kind === 'string' && dossierKinds.includes(proposal.kind as DossierKind)
       && typeof proposal.importance === 'string' && importance.includes(proposal.importance as DossierImportance)
@@ -290,6 +294,7 @@ const proposalSchema = {
   required: ['dossierId', 'title', 'kind', 'importance', 'actorIds', 'regionTags', 'phase', 'trend', 'summary', 'requiresPlayerDecision', 'playerDecision', 'factIds', 'relationEffects', 'autonomousAction'],
   properties: {
     dossierId: { anyOf: [{ type: 'string', maxLength: 120 }, { type: 'null' }] },
+    historicalAnchorId: { anyOf: [{ type: 'string', maxLength: 120 }, { type: 'null' }] },
     title: { type: 'string', maxLength: 180 }, kind: { type: 'string', enum: dossierKinds }, importance: { type: 'string', enum: importance },
     actorIds: { type: 'array', minItems: 1, maxItems: 6, items: { type: 'string', maxLength: 80 } },
     regionTags: { type: 'array', maxItems: 5, items: { type: 'string', maxLength: 80 } },

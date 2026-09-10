@@ -6,6 +6,7 @@ import { createStakeholderGroups2000 } from './stakeholder-data-2000';
 import { createTradeFlows2000 } from './trade-data-2000';
 import { createDecisionProfiles2000 } from './decision-data-2000';
 import { createLeadership2000, createPoliticalApparatus2000 } from './political-identity-data-2000';
+import { createHistoricalAnchors2000 } from './historical-anchors-2000';
 
 export type SaveEnvelope = {
   format: 'ordo-world';
@@ -238,6 +239,7 @@ export function deserializeWorld(raw: string): WorldState {
       ...flow, sourceNodeId: flow.sourceNodeId,
     }])),
     strategicDossiers: restored.strategicDossiers ?? {},
+    historicalAnchors: restored.historicalAnchors ?? createHistoricalAnchors2000(),
     macroEconomies,
     worldEconomy,
     tradeFlows: restored.tradeFlows ?? createTradeFlows2000(),

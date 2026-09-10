@@ -229,6 +229,21 @@ export function collectFacts(state: WorldState): AIContextFact[] {
   for (const sector of Object.values(state.sectors)) add({ id: `sector:${sector.id}`, domain: 'industry', entityIds: [sector.countryId], topicTags: [sector.sector, 'industrie', 'capacite'], importance: 74, confidence: 88, visibility: 'public', sourcePath: `sectors.${sector.id}`, statement: `${sector.countryId}, secteur ${sector.sector}: capacité ${sector.capacity}, utilisation ${sector.utilization} %, charge ${sector.workloadMonths} mois, dépendance étrangère ${sector.foreignDependency}/100.` });
   for (const product of Object.values(state.armamentProducts)) add({ id: `armament:${product.id}`, domain: 'military', entityIds: [product.countryId, ...product.clients.map((client) => client.countryId)], topicTags: ['armement', product.family, 'production', 'export'], importance: 75, confidence: product.evidenceConfidence, visibility: 'public', sourcePath: `armamentProducts.${product.id}`, statement: `${product.name} (${product.manufacturer}): statut ${product.status}, capacité annuelle ${product.annualCapacity}, carnet ${product.backlogMonths} mois, maturité ${product.maturity}, expérience ${product.operationalExperience}.` });
   for (const current of Object.values(state.historicalCurrents)) if (current.playerVisibility !== 'hidden') add({ id: `history:${current.id}`, domain: 'history', entityIds: current.affectedActors, topicTags: ['histoire', 'tendance', ...current.drivers.flatMap(words).slice(0, 8)], importance: 80, confidence: current.playerVisibility === 'known' ? 90 : 58, visibility: current.playerVisibility === 'known' ? 'public' : 'internal', ownerCountryId: state.playerCountryId, sourcePath: `historicalCurrents.${current.id}`, statement: `${current.name}: pression ${current.pressure.toFixed(0)}/100, inertie ${current.inertia.toFixed(0)}, statut ${current.status}; moteurs ${current.drivers.join(', ')}.` });
+  for (const anchor of Object.values(state.historicalAnchors ?? {})) {
+    if (anchor.status === 'dormant' || anchor.status === 'expired') continue;
+    const visible = anchor.playerVisibility !== 'hidden';
+    if (!visible) continue;
+    const publicTitle = anchor.playerVisibility === 'known' ? anchor.title : anchor.trendTitle;
+    add({
+      id: `history-anchor:${anchor.id}`, domain: 'history', entityIds: anchor.affectedActors,
+      topicTags: ['histoire', 'ancrage', 'tendance', anchor.kind, ...anchor.regionTags],
+      importance: anchor.importance === 'critical' ? 98 : anchor.importance === 'major' ? 88 : 70,
+      confidence: anchor.playerVisibility === 'known' ? 94 : 72,
+      visibility: 'public', ownerCountryId: state.playerCountryId,
+      sourcePath: `historicalAnchors.${anchor.id}`, observedAt: anchor.lastEvaluatedAt ?? state.currentDate,
+      statement: `${publicTitle}: pression ${anchor.pressure.toFixed(0)}/100, statut ${anchor.status}, fenêtre ${anchor.probableWindow.start}–${anchor.probableWindow.end}. ${anchor.trendSummary} Manifestations admissibles : ${anchor.possibleManifestations.join('; ')}. Invariants : ${anchor.invariants.join('; ')}.`,
+    });
+  }
   for (const process of Object.values(state.latentProcesses)) add({ id: `latent:${process.id}`, domain: 'history', entityIds: [process.actorId], topicTags: ['processus', 'latent', 'secret'], importance: 76, confidence: 75, visibility: 'secret', ownerCountryId: String(process.actorId), sourcePath: `latentProcesses.${process.id}`, statement: `Processus latent de ${process.actorId}: ${process.objective}; progrès ${process.progress}/100; statut ${process.status}.` });
   for (const dossier of Object.values(state.strategicDossiers ?? {})) {
     add({ id: `dossier:${dossier.id}`, domain: 'dossier', entityIds: dossier.actorIds, topicTags: [dossier.kind, ...dossier.regionTags], importance: { minor: 45, moderate: 65, major: 85, critical: 100 }[dossier.importance], confidence: 90, visibility: 'public', sourcePath: `strategicDossiers.${dossier.id}`, observedAt: dossier.updatedAt, statement: `${dossier.title}: ${dossier.publicSummary} Phase ${dossier.phase}; tendance ${dossier.trend}; ${dossier.pendingDecisions.length} décision(s) en attente; ${dossier.escalationCount ?? 0} relance(s) du moteur${dossier.sleepingAt ? `; dossier en sommeil depuis ${dossier.sleepingAt}` : ''}.` });

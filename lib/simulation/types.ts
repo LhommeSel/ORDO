@@ -175,6 +175,41 @@ export type HistoricalCurrent = {
   status: 'dormant' | 'active' | 'resolved' | 'dissipated';
 };
 
+/**
+ * Ancrage historique : un fait ou une fenêtre historique que le moteur doit
+ * rendre plausible sans imposer sa manifestation exacte. La pression est
+ * calculée localement ; l'IA peut ensuite proposer une manifestation bornée
+ * et la rattacher au dossier correspondant.
+ */
+export type HistoricalAnchor = {
+  id: string;
+  title: string;
+  trendTitle: string;
+  trendSummary: string;
+  kind: DossierKind;
+  importance: DossierImportance;
+  trendId?: string;
+  probableWindow: { start: ISODate; end: ISODate };
+  proposalThreshold: number;
+  activationThreshold: number;
+  basePressure: number;
+  historicalWeight: number;
+  affectedActors: EntityId[];
+  regionTags: string[];
+  invariants: string[];
+  possibleManifestations: string[];
+  playerVisibility: 'hidden' | 'suspected' | 'known';
+  playerInfluence: 'none' | 'low' | 'medium' | 'high';
+  status: 'dormant' | 'proposed' | 'active' | 'manifested' | 'disrupted' | 'expired';
+  pressure: number;
+  dossierId?: string;
+  lastEvaluatedAt?: ISODate;
+  proposedAt?: ISODate;
+  activatedAt?: ISODate;
+  manifestedAt?: ISODate;
+  manifestation?: string;
+};
+
 export type LatentProcess = {
   id: string;
   currentId: string;
@@ -1001,6 +1036,7 @@ export type WorldEffect =
   | { kind: 'treaty_add'; treaty: TreatyState; reason: string; visibility?: Visibility }
   | { kind: 'treaty_patch'; treatyId: string; patch: Partial<TreatyState>; reason: string; visibility?: Visibility }
   | { kind: 'historical_pressure'; currentId: string; delta: number; reason: string; visibility?: Visibility }
+  | { kind: 'historical_anchor_patch'; anchorId: string; patch: Partial<HistoricalAnchor>; reason: string; visibility?: Visibility }
   | { kind: 'latent_process_patch'; processId: string; patch: Partial<LatentProcess>; reason: string; visibility?: Visibility }
   | { kind: 'energy_contract_add'; contract: EnergyContract; reason: string; visibility?: Visibility }
   | { kind: 'energy_contract_patch'; contractId: string; patch: Partial<EnergyContract>; reason: string; visibility?: Visibility }
@@ -1140,6 +1176,8 @@ export type StrategicDossier = {
   /** Date du dernier réveil automatique après un signal externe significatif. */
   reactivatedAt?: ISODate;
   relatedCurrentIds: string[];
+  /** Ancrage historique à l’origine du dossier, s’il y en a un. */
+  relatedAnchorId?: string;
   relatedActionIds: string[];
   entries: DossierEntry[];
 };
@@ -1158,6 +1196,7 @@ export type WorldState = {
   institutions: Record<string, InstitutionState>;
   treaties: Record<string, TreatyState>;
   historicalCurrents: Record<string, HistoricalCurrent>;
+  historicalAnchors: Record<string, HistoricalAnchor>;
   latentProcesses: Record<string, LatentProcess>;
   energyNodes: Record<string, EnergyNode>;
   energyContracts: Record<string, EnergyContract>;
