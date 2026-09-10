@@ -1,6 +1,6 @@
 import { commitWorldAction } from './ledger';
 import type {
-  ActionOrigin, CountryId, DossierEntry, StrategicDossier, Visibility, WorldState,
+  ActionOrigin, CountryId, DossierDecision, DossierDecisionChannel, DossierEntry, DossierDecisionSourceKind, StrategicDossier, Visibility, WorldState,
 } from './types';
 
 const importanceRank = { minor: 0, moderate: 1, major: 2, critical: 3 } as const;
@@ -61,7 +61,42 @@ export function markDossierViewed(state: WorldState, dossierId: string) {
   };
 }
 
-export type DossierDecisionChannel = 'local_action' | 'dialogue' | 'delegation' | 'explicit_silence';
+export type { DossierDecisionChannel } from './types';
+
+export const dossierDecisionChannels: DossierDecisionChannel[] = ['local_action', 'dialogue', 'delegation', 'explicit_silence'];
+
+function decisionUrgency(importance: StrategicDossier['importance']): DossierDecision['urgency'] {
+  return importance === 'critical' ? 'critical' : importance === 'major' ? 'high' : importance === 'moderate' ? 'medium' : 'low';
+}
+
+export function makeDossierDecision(input: {
+  id: string;
+  prompt: string;
+  createdAt: `${number}-${number}-${number}`;
+  importance: StrategicDossier['importance'];
+  actorIds: string[];
+  sourceKind: DossierDecisionSourceKind;
+  sourceId?: string;
+  sourceLabel?: string;
+}): DossierDecision {
+  return {
+    id: input.id, prompt: input.prompt, createdAt: input.createdAt,
+    urgency: decisionUrgency(input.importance), sourceKind: input.sourceKind,
+    ...(input.sourceId ? { sourceId: input.sourceId } : {}),
+    ...(input.sourceLabel ? { sourceLabel: input.sourceLabel } : {}),
+    actorIds: [...new Set(input.actorIds)], availableChannels: [...dossierDecisionChannels], status: 'pending',
+  };
+}
+
+/** Convertit à la volée les anciennes chaînes en décisions enrichies. */
+export function dossierDecisionRecords(dossier: StrategicDossier): DossierDecision[] {
+  const records = dossier.decisionRecords ?? [];
+  return dossier.pendingDecisions.map((prompt, index) => records.find((record) => record.prompt === prompt && record.status === 'pending')
+    ?? makeDossierDecision({
+      id: `legacy-${dossier.id}-${index + 1}`, prompt, createdAt: dossier.updatedAt,
+      importance: dossier.importance, actorIds: dossier.actorIds, sourceKind: 'legacy', sourceLabel: 'Décision héritée de la sauvegarde',
+    }));
+}
 
 const dossierDecisionLabels: Record<DossierDecisionChannel, string> = {
   local_action: 'Décision gouvernementale engagée',
@@ -86,6 +121,11 @@ export function resolveDossierDecision(
   const normalized = decision.trim();
   if (!dossier || !normalized || dossier.pendingDecisions.length === 0) return state;
   const remaining = dossier.pendingDecisions.filter((item) => item !== normalized);
+  const selectedRecord = dossierDecisionRecords(dossier).find((record) => record.prompt === normalized);
+  const decisionRecords = [
+    ...(dossier.decisionRecords ?? []).filter((record) => record.prompt !== normalized),
+    ...(selectedRecord ? [{ ...selectedRecord, status: 'resolved' as const, resolvedAt: state.currentDate, resolutionChannel: channel }] : []),
+  ];
   const label = dossierDecisionLabels[channel];
   const entry: DossierEntry = {
     id: `decision-${dossierId}-${state.sequence + 1}`,
@@ -105,7 +145,7 @@ export function resolveDossierDecision(
     intent: `${label} dans « ${dossier.title} »`,
     visibility: 'player',
     effects: [
-      { kind: 'dossier_patch', dossierId, patch: { pendingDecisions: remaining, playerStance: normalized }, reason: 'Le joueur tranche une décision en attente dans le dossier.', visibility: 'player' },
+      { kind: 'dossier_patch', dossierId, patch: { pendingDecisions: remaining, decisionRecords, playerStance: normalized }, reason: 'Le joueur tranche une décision en attente dans le dossier.', visibility: 'player' },
       { kind: 'dossier_entry_add', dossierId, entry, reason: 'Le choix du joueur est conservé dans la chronologie du dossier.', visibility: 'player' },
     ],
   });

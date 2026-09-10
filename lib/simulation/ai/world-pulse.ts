@@ -9,6 +9,7 @@ import type {
 } from '../../ai/world-pulse-contracts';
 import { ORDO_WORLD_PULSE_SCHEMA_VERSION, normalizeWorldPulseDossierId } from '../../ai/world-pulse-contracts';
 import { commitWorldAction } from '../ledger';
+import { makeDossierDecision } from '../dossiers';
 import type { DossierImportance, DossierKind, StrategicDossier, WorldEffect, WorldState } from '../types';
 import { collectFacts } from './context';
 import {
@@ -254,6 +255,16 @@ export function applyWorldPulseAnswer(
       && actorIds.includes(state.playerCountryId)
       && importanceRank[effectiveImportance] >= importanceRank.major
       && proposal.playerDecision ? proposal.playerDecision.trim() : undefined;
+    const decisionRecord = playerDecision ? makeDossierDecision({
+      id: `${item.id}-decision-${index + 1}`,
+      prompt: playerDecision,
+      createdAt: state.currentDate,
+      importance: effectiveImportance,
+      actorIds,
+      sourceKind: 'world_pulse',
+      sourceId: item.id,
+      sourceLabel: proposal.title.trim(),
+    }) : undefined;
     const entry = {
       id: `${item.id}-entry-${index + 1}`,
       date: state.currentDate,
@@ -271,6 +282,9 @@ export function applyWorldPulseAnswer(
       const pendingDecisions = playerDecision
         ? unique([...existing.pendingDecisions, playerDecision]).slice(-6)
         : existing.pendingDecisions;
+      const decisionRecords = decisionRecord
+        ? [...(existing.decisionRecords ?? []).filter((record) => record.prompt !== playerDecision), decisionRecord]
+        : existing.decisionRecords;
       effects.push(
         {
           kind: 'dossier_patch', dossierId,
@@ -281,6 +295,7 @@ export function applyWorldPulseAnswer(
             status: proposal.trend === 'deescalating' ? 'deescalating' : existing.status === 'resolved' ? 'resolved' : 'active',
             phase: proposal.phase.trim(), trend: proposal.trend, publicSummary: proposal.summary.trim(),
             pendingDecisions,
+            ...(decisionRecords ? { decisionRecords } : {}),
             ...(item.kind === 'world_autonomy' ? {
               lastAutonomousReviewAt: state.currentDate,
               // L'action de pouls va être ajoutée juste après l'état courant.
@@ -304,7 +319,7 @@ export function applyWorldPulseAnswer(
           lastAutonomousReviewAt: state.currentDate,
           lastAutonomousReviewActionCount: state.actions.length + 1,
         } : {}),
-        commitments: [], pendingDecisions: playerDecision ? [playerDecision] : [], relatedCurrentIds: [], relatedActionIds: [], entries: [entry],
+        commitments: [], pendingDecisions: playerDecision ? [playerDecision] : [], decisionRecords: decisionRecord ? [decisionRecord] : [], relatedCurrentIds: [], relatedActionIds: [], entries: [entry],
       };
       effects.push({ kind: 'dossier_add', dossier, reason: `Pouls IA ${item.kind} : nouveau dossier fondé sur ${citedFacts.join(', ')}.`, visibility: 'player' });
       createdDossierIds.push(dossierId);

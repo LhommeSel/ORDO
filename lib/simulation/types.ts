@@ -1075,6 +1075,26 @@ export type DossierEntry = {
   sourceActionId?: string;
 };
 
+export type DossierDecisionUrgency = 'low' | 'medium' | 'high' | 'critical';
+export type DossierDecisionChannel = 'local_action' | 'dialogue' | 'delegation' | 'explicit_silence';
+export type DossierDecisionSourceKind = 'legacy' | 'world_pulse' | 'autonomous_program' | 'historical' | 'player_action';
+
+/** Métadonnées persistantes d’une décision, sans supprimer la compatibilité avec pendingDecisions. */
+export type DossierDecision = {
+  id: string;
+  prompt: string;
+  createdAt: ISODate;
+  urgency: DossierDecisionUrgency;
+  sourceKind: DossierDecisionSourceKind;
+  sourceId?: string;
+  sourceLabel?: string;
+  actorIds: EntityId[];
+  availableChannels: DossierDecisionChannel[];
+  status: 'pending' | 'resolved' | 'expired';
+  resolvedAt?: ISODate;
+  resolutionChannel?: DossierDecisionChannel;
+};
+
 export type StrategicDossier = {
   id: string;
   title: string;
@@ -1098,6 +1118,8 @@ export type StrategicDossier = {
   playerStance?: string;
   commitments: string[];
   pendingDecisions: string[];
+  /** Index enrichi ; les anciennes sauvegardes n’ont que pendingDecisions. */
+  decisionRecords?: DossierDecision[];
   relatedCurrentIds: string[];
   relatedActionIds: string[];
   entries: DossierEntry[];

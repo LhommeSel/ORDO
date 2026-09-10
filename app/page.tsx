@@ -29,6 +29,7 @@ import {
   classifyAdvisorQuestion,
   createWorldPulseRequest, executeWorldPulse, rankStrategicDossierReviews,
   setDossierFollowed,
+  dossierDecisionRecords,
   countrySheet,
   type AdvisorAnswer, type AdvisorQuestionKind, type EnergyAdministrativeOffer, type EnergyCounterpartResponse,
   type EnergyOfferAdjustment, type ISODate, type StrategicDossier, type StrategicPlan,
@@ -958,6 +959,10 @@ const dossierImportanceTone: Record<StrategicDossier['importance'], string> = {
   minor: 'text-slate-300', moderate: 'text-sky-300', major: 'text-amber-300', critical: 'text-red-300',
 };
 
+const decisionUrgencyLabels: Record<string, string> = { low: 'faible', medium: 'moyenne', high: 'haute', critical: 'critique' };
+const decisionSourceLabels: Record<string, string> = { legacy: 'héritée', world_pulse: 'pouls IA', autonomous_program: 'programme autonome', historical: 'historique', player_action: 'action du joueur' };
+const decisionChannelLabels: Record<string, string> = { local_action: 'action locale', dialogue: 'dialogue', delegation: 'délégation', explicit_silence: 'silence explicite' };
+
 const programStatusLabels: Record<string, string> = {
   active: 'Actif', succeeded: 'Réussi', partially_succeeded: 'Partiel', failed: 'Échoué', cancelled: 'Annulé',
 };
@@ -1030,6 +1035,7 @@ function DossiersPanel({ world, selectedId, onSelect, onWorldChange, onNotice, o
   const scheduledReviews = useMemo(() => new globalThis.Map(rankStrategicDossierReviews(world).map((review) => [review.dossierId, review])), [world]);
   const selected = dossiers.find((dossier) => dossier.id === selectedId) ?? dossiers[0];
   const updates = selected ? dossierUpdatesSinceView(world, selected.id) : [];
+  const decisionRecords = selected ? dossierDecisionRecords(selected) : [];
   const diplomaticSession = selected ? Object.values(world.diplomaticSessions).find((session) => session.linkedDossierId === selected.id) : undefined;
   const askDossierAI = async () => {
     if (!selected || dossierAIStatus === 'loading') return;
@@ -1123,8 +1129,8 @@ function DossiersPanel({ world, selectedId, onSelect, onWorldChange, onNotice, o
       </div>}
       {preparedDossierOption && <div className="border border-primary/45 bg-card/80 p-4"><div className="font-mono text-[10px] uppercase tracking-wider text-primary">Programme préparé · confirmation requise</div><h3 className="mt-1 font-semibold">{preparedDossierOption.title}</h3><div className="mt-2 grid gap-2 text-xs sm:grid-cols-3"><Stat label="Domaine" value={preparedDossierOption.action.category} /><Stat label="Durée" value={`${preparedDossierOption.action.durationMonths} mois`} /><Stat label="Budget" value={`${preparedDossierOption.action.budgetCost.toFixed(1)} unités`} /></div>{preparedDossierOption.warnings.length > 0 && <ul className="mt-2 space-y-1 text-xs text-amber-300">{preparedDossierOption.warnings.map((warning) => <li key={warning}>⚠ {warning}</li>)}</ul>}<div className="mt-3 flex flex-wrap gap-2"><Button onClick={launchDossierOption}><CheckCircle2 className="size-4" />Confirmer et lancer</Button><Button variant="outline" onClick={() => setPreparedDossierOption(null)}>Annuler</Button></div></div>}
       {dossierAIForId === selected.id && dossierAIStatus === 'error' && <div className="border border-amber-400/40 bg-card/70 p-3 text-sm text-amber-200">L’analyse IA n’a pas abouti. Le dossier et son analyse locale restent disponibles.</div>}
-      {(selected.pendingDecisions.length > 0 || selected.commitments.length > 0) && <div className="grid gap-3 lg:grid-cols-2">
-        <div className="border border-border bg-card/70 p-4"><div className="font-mono text-[10px] uppercase tracking-wider text-amber-300">Décisions attendues</div>{selected.pendingDecisions.length ? <div className="mt-3 space-y-3">{selected.pendingDecisions.map((item) => <div key={item} className="border border-amber-300/30 bg-amber-300/5 p-3"><div className="text-sm">{item}</div><div className="mt-3 flex flex-wrap gap-2"><Button size="sm" onClick={() => resolveDecision(item, 'local_action')}>Décider localement</Button><Button size="sm" variant="outline" onClick={() => resolveDecision(item, 'dialogue')}>Ouvrir un dialogue</Button><Button size="sm" variant="outline" onClick={() => resolveDecision(item, 'delegation')}>Déléguer</Button><Button size="sm" variant="ghost" onClick={() => resolveDecision(item, 'explicit_silence')}>Garder le silence</Button></div></div>)}</div> : <div className="mt-2 text-sm text-muted-foreground">Aucun arbitrage immédiat.</div>}</div>
+      {(decisionRecords.length > 0 || selected.commitments.length > 0) && <div className="grid gap-3 lg:grid-cols-2">
+        <div className="border border-border bg-card/70 p-4"><div className="font-mono text-[10px] uppercase tracking-wider text-amber-300">Décisions attendues</div>{decisionRecords.length ? <div className="mt-3 space-y-3">{decisionRecords.map((decision) => <div key={decision.id} className="border border-amber-300/30 bg-amber-300/5 p-3"><div className="text-sm">{decision.prompt}</div><div className="mt-2 flex flex-wrap gap-2 font-mono text-[10px] text-muted-foreground"><span>urgence {decisionUrgencyLabels[decision.urgency] ?? decision.urgency}</span><span>origine : {decisionSourceLabels[decision.sourceKind] ?? decision.sourceKind}</span>{decision.sourceLabel && <span>· {decision.sourceLabel}</span>}</div><div className="mt-1 text-[11px] text-muted-foreground">Acteurs : {decision.actorIds.map((id) => world.countries[id]?.name ?? id).join(', ')} · canaux : {decision.availableChannels.map((channel) => decisionChannelLabels[channel] ?? channel).join(', ')}</div><div className="mt-3 flex flex-wrap gap-2"><Button size="sm" onClick={() => resolveDecision(decision.prompt, 'local_action')}>Décider localement</Button><Button size="sm" variant="outline" onClick={() => resolveDecision(decision.prompt, 'dialogue')}>Ouvrir un dialogue</Button><Button size="sm" variant="outline" onClick={() => resolveDecision(decision.prompt, 'delegation')}>Déléguer</Button><Button size="sm" variant="ghost" onClick={() => resolveDecision(decision.prompt, 'explicit_silence')}>Garder le silence</Button></div></div>)}</div> : <div className="mt-2 text-sm text-muted-foreground">Aucun arbitrage immédiat.</div>}</div>
         <div className="border border-border bg-card/70 p-4"><div className="font-mono text-[10px] uppercase tracking-wider text-emerald-300">Engagements mémorisés</div><ul className="mt-2 space-y-2 text-sm">{selected.commitments.length ? selected.commitments.map((item) => <li key={item}>— {item}</li>) : <li className="text-muted-foreground">Aucun engagement formel.</li>}</ul></div>
       </div>}
       {diplomaticSession && <div className="border border-border bg-card/70">

@@ -1,4 +1,5 @@
 import { commitWorldAction, relationBetween } from './ledger';
+import { makeDossierDecision } from './dossiers';
 import { seededUnit } from './random';
 import { actionIntentFromProgram } from './action-intents';
 import type {
@@ -172,7 +173,7 @@ function diplomaticResolutionEffects(
 
 function linkedDossierResolutionEffects(
   state: WorldState,
-  program: Pick<ActionProgram, 'actorId' | 'targetIds' | 'linkedDossierId' | 'id'>,
+  program: Pick<ActionProgram, 'actorId' | 'targetIds' | 'linkedDossierId' | 'id' | 'title'>,
   outcome: 'succeeded' | 'partially_succeeded' | 'failed',
   resolution: string,
 ): WorldEffect[] {
@@ -183,19 +184,28 @@ function linkedDossierResolutionEffects(
     : outcome === 'partially_succeeded' ? 'Programme partiellement achevé'
       : 'Programme échoué';
   const trend = outcome === 'failed' ? 'deescalating' : outcome === 'succeeded' ? 'stable' : dossier.trend;
+  // Même un échec est une information stratégique : le joueur doit pouvoir
+  // choisir une suite, demander un dialogue, déléguer ou assumer le silence.
   const requiresPlayerDecision = dossier.actorIds.includes(state.playerCountryId)
-    && (dossier.importance === 'major' || dossier.importance === 'critical')
-    && outcome !== 'failed';
+    && (dossier.importance === 'major' || dossier.importance === 'critical');
   const decision = requiresPlayerDecision
     ? `Évaluer la suite après la résolution du programme autonome dans « ${dossier.title} ».`
     : undefined;
   const pendingDecisions = decision && !dossier.pendingDecisions.includes(decision)
     ? [...dossier.pendingDecisions, decision].slice(-6)
     : dossier.pendingDecisions;
+  const decisionRecords = decision
+    ? [...(dossier.decisionRecords ?? []).filter((record) => record.prompt !== decision), makeDossierDecision({
+      id: `${program.id}-decision`, prompt: decision, createdAt: state.currentDate,
+      importance: dossier.importance, actorIds: dossier.actorIds, sourceKind: 'autonomous_program',
+      sourceId: program.id,
+      sourceLabel: program.title,
+    })]
+    : dossier.decisionRecords;
   return [
     {
       kind: 'dossier_patch', dossierId,
-      patch: { phase, trend, status: outcome === 'failed' ? 'deescalating' : dossier.status, pendingDecisions },
+      patch: { phase, trend, status: outcome === 'failed' ? 'deescalating' : dossier.status, pendingDecisions, ...(decisionRecords ? { decisionRecords } : {}) },
       reason: 'La résolution du programme autonome actualise le dossier qui l’a déclenché.', visibility: 'player',
     },
     {
