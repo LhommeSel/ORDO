@@ -34,7 +34,9 @@ const statusRank: Record<SovereignDebtStatus, number> = {
 
 function monetaryProtection(state: WorldState, countryId: CountryId, debt: SovereignDebtState) {
   const regime = state.structuralProfiles[countryId]?.monetaryRegime;
-  const multiplier = regime === 'sovereign_floating' ? 1 : regime === 'sovereign_managed' ? 0.72 : regime === 'currency_union' ? 0.68 : 0.48;
+  const multiplier = regime === 'sovereign_floating' ? 1
+    : regime === 'sovereign_managed' ? (debt.backstopCredibilityPct >= 70 ? 0.82 : 0.72)
+      : regime === 'currency_union' ? 0.68 : 0.72;
   // Un prêteur en dernier ressort ne vaut que par sa crédibilité. La prime
   // d'union monétaire reste explicite, sans rendre les membres invulnérables.
   const credibilityAdjustment = (debt.backstopCredibilityPct - 50) * 0.08;
@@ -48,19 +50,33 @@ function debtStatus(
   fundingGap: number,
   monthsUnderStress: number,
   missedPayments: number,
+  publicDebtPctGdp: number,
   previousStatus: SovereignDebtStatus = 'stable',
 ): SovereignDebtStatus {
   if (previousStatus === 'restructuring') return 'restructuring';
-  if (missedPayments >= 2 || (access < 16 && monthsUnderStress >= 8)) return 'default';
+  // Un défaut est un événement de paiement, pas la simple conséquence d'un
+  // ratio dette/PIB élevé. Le modèle doit laisser le temps à un État de
+  // renouveler sa dette, d'obtenir des prêts concessionnels ou de réduire son
+  // déficit avant de constater des arriérés irréversibles.
+  const arrearsDefault = missedPayments >= 4 && monthsUnderStress >= 24 && publicDebtPctGdp >= 130 && (fundingGap >= 14 || access < 18);
+  // Cas d'insolvabilité manifeste : lorsque le besoin annuel dépasse très
+  // largement les canaux de financement et que le marché est presque fermé,
+  // quelques arriérés suffisent à constater le défaut, même si le stock
+  // d'impayés n'a pas encore atteint 4 % du PIB.
+  const fundingCrisisDefault = missedPayments >= 2 && monthsUnderStress >= 18 && publicDebtPctGdp >= 130 && fundingGap >= 12 && access < 40;
+  const acuteFundingDefault = missedPayments >= 0.2 && monthsUnderStress >= 18 && publicDebtPctGdp >= 115 && fundingGap >= 10 && access < 50 && debtService >= 22;
+  const acuteDefault = missedPayments >= 2.5 && monthsUnderStress >= 24 && publicDebtPctGdp >= 130 && access < 12 && fundingGap >= 8;
+  const imminentDefault = publicDebtPctGdp >= 115 && monthsUnderStress >= 18 && fundingGap >= 6 && access < 55 && debtService >= 24;
+  if (arrearsDefault || fundingCrisisDefault || acuteFundingDefault || acuteDefault || imminentDefault) return 'default';
   // Un signal de marché isolé n'est pas encore une crise : il faut une
-  // tension persistante (ou des arriérés) avant d'ouvrir un dossier majeur.
-  // Cela évite que les pays fragiles soient déclarés en crise au premier
-  // passage alors que leur dette est encore refinancée.
-  const persistentCrisis = monthsUnderStress >= 6 && (fundingGap >= 2.5 || access < 25);
-  const continuingCrisis = previousStatus === 'refinancing_crisis' && monthsUnderStress >= 3 && (fundingGap >= 1.5 || access < 30);
+  // tension persistante avant d'ouvrir un dossier majeur. Un écart de quelques
+  // points de PIB peut encore être absorbé par le coussin de trésorerie et le
+  // refinancement domestique.
+  const persistentCrisis = monthsUnderStress >= 12 && (fundingGap >= 8 || access < 24);
+  const continuingCrisis = previousStatus === 'refinancing_crisis' && monthsUnderStress >= 9 && (fundingGap >= 5 || access < 28);
   if (persistentCrisis || continuingCrisis) return 'refinancing_crisis';
-  if (access < 38 || debtService >= 35 || fundingGap >= 2) return 'stressed';
-  if (access < 67 || debtService >= 18) return 'watch';
+  if (access < 30 || debtService >= 42 || fundingGap >= 6) return 'stressed';
+  if (access < 60 || debtService >= 18 || fundingGap >= 2) return 'watch';
   return 'stable';
 }
 
@@ -75,6 +91,14 @@ export function projectDebtAndBanking(
   const profile = state.structuralProfiles[economy.countryId];
   const protection = monetaryProtection(state, economy.countryId, debt);
   const foreignCurrencyShare = clamp(1 - debt.localCurrencySharePct / 100, 0, 1);
+  // Une dette libellée dans sa propre monnaie, détenue par des investisseurs
+  // domestiques et adossée à une banque centrale crédible ne se comporte pas
+  // comme une dette en devises d'un État sans prêteur en dernier ressort. Ce
+  // bouclier ne rend pas la dette gratuite : il amortit seulement le risque de
+  // crise de liquidité (cas typique du Japon en 2000).
+  const monetaryShield = clamp((debt.localCurrencySharePct / 100) * (protection / 100), 0, 1);
+  const debtStockPenalty = 0.12 * (1 - monetaryShield * 0.72);
+  const debtServicePenalty = 0.52 * (1 - monetaryShield * 0.55);
   const currencyMismatchPressure = foreignCurrencyShare * (
     Math.max(0, -input.currentAccountPctGdp) * 0.45
     + Math.max(0, input.inflationAnnualPct - state.worldEconomy.globalInflationAnnualPct) * 0.25
@@ -88,9 +112,9 @@ export function projectDebtAndBanking(
       + Math.min(12, input.foreignReserveMonthsImports) * 1.15
       + Math.max(0, input.currentAccountPctGdp) * 0.35
       + Math.max(0, input.realGrowthAnnualPct) * 0.5
-      - Math.max(0, input.publicDebtPctGdp - 80) * 0.12
+      - Math.max(0, input.publicDebtPctGdp - 80) * debtStockPenalty
       - foreignCurrencyShare * 16 - currencyMismatchPressure
-      - Math.max(0, debtServicePctRevenue - 8) * 0.52
+      - Math.max(0, debtServicePctRevenue - 8) * debtServicePenalty
       - Math.max(0, -input.fiscalBalancePctGdp) * 0.9
       - Math.max(0, -input.currentAccountPctGdp) * 0.6
       - input.financialStress * 0.24 - bankContagion * 0.4 - previousSovereignStress * 0.18,
@@ -114,13 +138,23 @@ export function projectDebtAndBanking(
   const credibilitySupport = debt.fiscalCredibilityPct * 0.025;
   const fundingCapacity = 2 + marketAccess * 0.35 + protection * 0.035
     + Math.min(12, input.foreignReserveMonthsImports) * 0.18 + bufferSupport + credibilitySupport;
-  const fundingGapPctGdp = Math.max(0, refinancingNeedPctGdp - fundingCapacity);
+  const monetaryLiquidity = debt.backstopCredibilityPct >= 70
+    ? protection * (debt.localCurrencySharePct / 100) * 0.18
+    : 0;
+  const fundingGapPctGdp = Math.max(0, refinancingNeedPctGdp - fundingCapacity - monetaryLiquidity);
   const stressedNow = fundingGapPctGdp >= 1 || marketAccess < 43 || debtServicePctRevenue >= 28;
   const monthsUnderStress = clamp(debt.monthsUnderStress + (stressedNow ? elapsedMonths : -elapsedMonths * 1.75), 0, 120);
-  const preliminaryStatus = debtStatus(marketAccess, debtServicePctRevenue, fundingGapPctGdp, monthsUnderStress, debt.missedPaymentsPctGdp, debt.status);
-  const unpaidFlow = ['refinancing_crisis', 'default'].includes(preliminaryStatus) ? fundingGapPctGdp * elapsedMonths / 12 * 0.65 : 0;
+  const preliminaryStatus = debtStatus(marketAccess, debtServicePctRevenue, fundingGapPctGdp, monthsUnderStress, debt.missedPaymentsPctGdp, input.publicDebtPctGdp, debt.status);
+  // Le funding gap est annualisé : il ne devient pas automatiquement un
+  // arriéré dès le premier mois. Seule la partie persistante au-delà de 2 % du
+  // PIB alimente les impayés, à un rythme lent en crise de refinancement et
+  // plus rapide lorsque l'accès au marché est déjà fermé.
+  const arrearsRate = preliminaryStatus === 'default' ? 0.32 : 0.18;
+  const unpaidFlow = ['refinancing_crisis', 'default'].includes(preliminaryStatus)
+    ? Math.max(0, fundingGapPctGdp - 2) * elapsedMonths / 12 * arrearsRate
+    : 0;
   const missedPaymentsPctGdp = clamp(debt.missedPaymentsPctGdp + unpaidFlow - (preliminaryStatus === 'stable' ? elapsedMonths * 0.08 : 0), 0, 100);
-  const status = debtStatus(marketAccess, debtServicePctRevenue, fundingGapPctGdp, monthsUnderStress, missedPaymentsPctGdp, debt.status);
+  const status = debtStatus(marketAccess, debtServicePctRevenue, fundingGapPctGdp, monthsUnderStress, missedPaymentsPctGdp, input.publicDebtPctGdp, debt.status);
 
   const sovereignExposureStress = clamp((100 - marketAccess) * debt.domesticBankExposurePctAssets / 100 + statusRank[status] * 9, 0, 100);
   const recessionStress = Math.max(0, -input.realGrowthAnnualPct) * 4 + Math.max(0, input.unemploymentPct - economy.unemploymentPct) * 1.5;

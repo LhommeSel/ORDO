@@ -130,8 +130,12 @@ for (const item of [...nationalBaseline2000, ...globalNationalBaseline2000]) {
   const controlled = item.orientation === 'party_state' || item.orientation === 'military' || item.orientation === 'theocratic';
   calibration[item.id] = {
     workingAge: Math.min(72, Math.max(55, 62 + item.populationGrowth * 1.8)), participation: Math.min(82, Math.max(42, 58 + item.industry * 0.22)),
-    migration: item.populationGrowth > 2 ? 1.5 : 0, debt: fragile ? 62 : item.gdp > 100 ? 48 : 55,
-    revenue: controlled ? 24 : 32, spending: controlled ? 28 : 34, rate: Math.max(2, item.inflation * 0.55 + 3),
+    migration: item.populationGrowth > 2 ? 1.5 : 0,
+    // Les pays fragiles ont souvent une dette faciale élevée, mais bénéficient
+    // aussi de maturités longues et de financements concessionnels : on évite
+    // de transformer le socle générique en défaut automatique dès 2005.
+    debt: fragile ? Math.min(62, Math.max(48, 52 + (35 - item.stability) * 0.35)) : item.gdp > 100 ? 48 : 55,
+    revenue: controlled ? 26 : 33, spending: controlled ? 28 : 34.5, rate: Math.max(2, item.inflation * 0.55 + 3),
     privateDebt: item.gdp > 100 ? 75 : 42, reserves: item.openness > 65 ? 4 : 2.5,
     agriculture: Math.max(2, 42 - item.industry * 0.8), extractive: item.vulnerabilities.some((v) => /pétrol|hydrocarb|miner/i.test(v)) ? 12 : 3,
     publicServices: controlled ? 12 : 17,
@@ -145,12 +149,12 @@ for (const item of [...nationalBaseline2000, ...globalNationalBaseline2000]) {
     // L'inflation n'est pas un taux d'intérêt souverain. On conserve un signal
     // nominal pour les pays très inflationnistes, mais borné : le stock ancien
     // ne doit pas être repricé à 100–200 % dès le premier mois.
-    effectiveRate: Math.max(3, Math.min(20, item.inflation * 0.16 + 3.5)), spread: fragile ? 450 : 120, maturity: fragile ? 3.8 : 5.8,
+    effectiveRate: Math.max(3, Math.min(20, item.inflation * 0.16 + 3.5)), spread: fragile ? 380 : 120, maturity: fragile ? 4.6 : 5.8,
     foreignHeld: item.openness > 65 ? 35 : 20, foreignCurrency: controlled ? 25 : 10, bankExposure: fragile ? 24 : 14,
     backstop: item.stability, marketAccess: Math.max(35, item.confidence), bankCapital: fragile ? 8.8 : 10.5, badLoans: fragile ? 15 : 6,
     localCurrency: controlled ? 75 : 100 - (controlled ? 25 : 10),
-    fixedRate: fragile ? 42 : 68,
-    cashBuffer: item.openness > 65 ? 3.5 : fragile ? 1 : 2,
+    fixedRate: fragile ? 50 : 68,
+    cashBuffer: item.openness > 65 ? 3.5 : fragile ? 1.5 : 2,
     backstopCredibility: Math.min(100, Math.max(0, item.stability * 0.9 + item.confidence * 0.1)),
     fiscalCredibility: Math.min(100, Math.max(0, item.confidence * 0.7 + item.stability * 0.3)),
   };

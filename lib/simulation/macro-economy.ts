@@ -197,7 +197,11 @@ function nextCountryEconomy(
   const strategicBottleneck = strategicIndustryConstraint(state, economy.countryId);
   const stakeholderDrag = stakeholderPressureByChannel(state, economy.countryId, 'economic_confidence') * 0.018;
   const sovereignStatusDrag: Record<MacroeconomicState['sovereignDebt']['status'], number> = {
-    stable: 0, watch: 0.08, stressed: 0.45, refinancing_crisis: 1.5, default: 4.5, restructuring: 2.5,
+    // Une tension de refinancement renchérit le crédit et ralentit
+    // l'investissement, mais elle ne met pas mécaniquement toute l'économie
+    // en récession. L'effet devient franchement récessif seulement lorsqu'un
+    // défaut est constaté.
+    stable: 0, watch: 0.04, stressed: 0.18, refinancing_crisis: 0.6, default: 2.2, restructuring: 1.4,
   };
   const sovereignDrag = sovereignStatusDrag[economy.sovereignDebt.status];
   const bankingDrag = Math.max(0, 62 - economy.bankingSystem.creditAvailability) * 0.035;
@@ -292,8 +296,17 @@ function nextCountryEconomy(
 
   const cyclicalShortfall = Math.max(0, potentialGrowth - growth);
   const automaticStabilizers = cyclicalShortfall * economy.policy.socialProtection / 100 * 0.55;
-  const revenue = clamp(economy.publicRevenuePctGdp - cyclicalShortfall * 0.16 * years, 5, 70);
-  const spending = clamp(economy.publicSpendingPctGdp + automaticStabilizers * years + economy.policy.fiscalStance * 0.02 * years, 5, 80);
+  // Les stabilisateurs sont un niveau contracyclique, pas une écriture qui
+  // s'additionne indéfiniment à chaque frontière mensuelle. On fait converger
+  // recettes et dépenses vers une cible temporaire ; lorsque l'écart de
+  // production se referme, la cible revient progressivement vers le socle.
+  const revenueTarget = clamp(economy.publicRevenuePctGdp - cyclicalShortfall * 0.16, 5, 70);
+  const revenue = economy.publicRevenuePctGdp + (revenueTarget - economy.publicRevenuePctGdp) * transition(0.65, elapsedMonths);
+  const spendingTarget = clamp(
+    economy.publicSpendingPctGdp + clamp(automaticStabilizers, 0, 3) + economy.policy.fiscalStance * 0.02,
+    5, 80,
+  );
+  const spending = economy.publicSpendingPctGdp + (spendingTarget - economy.publicSpendingPctGdp) * transition(0.8, elapsedMonths);
   const fiscalBalance = clamp(revenue - spending, -25, 20);
   const nominalGrowth = growth + inflation;
   const publicDebt = clamp(economy.publicDebtPctGdp - fiscalBalance * years - nominalGrowth * economy.publicDebtPctGdp / 100 * years, 0, 350);
@@ -382,10 +395,34 @@ export function advanceMacroeconomy(state: WorldState, elapsedMonths: number) {
     reason: 'La conjoncture mondiale agrège demande, commerce, marchés physiques, finance et chocs actifs.', visibility: 'debug',
   }];
   for (const economy of Object.values(state.macroEconomies)) {
-    const patch = nextCountryEconomy(state, economy, elapsedMonths, globalGrowth, globalFinancialStress, euroPolicyRate);
+    let patch = nextCountryEconomy(state, economy, elapsedMonths, globalGrowth, globalFinancialStress, euroPolicyRate);
+    // Un État non joueur ne reste pas figé dans un défaut pendant toute la
+    // partie : après une période d'arriérés, les créanciers et les bailleurs
+    // imposent généralement un reprofilage. Cela conserve la gravité du
+    // défaut, mais évite qu'un signal de départ ne condamne mécaniquement un
+    // pays pour les vingt années suivantes.
+    const automaticStandstill = economy.countryId !== state.playerCountryId
+      && economy.sovereignDebt.status === 'default'
+      && economy.sovereignDebt.monthsUnderStress >= 24;
+    if (automaticStandstill) {
+      patch = {
+        ...patch,
+        publicDebtPctGdp: round(patch.publicDebtPctGdp * 0.82),
+        confidenceIndex: clamp(patch.confidenceIndex - 5, 0, 110),
+        sovereignDebt: {
+          ...patch.sovereignDebt,
+          status: 'restructuring', marketAccess: Math.min(35, patch.sovereignDebt.marketAccess),
+          fundingGapPctGdp: round(patch.sovereignDebt.fundingGapPctGdp * 0.35),
+          missedPaymentsPctGdp: 0, monthsUnderStress: 0,
+          sovereignSpreadBps: Math.max(900, patch.sovereignDebt.sovereignSpreadBps),
+        },
+      };
+    }
     effects.push({
       kind: 'macro_patch', countryId: economy.countryId, patch,
-      reason: 'L’économie nationale équilibre demande, capacité productive, emploi, prix, budget, crédit, commerce, dette et démographie.',
+      reason: automaticStandstill
+        ? 'Après des arriérés persistants, les créanciers imposent un reprofilage automatique de la dette ; les pertes restent visibles dans l’économie et le dossier souverain.'
+        : 'L’économie nationale équilibre demande, capacité productive, emploi, prix, budget, crédit, commerce, dette et démographie.',
       visibility: 'debug',
     });
     effects.push(...debtCrisisEffects(state, economy.countryId, economy.sovereignDebt.status, patch.sovereignDebt.status, patch.sovereignDebt));

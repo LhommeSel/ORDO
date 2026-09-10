@@ -355,6 +355,14 @@ test('le registre énergétique réserve les flux historiques et empêche une do
   assert.equal(second.ok, false);
 });
 
+test('un pays sans corridor énergétique détaillé conserve ses importations héritées', () => {
+  const state = createFrance2000World();
+  const balance = energyBalance(state, 'BEN', 'gas');
+  assert.ok(balance);
+  assert.equal(balance?.deficit, 0);
+  assert.ok((balance?.imports ?? 0) > 0);
+});
+
 test('une demande simple produit une proposition gazière administrativement réaliste', () => {
   const state = createFrance2000World();
   const result = createAdministrativeEnergyOffer(state, 'DZA', 'gas');

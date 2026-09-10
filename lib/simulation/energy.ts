@@ -78,8 +78,13 @@ export function energyBalance(state: WorldState, countryId: CountryId, resource:
   if (!energy) return null;
   const flows = Object.values(state.baselineEnergyFlows ?? {});
   const hasRegistry = flows.length > 0;
-  const baselineImports = hasRegistry
-    ? flows.filter((flow) => flow.buyerId === countryId && flow.resource === resource).reduce((sum, flow) => sum + baselineFlowDeliveredVolume(state, flow), 0)
+  const countryBaselineFlows = flows.filter((flow) => flow.buyerId === countryId && flow.resource === resource);
+  // Le registre détaillé ne couvre d'abord que les grands corridors. Pour les
+  // autres pays, les importations héritées restent une ligne de base du monde
+  // réel : leur présence dans le registre global ne doit pas créer une pénurie
+  // artificielle simplement parce qu'aucun itinéraire n'est encore détaillé.
+  const baselineImports = hasRegistry && countryBaselineFlows.length
+    ? countryBaselineFlows.reduce((sum, flow) => sum + baselineFlowDeliveredVolume(state, flow), 0)
     : energy.legacyImports?.[resource] ?? 0;
   const contractualImports = Object.values(state.energyContracts)
     .filter((contract) => contract.buyerId === countryId && contract.resource === resource)
