@@ -958,6 +958,64 @@ const dossierImportanceTone: Record<StrategicDossier['importance'], string> = {
   minor: 'text-slate-300', moderate: 'text-sky-300', major: 'text-amber-300', critical: 'text-red-300',
 };
 
+const programStatusLabels: Record<string, string> = {
+  active: 'Actif', succeeded: 'Réussi', partially_succeeded: 'Partiel', failed: 'Échoué', cancelled: 'Annulé',
+};
+
+const programStatusTone: Record<string, string> = {
+  active: 'text-primary', succeeded: 'text-emerald-300', partially_succeeded: 'text-amber-300', failed: 'text-red-300', cancelled: 'text-muted-foreground',
+};
+
+const programCategoryLabels: Record<string, string> = {
+  diplomacy: 'Diplomatie', economic: 'Économie', institutional: 'Institutions', defense: 'Défense', intelligence: 'Renseignement',
+};
+
+function AutonomousProgramsPanel({ world }: { world: WorldState }) {
+  const programs = Object.values(world.actionPrograms ?? {})
+    .filter((program) => program.actorId !== world.playerCountryId)
+    .sort((a, b) => b.startedAt.localeCompare(a.startedAt) || b.id.localeCompare(a.id));
+  const active = programs.filter((program) => program.status === 'active').length;
+  const resolved = programs.length - active;
+  return <section className="border border-border bg-card/70 p-4">
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <div>
+        <div className="font-mono text-[10px] uppercase tracking-wider text-primary">Suivi autonome</div>
+        <h2 className="mt-1 text-lg font-semibold">Programmes lancés par les autres États</h2>
+        <p className="mt-1 text-xs text-muted-foreground">Le pouls IA formule des intentions ; le moteur en fixe les moyens, la durée et la résolution. Aucun effet n’est appliqué directement par le modèle.</p>
+      </div>
+      <div className="grid grid-cols-2 gap-2 text-right text-xs sm:grid-cols-3">
+        <Stat label="Total" value={String(programs.length)} />
+        <Stat label="Actifs" value={String(active)} />
+        <Stat label="Résolus" value={String(resolved)} />
+      </div>
+    </div>
+    {!programs.length && <div className="mt-4 border border-dashed border-border p-4 text-sm text-muted-foreground">Aucun programme autonome n’a encore été lancé.</div>}
+    {programs.length > 0 && <div className="mt-4 space-y-2">{programs.slice(0, 16).map((program) => {
+      const progress = program.durationMonths > 0 ? Math.min(100, program.progressMonths / program.durationMonths * 100) : 100;
+      const actor = world.countries[program.actorId];
+      const targets = program.targetIds.map((id) => world.countries[id]?.name ?? id).join(', ') || 'Aucun interlocuteur direct';
+      return <details key={program.id} className="border border-border bg-background/35 p-3">
+        <summary className="cursor-pointer list-none">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div><div className="font-medium">{actor?.flag} {actor?.name ?? program.actorId}</div><div className="mt-1 text-sm">{program.title}</div></div>
+            <span className={`font-mono text-[10px] uppercase ${programStatusTone[program.status] ?? 'text-muted-foreground'}`}>{programStatusLabels[program.status] ?? program.status}</span>
+          </div>
+          <div className="mt-3 h-1.5 bg-muted"><div className={`h-full ${program.status === 'failed' ? 'bg-red-400' : program.status === 'succeeded' ? 'bg-emerald-400' : 'bg-primary'}`} style={{ width: `${progress}%` }} /></div>
+          <div className="mt-1 flex justify-between font-mono text-[10px] text-muted-foreground"><span>{program.progressMonths}/{program.durationMonths} mois</span><span>{program.status === 'active' ? `résolution prévue ${program.expectedCompletionAt}` : `lancé le ${program.startedAt}`}</span></div>
+        </summary>
+        <div className="mt-3 border-t border-border/70 pt-3 text-xs">
+          <div className="grid gap-2 sm:grid-cols-3"><Stat label="Domaine" value={programCategoryLabels[program.category] ?? program.category} /><Stat label="Cible(s)" value={targets} /><Stat label="Issue estimée" value={`${program.successProbability}%`} /></div>
+          <p className="mt-3"><b>Objectif :</b> {program.intent}</p>
+          <p className="mt-2 text-muted-foreground"><b>Moyens :</b> {program.requiredCapacities.map((item) => `${item.domain} +${item.commitment}`).join(' · ')} · budget réservé {program.budgetCost.toFixed(1)}</p>
+          {program.risks.length > 0 && <p className="mt-2 text-amber-200"><b>Risques :</b> {program.risks.join(' · ')}</p>}
+          {program.resolution && <p className="mt-2 text-muted-foreground"><b>Résolution :</b> {program.resolution}</p>}
+        </div>
+      </details>;
+    })}</div>}
+    {programs.length > 16 && <div className="mt-3 text-[11px] text-muted-foreground">{programs.length - 16} programme(s) plus ancien(s) restent consultables dans le registre causal.</div>}
+  </section>;
+}
+
 function DossiersPanel({ world, selectedId, onSelect, onWorldChange, onNotice, onOpenDiplomacy }: {
   world: WorldState; selectedId: string | null; onSelect: (id: string) => void; onWorldChange: (world: WorldState) => void; onNotice: (message: string) => void; onOpenDiplomacy?: (dialogueId: string) => void;
 }) {
@@ -1047,6 +1105,7 @@ function DossiersPanel({ world, selectedId, onSelect, onWorldChange, onNotice, o
       })}</div>
     </section>
     <section className="space-y-4">
+      <AutonomousProgramsPanel world={world} />
       <div className="border border-border bg-card/70 p-4">
         <div className="flex flex-wrap items-start justify-between gap-3"><div><div className={`font-mono text-[10px] uppercase tracking-wider ${dossierImportanceTone[selected.importance]}`}>{selected.kind} · {selected.status}</div><h2 className="mt-1 text-xl font-semibold">{selected.title}</h2></div><div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => onWorldChange(setDossierFollowed(world, selected.id, !selected.followed))}>{selected.followed ? <PinOff className="size-4" /> : <Pin className="size-4" />}{selected.followed ? 'Ne plus épingler' : 'Épingler'}</Button>{(selected.importance === 'moderate' || selected.importance === 'major' || selected.importance === 'critical') && <Button onClick={askDossierAI} disabled={dossierAIStatus === 'loading'}>{dossierAIStatus === 'loading' ? <LoaderCircle className="size-4 animate-spin" /> : <BrainCircuit className="size-4" />}Demander des options à l’IA</Button>}</div></div>
         <p className="mt-3 text-sm text-muted-foreground">{selected.publicSummary}</p>
