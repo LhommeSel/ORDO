@@ -1006,6 +1006,7 @@ function AutonomousProgramsPanel({ world }: { world: WorldState }) {
         <div className="mt-3 border-t border-border/70 pt-3 text-xs">
           <div className="grid gap-2 sm:grid-cols-3"><Stat label="Domaine" value={programCategoryLabels[program.category] ?? program.category} /><Stat label="Cible(s)" value={targets} /><Stat label="Issue estimée" value={`${program.successProbability}%`} /></div>
           <p className="mt-3"><b>Objectif :</b> {program.intent}</p>
+          {program.linkedDossierId && <p className="mt-2"><b>Dossier déclencheur :</b> {world.strategicDossiers[program.linkedDossierId]?.title ?? program.linkedDossierId}</p>}
           <p className="mt-2 text-muted-foreground"><b>Moyens :</b> {program.requiredCapacities.map((item) => `${item.domain} +${item.commitment}`).join(' · ')} · budget réservé {program.budgetCost.toFixed(1)}</p>
           {program.risks.length > 0 && <p className="mt-2 text-amber-200"><b>Risques :</b> {program.risks.join(' · ')}</p>}
           {program.resolution && <p className="mt-2 text-muted-foreground"><b>Résolution :</b> {program.resolution}</p>}

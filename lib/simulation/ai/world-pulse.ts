@@ -331,6 +331,7 @@ export function applyWorldPulseAnswer(
           input: {
             actorId: autonomous.actorId,
             targetIds: autonomous.targetIds,
+            ...(requestedDossierId ? { linkedDossierId: requestedDossierId } : {}),
             category: autonomous.category,
             objective: autonomous.objective,
             ...(autonomous.operation ? { operation: autonomous.operation } : {}),

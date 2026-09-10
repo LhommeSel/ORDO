@@ -957,6 +957,8 @@ export type ActionProgram = {
   category: CommonActionCategory;
   actorId: CountryId;
   targetIds: EntityId[];
+  /** Dossier stratégique à l'origine du programme, lorsqu'il existe. */
+  linkedDossierId?: string;
   title: string;
   intent: string;
   startedAt: ISODate;

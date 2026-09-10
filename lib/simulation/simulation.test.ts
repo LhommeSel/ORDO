@@ -1021,6 +1021,27 @@ test('un programme autonome diplomatique ne peut pas cibler son propre État', (
   assert.equal(applied.queuedAutonomousPrograms, 0);
 });
 
+test('un programme autonome conserve le dossier qui l’a déclenché', () => {
+  const initial = createFrance2000World();
+  const request = createWorldPulseRequest(initial, initial.actions.length, 1, 'test-linked-program');
+  const autonomy = request.pulses.find((candidate) => candidate.kind === 'world_autonomy')!;
+  const fact = autonomy.context.facts.find((candidate) => candidate.id === 'dossier:current-dotcom-exuberance');
+  assert.ok(fact);
+  if (!fact) return;
+  const applied = applyWorldPulseAnswer(initial, autonomy, {
+    headline: 'Programme lié', synthesis: 'Une initiative étrangère est rattachée au dossier suivi.', requestedFactIds: [],
+    proposals: [{
+      dossierId: 'current-dotcom-exuberance', title: 'Coordination transatlantique', kind: 'economic', importance: 'major',
+      actorIds: ['USA', 'FRA'], regionTags: ['Atlantique'], phase: 'Consultations', trend: 'stable',
+      summary: 'Washington ouvre des consultations avec Paris sur la correction technologique.', requiresPlayerDecision: false, playerDecision: null,
+      factIds: [fact.id], relationEffects: [], autonomousAction: { actorId: 'USA', targetIds: ['FRA'], category: 'diplomacy', operation: 'contact', objective: 'Ouvrir des consultations techniques avec la France.', },
+    }],
+  });
+  assert.equal(applied.queuedAutonomousPrograms, 1);
+  const program = Object.values(applied.state.actionPrograms).find((item) => item.actorId === 'USA');
+  assert.equal(program?.linkedDossierId, 'current-dotcom-exuberance');
+});
+
 test('un même dossier majeur calme bénéficie d’un délai entre deux réévaluations', () => {
   const initial = createFrance2000World();
   const dotcom = initial.strategicDossiers['current-dotcom-exuberance'];

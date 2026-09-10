@@ -5,6 +5,7 @@ import type { ActionProgram, CapacityDomainId, CommonActionCategory, CountryId, 
 export type AutonomousProgramInput = {
   actorId: CountryId;
   targetIds: CountryId[];
+  linkedDossierId?: string;
   category: CommonActionCategory;
   objective: string;
   operation?: 'contact' | 'cooperation' | 'defense_pact' | 'mediation' | 'information_sharing';
@@ -80,6 +81,7 @@ export function queueAutonomousProgram(state: WorldState, input: AutonomousProgr
     category: input.category,
     actorId: input.actorId,
     targetIds,
+    ...(input.linkedDossierId ? { linkedDossierId: input.linkedDossierId } : {}),
     title: `Initiative autonome · ${input.objective.trim().slice(0, 120)}`,
     intent: input.objective.trim().slice(0, 600),
     startedAt: state.currentDate,
