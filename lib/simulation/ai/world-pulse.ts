@@ -378,8 +378,17 @@ export type WorldPulseExecutionResult = {
   relationChanges: number;
   queuedAutonomousPrograms: number;
   errors: string[];
+  /** Nombre de missions conservées en secours local après un rejet IA. */
+  fallbackApplied?: number;
   response?: WorldPulseResponse;
 };
+
+function failedPulse(state: WorldState, message: string, fallbackApplied: number, response?: WorldPulseResponse): WorldPulseExecutionResult {
+  return {
+    state, ok: false, createdDossierIds: [], updatedDossierIds: [], playerDecisions: 0,
+    relationChanges: 0, queuedAutonomousPrograms: 0, errors: [message], fallbackApplied, response,
+  };
+}
 
 /** Un échec IA ne bloque jamais le tour local déjà calculé. */
 export async function executeWorldPulse(
@@ -393,16 +402,16 @@ export async function executeWorldPulse(
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request),
     });
   } catch {
-    return { state, ok: false, createdDossierIds: [], updatedDossierIds: [], playerDecisions: 0, relationChanges: 0, queuedAutonomousPrograms: 0, errors: ['Le pouls IA est momentanément inaccessible.'] };
+    return failedPulse(state, 'Le pouls IA est momentanément inaccessible.', request.pulses.length);
   }
   let payload: WorldPulseResponse;
   try { payload = await response.json() as WorldPulseResponse; } catch {
-    return { state, ok: false, createdDossierIds: [], updatedDossierIds: [], playerDecisions: 0, relationChanges: 0, queuedAutonomousPrograms: 0, errors: ['Le pouls IA a renvoyé une réponse illisible.'] };
+    return failedPulse(state, 'Le pouls IA a renvoyé une réponse illisible.', request.pulses.length);
   }
   if (!payload || typeof payload !== 'object' || typeof (payload as { ok?: unknown }).ok !== 'boolean') {
-    return { state, ok: false, createdDossierIds: [], updatedDossierIds: [], playerDecisions: 0, relationChanges: 0, queuedAutonomousPrograms: 0, errors: ['Le pouls IA a renvoyé un format inattendu.'] };
+    return failedPulse(state, 'Le pouls IA a renvoyé un format inattendu.', request.pulses.length);
   }
-  if (!payload.ok) return { state, ok: false, createdDossierIds: [], updatedDossierIds: [], playerDecisions: 0, relationChanges: 0, queuedAutonomousPrograms: 0, errors: [payload.message], response: payload };
+  if (!payload.ok) return failedPulse(state, payload.message, request.pulses.length, payload);
   let next = state;
   const createdDossierIds: string[] = [];
   const updatedDossierIds: string[] = [];
@@ -410,10 +419,11 @@ export async function executeWorldPulse(
   let playerDecisions = 0;
   let relationChanges = 0;
   let queuedAutonomousPrograms = 0;
+  let fallbackApplied = 0;
   for (const item of request.pulses) {
     const result = payload.results.find((candidate) => candidate.id === item.id);
-    if (!result) { errors.push(`La mission ${item.kind} n’a pas répondu.`); continue; }
-    if (!result.ok) { errors.push(result.message); continue; }
+    if (!result) { errors.push(`La mission ${item.kind} n’a pas répondu.`); fallbackApplied += 1; continue; }
+    if (!result.ok) { errors.push(`${item.kind} : ${result.message}`); fallbackApplied += 1; continue; }
     const applied = applyWorldPulseAnswer(next, item, result.answer);
     next = applied.state;
     createdDossierIds.push(...applied.createdDossierIds);
@@ -423,6 +433,6 @@ export async function executeWorldPulse(
     queuedAutonomousPrograms += applied.queuedAutonomousPrograms;
   }
   return {
-    state: next, ok: errors.length === 0, createdDossierIds, updatedDossierIds, playerDecisions, relationChanges, queuedAutonomousPrograms, errors, response: payload,
+    state: next, ok: errors.length === 0, createdDossierIds, updatedDossierIds, playerDecisions, relationChanges, queuedAutonomousPrograms, errors, fallbackApplied, response: payload,
   };
 }

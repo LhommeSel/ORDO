@@ -1204,7 +1204,8 @@ export default function Home() {
       if (pulse.ok) {
         setNotice(`${baseNotice} · pouls IA : ${touched} dossier(s), ${pulse.relationChanges} relation(s) actualisée(s)${pulse.queuedAutonomousPrograms ? ` · ${pulse.queuedAutonomousPrograms} programme(s) autonome(s) en file` : ''}${pulse.playerDecisions ? ` · ${pulse.playerDecisions} décision(s) attendue(s)` : ''}.`);
       } else {
-        setNotice(`${baseNotice} · pouls IA partiel : ${touched} dossier(s) appliqué(s)${pulse.queuedAutonomousPrograms ? ` · ${pulse.queuedAutonomousPrograms} programme(s) autonome(s) en file` : ''}${pulse.errors.length ? ` · ${pulse.errors[0]}` : ''}.`);
+        const fallback = pulse.fallbackApplied ? ` · simulation locale conservée pour ${pulse.fallbackApplied} mission(s)` : '';
+        setNotice(`${baseNotice} · pouls IA partiel : ${touched} dossier(s) appliqué(s)${pulse.queuedAutonomousPrograms ? ` · ${pulse.queuedAutonomousPrograms} programme(s) autonome(s) en file` : ''}${fallback}${pulse.errors.length ? ` · ${pulse.errors[0]}` : ''}.`);
       }
     } catch {
       // Le tour local reste valable même si le navigateur ne peut pas lancer le pouls.

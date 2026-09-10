@@ -29,7 +29,7 @@ import { interpretPlayerIntent, rankEnergySuppliers } from './intent';
 import {
   dossierUnreadCount, dossiersRequiringAttention, markDossierViewed, setDossierFollowed,
 } from './dossiers';
-import { applyWorldPulseAnswer, createWorldPulseRequest } from './ai/world-pulse';
+import { applyWorldPulseAnswer, createWorldPulseRequest, executeWorldPulse } from './ai/world-pulse';
 import { parseWorldPulseRequest } from '../ai/world-pulse-contracts';
 import { runMinorEventCycle } from './minor-events';
 import { rankWorldAttention } from './ai/world-attention';
@@ -81,6 +81,36 @@ test('le pouls mondial IA ne peut créer que des mises à jour de dossiers cité
   assert.equal(relation.relation - (initial.relations['USA:FRA']?.relation ?? 50), 3);
   assert.equal(relation.trust - (initial.relations['USA:FRA']?.trust ?? 50), -3);
   assert.equal(applied.relationChanges, 1);
+});
+
+test('un rejet du pouls IA est isolé et conserve le tour local en secours', async () => {
+  const initial = createFrance2000World();
+  const prepared = prepareCommonAction(initial, 'Ouvrir une coopération technologique avec l’Allemagne.');
+  assert.equal(prepared.ok, true);
+  if (!prepared.ok) return;
+  const launched = launchCommonAction(initial, prepared.action);
+  assert.equal(launched.ok, true);
+  if (!launched.ok) return;
+  const request = createWorldPulseRequest(launched.state, initial.actions.length, 1, 'test-world-pulse-fallback');
+  assert.equal(request.pulses.length, 2);
+  const autonomy = request.pulses.find((item) => item.kind === 'world_autonomy');
+  const reaction = request.pulses.find((item) => item.kind === 'player_reaction');
+  assert.ok(autonomy && reaction);
+  if (!autonomy || !reaction) return;
+  const emptyAnswer = { headline: 'Aucun changement immédiat', synthesis: 'La mission ne relève aucun changement supplémentaire.', proposals: [], requestedFactIds: [] };
+  const fakeFetcher = async () => new Response(JSON.stringify({
+    ok: true,
+    results: [
+      { id: reaction.id, kind: reaction.kind, ok: true, answer: emptyAnswer, usage: { model: 'gpt-5.6-luna', inputTokens: 10, cachedInputTokens: 0, outputTokens: 10, estimatedCostUsd: 0, latencyMs: 1 } },
+      { id: autonomy.id, kind: autonomy.kind, ok: false, message: 'La réponse structurée de cette voie a été rejetée.' },
+    ],
+    usage: { model: 'gpt-5.6-luna', inputTokens: 20, cachedInputTokens: 0, outputTokens: 10, estimatedCostUsd: 0, latencyMs: 1, remainingSessionRequestsToday: 1 },
+  }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  const result = await executeWorldPulse(launched.state, request, fakeFetcher as typeof fetch);
+  assert.equal(result.ok, false);
+  assert.equal(result.fallbackApplied, 1);
+  assert.match(result.errors[0] ?? '', /world_autonomy/);
+  assert.equal(result.state.currentDate, launched.state.currentDate);
 });
 
 test('la rotation d’attention mondiale remonte des régions négligées sans forcer un événement', () => {
