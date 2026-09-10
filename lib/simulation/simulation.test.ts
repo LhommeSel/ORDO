@@ -1040,6 +1040,10 @@ test('un programme autonome conserve le dossier qui l’a déclenché', () => {
   assert.equal(applied.queuedAutonomousPrograms, 1);
   const program = Object.values(applied.state.actionPrograms).find((item) => item.actorId === 'USA');
   assert.equal(program?.linkedDossierId, 'current-dotcom-exuberance');
+  if (!program) return;
+  const resolved = advanceWorld(applied.state, '2000-04-01').state;
+  assert.ok(resolved.actionPrograms[program.id]?.resolution);
+  assert.ok(resolved.strategicDossiers['current-dotcom-exuberance'].entries.some((entry) => entry.id === `${program.id}-resolution`));
 });
 
 test('un même dossier majeur calme bénéficie d’un délai entre deux réévaluations', () => {

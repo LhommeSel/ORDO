@@ -170,6 +170,37 @@ function diplomaticResolutionEffects(
   ];
 }
 
+function linkedDossierResolutionEffects(
+  state: WorldState,
+  program: Pick<ActionProgram, 'actorId' | 'targetIds' | 'linkedDossierId' | 'id'>,
+  outcome: 'succeeded' | 'partially_succeeded' | 'failed',
+  resolution: string,
+): WorldEffect[] {
+  const dossierId = program.linkedDossierId;
+  const dossier = dossierId ? state.strategicDossiers[dossierId] : undefined;
+  if (!dossier) return [];
+  const phase = outcome === 'succeeded' ? 'Programme achevé'
+    : outcome === 'partially_succeeded' ? 'Programme partiellement achevé'
+      : 'Programme échoué';
+  const trend = outcome === 'failed' ? 'deescalating' : outcome === 'succeeded' ? 'stable' : dossier.trend;
+  return [
+    {
+      kind: 'dossier_patch', dossierId,
+      patch: { phase, trend, status: outcome === 'failed' ? 'deescalating' : dossier.status },
+      reason: 'La résolution du programme autonome actualise le dossier qui l’a déclenché.', visibility: 'player',
+    },
+    {
+      kind: 'dossier_entry_add', dossierId,
+      entry: {
+        id: `${program.id}-resolution`, date: state.currentDate, title: phase, summary: resolution,
+        importance: dossier.importance, actorIds: [...new Set([program.actorId, ...program.targetIds])],
+        requiresDecision: false, visibility: 'player',
+      },
+      reason: 'Le résultat autonome est rattaché à la chronologie du dossier.', visibility: 'player',
+    },
+  ];
+}
+
 function effectsFor(state: WorldState, category: CommonActionCategory, targetId?: CountryId, intent = '') {
   const player = state.countries[state.playerCountryId];
   const economy = state.macroEconomies[player.id];
@@ -347,7 +378,8 @@ export function advanceCommonActionPrograms(state: WorldState, elapsedMonths: nu
         effects: [
           { kind: 'action_program_patch', programId: program.id, patch: { progressMonths: program.durationMonths, status: outcome, resolution }, reason: resolution },
         ...releaseEffects, ...resultEffects, ...failureEffects,
-        ...diplomaticResolutionEffects(next, program, outcome, resolution),
+        ...linkedDossierResolutionEffects(next, program, outcome, resolution),
+        ...(program.linkedDossierId ? [] : diplomaticResolutionEffects(next, program, outcome, resolution)),
       ],
     });
   }
