@@ -1043,7 +1043,9 @@ test('un programme autonome conserve le dossier qui l’a déclenché', () => {
   if (!program) return;
   const resolved = advanceWorld(applied.state, '2000-04-01').state;
   assert.ok(resolved.actionPrograms[program.id]?.resolution);
-  assert.ok(resolved.strategicDossiers['current-dotcom-exuberance'].entries.some((entry) => entry.id === `${program.id}-resolution`));
+  const dossier = resolved.strategicDossiers['current-dotcom-exuberance'];
+  assert.ok(dossier.entries.some((entry) => entry.id === `${program.id}-resolution`));
+  assert.ok(dossier.pendingDecisions.some((decision) => decision.includes('résolution du programme autonome')));
 });
 
 test('un même dossier majeur calme bénéficie d’un délai entre deux réévaluations', () => {

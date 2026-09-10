@@ -183,10 +183,19 @@ function linkedDossierResolutionEffects(
     : outcome === 'partially_succeeded' ? 'Programme partiellement achevé'
       : 'Programme échoué';
   const trend = outcome === 'failed' ? 'deescalating' : outcome === 'succeeded' ? 'stable' : dossier.trend;
+  const requiresPlayerDecision = dossier.actorIds.includes(state.playerCountryId)
+    && (dossier.importance === 'major' || dossier.importance === 'critical')
+    && outcome !== 'failed';
+  const decision = requiresPlayerDecision
+    ? `Évaluer la suite après la résolution du programme autonome dans « ${dossier.title} ».`
+    : undefined;
+  const pendingDecisions = decision && !dossier.pendingDecisions.includes(decision)
+    ? [...dossier.pendingDecisions, decision].slice(-6)
+    : dossier.pendingDecisions;
   return [
     {
       kind: 'dossier_patch', dossierId,
-      patch: { phase, trend, status: outcome === 'failed' ? 'deescalating' : dossier.status },
+      patch: { phase, trend, status: outcome === 'failed' ? 'deescalating' : dossier.status, pendingDecisions },
       reason: 'La résolution du programme autonome actualise le dossier qui l’a déclenché.', visibility: 'player',
     },
     {
@@ -194,7 +203,7 @@ function linkedDossierResolutionEffects(
       entry: {
         id: `${program.id}-resolution`, date: state.currentDate, title: phase, summary: resolution,
         importance: dossier.importance, actorIds: [...new Set([program.actorId, ...program.targetIds])],
-        requiresDecision: false, visibility: 'player',
+        requiresDecision: requiresPlayerDecision, visibility: 'player',
       },
       reason: 'Le résultat autonome est rattaché à la chronologie du dossier.', visibility: 'player',
     },
