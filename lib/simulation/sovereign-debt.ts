@@ -32,16 +32,34 @@ const statusRank: Record<SovereignDebtStatus, number> = {
   stable: 0, watch: 1, stressed: 2, refinancing_crisis: 3, restructuring: 4, default: 5,
 };
 
-function monetaryProtection(state: WorldState, countryId: CountryId, backstop: number) {
+function monetaryProtection(state: WorldState, countryId: CountryId, debt: SovereignDebtState) {
   const regime = state.structuralProfiles[countryId]?.monetaryRegime;
   const multiplier = regime === 'sovereign_floating' ? 1 : regime === 'sovereign_managed' ? 0.72 : regime === 'currency_union' ? 0.68 : 0.48;
-  return backstop * multiplier + (countryId === 'USA' ? 22 : 0);
+  // Un prêteur en dernier ressort ne vaut que par sa crédibilité. La prime
+  // d'union monétaire reste explicite, sans rendre les membres invulnérables.
+  const credibilityAdjustment = (debt.backstopCredibilityPct - 50) * 0.08;
+  const unionSupport = regime === 'currency_union' ? 8 : 0;
+  return debt.centralBankBackstop * multiplier + credibilityAdjustment + unionSupport + (countryId === 'USA' ? 22 : 0);
 }
 
-function debtStatus(access: number, debtService: number, fundingGap: number, monthsUnderStress: number, missedPayments: number): SovereignDebtStatus {
+function debtStatus(
+  access: number,
+  debtService: number,
+  fundingGap: number,
+  monthsUnderStress: number,
+  missedPayments: number,
+  previousStatus: SovereignDebtStatus = 'stable',
+): SovereignDebtStatus {
+  if (previousStatus === 'restructuring') return 'restructuring';
   if (missedPayments >= 2 || (access < 16 && monthsUnderStress >= 8)) return 'default';
-  if ((fundingGap >= 2.5 && monthsUnderStress >= 3) || access < 25) return 'refinancing_crisis';
-  if (access < 43 || debtService >= 28 || fundingGap >= 1) return 'stressed';
+  // Un signal de marché isolé n'est pas encore une crise : il faut une
+  // tension persistante (ou des arriérés) avant d'ouvrir un dossier majeur.
+  // Cela évite que les pays fragiles soient déclarés en crise au premier
+  // passage alors que leur dette est encore refinancée.
+  const persistentCrisis = monthsUnderStress >= 6 && (fundingGap >= 2.5 || access < 25);
+  const continuingCrisis = previousStatus === 'refinancing_crisis' && monthsUnderStress >= 3 && (fundingGap >= 1.5 || access < 30);
+  if (persistentCrisis || continuingCrisis) return 'refinancing_crisis';
+  if (access < 38 || debtService >= 35 || fundingGap >= 2) return 'stressed';
   if (access < 67 || debtService >= 18) return 'watch';
   return 'stable';
 }
@@ -55,7 +73,12 @@ export function projectDebtAndBanking(
   const debt = economy.sovereignDebt;
   const bank = economy.bankingSystem;
   const profile = state.structuralProfiles[economy.countryId];
-  const protection = monetaryProtection(state, economy.countryId, debt.centralBankBackstop);
+  const protection = monetaryProtection(state, economy.countryId, debt);
+  const foreignCurrencyShare = clamp(1 - debt.localCurrencySharePct / 100, 0, 1);
+  const currencyMismatchPressure = foreignCurrencyShare * (
+    Math.max(0, -input.currentAccountPctGdp) * 0.45
+    + Math.max(0, input.inflationAnnualPct - state.worldEconomy.globalInflationAnnualPct) * 0.25
+  );
   const previousSovereignStress = statusRank[debt.status] * 8;
   const bankContagion = bank.liquidityStress * debt.domesticBankExposurePctAssets / 100;
   const debtServiceAtCurrentRate = input.publicDebtPctGdp * debt.effectiveInterestRatePct / 100;
@@ -66,7 +89,7 @@ export function projectDebtAndBanking(
       + Math.max(0, input.currentAccountPctGdp) * 0.35
       + Math.max(0, input.realGrowthAnnualPct) * 0.5
       - Math.max(0, input.publicDebtPctGdp - 80) * 0.12
-      - debt.foreignCurrencySharePct * 0.24
+      - foreignCurrencyShare * 16 - currencyMismatchPressure
       - Math.max(0, debtServicePctRevenue - 8) * 0.52
       - Math.max(0, -input.fiscalBalancePctGdp) * 0.9
       - Math.max(0, -input.currentAccountPctGdp) * 0.6
@@ -77,20 +100,27 @@ export function projectDebtAndBanking(
   const spreadTarget = clamp(18 + state.worldEconomy.financialStress * 1.5 + Math.pow(Math.max(0, 78 - marketAccess), 2) * 0.72, 5, 5000);
   const sovereignSpreadBps = debt.sovereignSpreadBps + (spreadTarget - debt.sovereignSpreadBps) * transition(3.5, elapsedMonths);
   const baseFundingRate = Math.max(0.5, input.policyRatePct * 0.65 + state.worldEconomy.neutralInterestRatePct * 0.35);
-  const marginalFundingRate = baseFundingRate + sovereignSpreadBps / 100;
+  const currencyPremium = foreignCurrencyShare * Math.max(0, input.inflationAnnualPct - state.worldEconomy.globalInflationAnnualPct) * 0.06
+    + Math.max(0, -input.currentAccountPctGdp) * 0.02;
+  const marginalFundingRate = baseFundingRate + sovereignSpreadBps / 100 + currencyPremium;
   const repricingSpeed = 1 / Math.max(1, debt.averageMaturityYears);
+  const fixedRateShare = clamp(debt.fixedRateSharePct / 100, 0.15, 0.95);
+  const repricedShare = clamp((1 - fixedRateShare) + fixedRateShare * transition(repricingSpeed, elapsedMonths), 0.05, 1);
   const effectiveInterestRatePct = debt.effectiveInterestRatePct
-    + (marginalFundingRate - debt.effectiveInterestRatePct) * transition(repricingSpeed, elapsedMonths);
+    + (marginalFundingRate - debt.effectiveInterestRatePct) * transition(repricingSpeed * (0.35 + 0.65 * repricedShare), elapsedMonths);
   const annualMaturingDebtPctGdp = input.publicDebtPctGdp / Math.max(0.75, debt.averageMaturityYears);
   const refinancingNeedPctGdp = annualMaturingDebtPctGdp + Math.max(0, -input.fiscalBalancePctGdp);
-  const fundingCapacity = 2 + marketAccess * 0.35 + protection * 0.035 + Math.min(12, input.foreignReserveMonthsImports) * 0.18;
+  const bufferSupport = Math.min(12, debt.cashBufferMonthsDebtService) * 0.28;
+  const credibilitySupport = debt.fiscalCredibilityPct * 0.025;
+  const fundingCapacity = 2 + marketAccess * 0.35 + protection * 0.035
+    + Math.min(12, input.foreignReserveMonthsImports) * 0.18 + bufferSupport + credibilitySupport;
   const fundingGapPctGdp = Math.max(0, refinancingNeedPctGdp - fundingCapacity);
   const stressedNow = fundingGapPctGdp >= 1 || marketAccess < 43 || debtServicePctRevenue >= 28;
   const monthsUnderStress = clamp(debt.monthsUnderStress + (stressedNow ? elapsedMonths : -elapsedMonths * 1.75), 0, 120);
-  const preliminaryStatus = debtStatus(marketAccess, debtServicePctRevenue, fundingGapPctGdp, monthsUnderStress, debt.missedPaymentsPctGdp);
+  const preliminaryStatus = debtStatus(marketAccess, debtServicePctRevenue, fundingGapPctGdp, monthsUnderStress, debt.missedPaymentsPctGdp, debt.status);
   const unpaidFlow = ['refinancing_crisis', 'default'].includes(preliminaryStatus) ? fundingGapPctGdp * elapsedMonths / 12 * 0.65 : 0;
   const missedPaymentsPctGdp = clamp(debt.missedPaymentsPctGdp + unpaidFlow - (preliminaryStatus === 'stable' ? elapsedMonths * 0.08 : 0), 0, 100);
-  const status = debtStatus(marketAccess, debtServicePctRevenue, fundingGapPctGdp, monthsUnderStress, missedPaymentsPctGdp);
+  const status = debtStatus(marketAccess, debtServicePctRevenue, fundingGapPctGdp, monthsUnderStress, missedPaymentsPctGdp, debt.status);
 
   const sovereignExposureStress = clamp((100 - marketAccess) * debt.domesticBankExposurePctAssets / 100 + statusRank[status] * 9, 0, 100);
   const recessionStress = Math.max(0, -input.realGrowthAnnualPct) * 4 + Math.max(0, input.unemploymentPct - economy.unemploymentPct) * 1.5;
@@ -129,6 +159,7 @@ export function debtCrisisEffects(
   countryId: CountryId,
   previous: SovereignDebtStatus,
   current: SovereignDebtStatus,
+  currentDebt?: SovereignDebtState,
 ): WorldEffect[] {
   if (previous === current) return [];
   const country = state.countries[countryId];
@@ -155,7 +186,14 @@ export function debtCrisisEffects(
     id: `${dossierId}-${state.currentDate}-${current}`, date: state.currentDate,
     title: statusLabels[current],
     summary: `${country.name} entre dans la phase « ${statusLabels[current]} » : le coût et la disponibilité du refinancement deviennent un enjeu macroéconomique direct.`,
-    importance: current === 'default' ? 'critical' : current === 'refinancing_crisis' ? 'major' : 'moderate',
+    // Une première tension reste un signal modéré. Le dossier ne devient
+    // majeur qu'après persistance, perte d'accès ou arriérés constatés.
+    importance: current === 'default' ? 'critical'
+      : current === 'refinancing_crisis' && (
+        (currentDebt?.monthsUnderStress ?? 0) >= 6
+        || (currentDebt?.marketAccess ?? 100) < 20
+        || (currentDebt?.missedPaymentsPctGdp ?? 0) > 0
+      ) ? 'major' : 'moderate',
     actorIds: [countryId], requiresDecision: countryId === state.playerCountryId,
     visibility: 'public',
   };

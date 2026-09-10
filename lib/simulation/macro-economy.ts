@@ -388,7 +388,7 @@ export function advanceMacroeconomy(state: WorldState, elapsedMonths: number) {
       reason: 'L’économie nationale équilibre demande, capacité productive, emploi, prix, budget, crédit, commerce, dette et démographie.',
       visibility: 'debug',
     });
-    effects.push(...debtCrisisEffects(state, economy.countryId, economy.sovereignDebt.status, patch.sovereignDebt.status));
+    effects.push(...debtCrisisEffects(state, economy.countryId, economy.sovereignDebt.status, patch.sovereignDebt.status, patch.sovereignDebt));
   }
   return commitWorldAction(state, {
     kind: 'economic', actorId: state.playerCountryId, origin: 'time',

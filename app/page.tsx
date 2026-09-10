@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity, Archive, BrainCircuit, ChevronRight, Database, Factory,
   BellRing, CheckCircle2, Eye, FlaskConical, Fuel, History, Landmark, Map, Pin,
@@ -21,7 +21,7 @@ import {
   energyCounterpartResponseFromSession, evaluatePoliticalPathway, executeAIJob, markDossierViewed, productEvidenceSummary,
   enactPrototypeGovernmentMeasure, reactionLevelLabels, reactionTrendLabels,
   launchCommonAction, prepareCommonAction,
-  nodeAvailableExport, nodeBookedVolume, nodeExpansionPotential, nodePhysicalExportCapacity,
+  nodeAvailableExport, nodeBookedVolume, nodeExpansionPotential,
   reactivateDossier, resolveDossierDecision, resolveDiplomaticDialogueResponse, sendEnergyOffer, startEnergyNegotiationAI, visibleLedger, visibleStakeholderReactions,
   loadWorldFromBrowser, saveWorldToBrowser,
   openDiplomaticDialogue, openDiplomaticDialogueForDossier, sendDiplomaticDialogueMessage, requestDiplomaticDialogueAI,
@@ -693,6 +693,11 @@ function AdvisorAIAuditPanel({ entries, onClear }: { entries: AdvisorAIAuditEntr
 }
 
 function AdvisorPanel({ world, onWorldChange, onNotice }: { world: WorldState; onWorldChange: (world: WorldState) => void; onNotice: (message: string) => void }) {
+  // Les avances de temps peuvent terminer pendant qu'un panneau est ouvert.
+  // Les handlers asynchrones lisent donc toujours le dernier monde, pas la
+  // fermeture créée avant le dernier rendu.
+  const worldRef = useRef(world);
+  useEffect(() => { worldRef.current = world; }, [world]);
   const [question, setQuestion] = useState('');
   const [questionKindOverride, setQuestionKindOverride] = useState<AdvisorQuestionKind | 'auto'>('auto');
   const [answer, setAnswer] = useState<AdvisorAnswer>(() => answerAdvisorQuestion(world, ''));
@@ -762,7 +767,8 @@ function AdvisorPanel({ world, onWorldChange, onNotice }: { world: WorldState; o
   };
   const askAI = async () => {
     if (question.trim().length < 3 || aiStatus === 'loading') return;
-    const local = answerAdvisorQuestion(world, question, { questionKind: selectedQuestionKind });
+    const currentWorld = worldRef.current;
+    const local = answerAdvisorQuestion(currentWorld, question, { questionKind: selectedQuestionKind });
     setAnswer(local); setAiAnswer(null); setAiUsage(null); setAiStatus('loading');
     setAiMessage('L’IA confronte la demande aux faits transmis par le moteur…');
     resetNegotiation();
@@ -777,7 +783,7 @@ function AdvisorPanel({ world, onWorldChange, onNotice }: { world: WorldState; o
         .filter((entry): entry is AdvisorAIAuditEntry & { result: { ok: true; answer: AdvisorAIAnswer; usage: AdvisorAIUsage } } => entry.result.ok)
         .slice(0, 2)
         .map((entry) => ({ question: entry.request.question, summary: `${entry.result.answer.headline} — ${entry.result.answer.keyJudgment}` }));
-      const aiRequest = createAdvisorAIRequest(world, question, local, sessionId, conversationHistory);
+      const aiRequest = createAdvisorAIRequest(currentWorld, question, local, sessionId, conversationHistory);
       const auditRequest = { requestId: aiRequest.requestId, question: aiRequest.question, context: aiRequest.context };
       const response = await fetch('/api/ai/advisor', {
         method: 'POST',
@@ -798,13 +804,6 @@ function AdvisorPanel({ world, onWorldChange, onNotice }: { world: WorldState; o
       setAiStatus('unavailable');
       setAiMessage('Le serveur IA est inaccessible. La réponse locale reste disponible.');
     }
-  };
-  const resolveResponse = (decision: 'accept' | 'refuse' | 'request_revision' | 'acknowledge') => {
-    if (!dialogue) return;
-    const result = resolveDiplomaticDialogueResponse(world, dialogue.id, decision);
-    if (!result.ok) { onNotice(result.error); return; }
-    onWorldChange(result.state);
-    onNotice(decision === 'accept' ? 'Engagement diplomatique inscrit dans le moteur et le registre.' : decision === 'refuse' ? 'Position refusée : le canal est fermé.' : decision === 'acknowledge' ? 'Position reçue : aucun engagement formel n’a été créé.' : 'Révision demandée : confirmez ensuite l’appel IA pour obtenir une nouvelle réponse.');
   };
   const prepare = (plan: StrategicPlan) => {
     if (!plan.execution) return;
@@ -1201,6 +1200,8 @@ function DiplomacyPanel({ world, onWorldChange, onNotice, initialDialogueId }: {
   onNotice: (message: string) => void;
   initialDialogueId?: string | null;
 }) {
+  const worldRef = useRef(world);
+  useEffect(() => { worldRef.current = world; }, [world]);
   const player = world.countries[world.playerCountryId];
   const countries = useMemo(() => Object.values(world.countries)
     .filter((country) => country.id !== world.playerCountryId)
@@ -1212,7 +1213,6 @@ function DiplomacyPanel({ world, onWorldChange, onNotice, initialDialogueId }: {
   const [draft, setDraft] = useState('');
   const [isThinking, setIsThinking] = useState(false);
   const [lastAIUsage, setLastAIUsage] = useState<string | undefined>();
-  const selectedCountry = world.countries[selectedId] ?? countries[0] ?? player;
   const dialogue = dialogueId ? world.diplomaticDialogues?.[dialogueId] : undefined;
   useEffect(() => {
     if (!initialDialogueId || !world.diplomaticDialogues?.[initialDialogueId]) return;
@@ -1253,21 +1253,23 @@ function DiplomacyPanel({ world, onWorldChange, onNotice, initialDialogueId }: {
   };
   const send = () => {
     if (!draft.trim()) return;
+    const currentWorld = worldRef.current;
     if (dialogue) {
-      const result = sendDiplomaticDialogueMessage(world, dialogue.id, draft);
+      const result = sendDiplomaticDialogueMessage(currentWorld, dialogue.id, draft);
       if (!result.ok) { onNotice(result.error); return; }
       onWorldChange(result.state); setDraft(''); setSelectedId(result.speakerId);
       onNotice('Message envoyé. La réponse IA reste facultative et nécessite votre confirmation.');
       return;
     }
-    const result = openDiplomaticDialogue(world, participants.length ? participants : [selectedId], draft);
+    const result = openDiplomaticDialogue(currentWorld, participants.length ? participants : [selectedId], draft);
     if (!result.ok) { onNotice(result.error); return; }
     onWorldChange(result.state); setDialogueId(result.dialogueId); setDraft('');
     onNotice('Dialogue ouvert : la première réponse a été produite localement, sans appel IA.');
   };
   const askAI = async () => {
     if (!dialogue || dialogue.status !== 'awaiting_ai' || isThinking) return;
-    const request = requestDiplomaticDialogueAI(world, dialogue.id);
+    const currentWorld = worldRef.current;
+    const request = requestDiplomaticDialogueAI(currentWorld, dialogue.id);
     if (!request.ok) { onNotice(request.error); return; }
     onWorldChange(request.state); setIsThinking(true); setLastAIUsage(undefined);
     try {
@@ -1281,6 +1283,13 @@ function DiplomacyPanel({ world, onWorldChange, onNotice, initialDialogueId }: {
       onNotice('Réponse diplomatique IA reçue et ajoutée à la mémoire du dialogue.');
     } catch { onNotice('Le serveur IA est inaccessible ; aucun effet diplomatique n’a été appliqué.'); }
     finally { setIsThinking(false); }
+  };
+  const resolveResponse = (decision: 'accept' | 'refuse' | 'request_revision' | 'acknowledge') => {
+    if (!dialogue) return;
+    const result = resolveDiplomaticDialogueResponse(worldRef.current, dialogue.id, decision);
+    if (!result.ok) { onNotice(result.error); return; }
+    onWorldChange(result.state);
+    onNotice(decision === 'accept' ? 'Engagement diplomatique inscrit dans le moteur et le registre.' : decision === 'refuse' ? 'Position refusée : le canal est fermé.' : decision === 'acknowledge' ? 'Position reçue : aucun engagement formel n’a été créé.' : 'Révision demandée : confirmez ensuite l’appel IA pour obtenir une nouvelle réponse.');
   };
   const memories = selectedId ? [
     ...(world.relations[`${player.id}:${selectedId}`]?.memories ?? world.relations[`${selectedId}:${player.id}`]?.memories ?? []).slice(-4),

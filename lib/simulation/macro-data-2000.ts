@@ -83,6 +83,9 @@ const debtCalibration: Record<CountryId, {
   effectiveRate: number; spread: number; maturity: number; foreignHeld: number;
   foreignCurrency: number; bankExposure: number; backstop: number; marketAccess: number;
   bankCapital: number; badLoans: number;
+  /** Paramètres de structure ; optionnels pour garder les fiches nationales compactes. */
+  localCurrency?: number; fixedRate?: number; cashBuffer?: number;
+  backstopCredibility?: number; fiscalCredibility?: number;
 }> = {
   FRA: { effectiveRate: 5.4, spread: 28, maturity: 6.2, foreignHeld: 24, foreignCurrency: 0, bankExposure: 12, backstop: 58, marketAccess: 91, bankCapital: 11.5, badLoans: 4.2 },
   DEU: { effectiveRate: 5.2, spread: 18, maturity: 6.8, foreignHeld: 25, foreignCurrency: 0, bankExposure: 14, backstop: 58, marketAccess: 94, bankCapital: 11.2, badLoans: 3.8 },
@@ -138,9 +141,17 @@ for (const item of nationalBaseline2000) {
     Math.min(100, Math.round(item.industry * 1.55)), Math.min(100, Math.round(item.industry * 1.2)),
   ];
   debtCalibration[item.id] = {
-    effectiveRate: Math.max(3, item.inflation * 0.4 + 4), spread: fragile ? 450 : 120, maturity: fragile ? 3.8 : 5.8,
+    // L'inflation n'est pas un taux d'intérêt souverain. On conserve un signal
+    // nominal pour les pays très inflationnistes, mais borné : le stock ancien
+    // ne doit pas être repricé à 100–200 % dès le premier mois.
+    effectiveRate: Math.max(3, Math.min(20, item.inflation * 0.16 + 3.5)), spread: fragile ? 450 : 120, maturity: fragile ? 3.8 : 5.8,
     foreignHeld: item.openness > 65 ? 35 : 20, foreignCurrency: controlled ? 25 : 10, bankExposure: fragile ? 24 : 14,
     backstop: item.stability, marketAccess: Math.max(35, item.confidence), bankCapital: fragile ? 8.8 : 10.5, badLoans: fragile ? 15 : 6,
+    localCurrency: controlled ? 75 : 100 - (controlled ? 25 : 10),
+    fixedRate: fragile ? 42 : 68,
+    cashBuffer: item.openness > 65 ? 3.5 : fragile ? 1 : 2,
+    backstopCredibility: Math.min(100, Math.max(0, item.stability * 0.9 + item.confidence * 0.1)),
+    fiscalCredibility: Math.min(100, Math.max(0, item.confidence * 0.7 + item.stability * 0.3)),
   };
 }
 
@@ -210,13 +221,19 @@ function createProducts(countryId: CountryId, item: Baseline): Record<EconomicPr
 
 function createDebtState(countryId: CountryId, debtPctGdp: number, revenuePctGdp: number): SovereignDebtState {
   const item = debtCalibration[countryId];
+  const localCurrencySharePct = clamp(item.localCurrency ?? (100 - item.foreignCurrency), 0, 100);
+  const fixedRateSharePct = clamp(item.fixedRate ?? 68, 15, 95);
+  const cashBufferMonthsDebtService = clamp(item.cashBuffer ?? (item.marketAccess > 80 ? 3.5 : item.marketAccess > 60 ? 2 : 1), 0, 12);
+  const backstopCredibilityPct = clamp(item.backstopCredibility ?? item.backstop, 0, 100);
+  const fiscalCredibilityPct = clamp(item.fiscalCredibility ?? item.marketAccess, 0, 100);
   const annualMaturingDebt = debtPctGdp / item.maturity;
   const debtServicePctRevenue = debtPctGdp * item.effectiveRate / 100 / Math.max(1, revenuePctGdp) * 100;
   return {
     effectiveInterestRatePct: item.effectiveRate, sovereignSpreadBps: item.spread,
     averageMaturityYears: item.maturity, annualMaturingDebtPctGdp: round(annualMaturingDebt),
-    foreignHeldSharePct: item.foreignHeld, foreignCurrencySharePct: item.foreignCurrency,
-    domesticBankExposurePctAssets: item.bankExposure, centralBankBackstop: item.backstop,
+    foreignHeldSharePct: item.foreignHeld, foreignCurrencySharePct: clamp(100 - localCurrencySharePct, 0, 100), localCurrencySharePct,
+    fixedRateSharePct, domesticBankExposurePctAssets: item.bankExposure, centralBankBackstop: item.backstop,
+    cashBufferMonthsDebtService, backstopCredibilityPct, fiscalCredibilityPct,
     marketAccess: item.marketAccess, refinancingNeedPctGdp: round(annualMaturingDebt + Math.max(0, calibration[countryId].spending - calibration[countryId].revenue)),
     fundingGapPctGdp: 0, debtServicePctRevenue: round(debtServicePctRevenue),
     missedPaymentsPctGdp: 0, monthsUnderStress: 0,

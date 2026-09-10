@@ -410,8 +410,18 @@ export type SovereignDebtState = {
   annualMaturingDebtPctGdp: number;
   foreignHeldSharePct: number;
   foreignCurrencySharePct: number;
+  /** Part de la dette libellée dans la monnaie contrôlée par l'État. */
+  localCurrencySharePct: number;
+  /** Part de l'encours à taux fixe ; elle retarde la transmission d'un choc de taux. */
+  fixedRateSharePct: number;
   domesticBankExposurePctAssets: number;
   centralBankBackstop: number;
+  /** Trésorerie immédiatement mobilisable, exprimée en mois de service de la dette. */
+  cashBufferMonthsDebtService: number;
+  /** Crédibilité perçue du prêteur en dernier ressort (0–100). */
+  backstopCredibilityPct: number;
+  /** Crédibilité budgétaire avant l'accès au marché (0–100). */
+  fiscalCredibilityPct: number;
   marketAccess: number;
   refinancingNeedPctGdp: number;
   fundingGapPctGdp: number;
