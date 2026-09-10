@@ -9,6 +9,7 @@ import { advanceMacroeconomy } from './macro-economy';
 import { advancePowerStruggles, detectPowerStruggleOpportunities } from './power-struggles';
 import { advanceStakeholderReactions } from './stakeholders';
 import { runMinorEventCycle } from './minor-events';
+import { advanceDossierEscalation } from './dossiers';
 import type { ISODate, SimulationStop, WorldEffect, WorldState } from './types';
 
 export type AdvanceResult = {
@@ -95,6 +96,7 @@ function simulationPhases(
     { id: 'treaties', advance: (state, context) => advanceTreaties(state, context.elapsedMonths) },
     { id: 'institutions', advance: (state, context) => advanceInstitutions(state, context.elapsedMonths) },
     { id: 'common-actions', advance: (state, context) => advanceCommonActionPrograms(state, context.elapsedMonths) },
+    { id: 'dossier-escalation', advance: (state, context) => context.reachedMonthBoundary ? advanceDossierEscalation(state) : state },
     { id: 'stakeholders', advance: (state, context) => advanceStakeholderReactions(state, context.elapsedMonths) },
     { id: 'power-opportunities', advance: (state) => detectPowerStruggleOpportunities(state) },
     { id: 'power-struggles', advance: (state, context) => advancePowerStruggles(state, context.elapsedMonths) },

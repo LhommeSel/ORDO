@@ -27,7 +27,7 @@ import {
 } from './power-struggles';
 import { interpretPlayerIntent, rankEnergySuppliers } from './intent';
 import {
-  dossierUnreadCount, dossiersRequiringAttention, markDossierViewed, setDossierFollowed,
+  advanceDossierEscalation, dossierUnreadCount, dossiersRequiringAttention, markDossierViewed, resolveDossierDecision, setDossierFollowed,
 } from './dossiers';
 import { applyWorldPulseAnswer, createWorldPulseRequest, executeWorldPulse } from './ai/world-pulse';
 import { parseWorldPulseRequest } from '../ai/world-pulse-contracts';
@@ -588,6 +588,35 @@ test('une manifestation historique alimente le dossier au lieu de rester isolée
   const advanced = advanceWorld(state, '2000-04-01').state;
   const dossier = advanced.strategicDossiers['current-dotcom-exuberance'];
   assert.ok(dossier.entries.some((entry) => entry.id.startsWith('manifestation-dotcom-repricing')));
+  assert.equal(dossier.trend, 'escalating');
+});
+
+test('une décision ignorée relance puis escalade le dossier avec un délai', () => {
+  const initial = createFrance2000World();
+  const first = advanceDossierEscalation({ ...initial, currentDate: '2000-03-01' });
+  const dossier = first.strategicDossiers['current-dotcom-exuberance'];
+  assert.equal(dossier.escalationCount, 1);
+  assert.equal(dossier.trend, 'escalating');
+  assert.ok(dossier.entries.at(-1)?.title.includes('Relance'));
+
+  const sameMonth = advanceDossierEscalation(first);
+  assert.equal(sameMonth.strategicDossiers[dossier.id].escalationCount, 1);
+
+  const second = advanceDossierEscalation({ ...first, currentDate: '2000-05-01' });
+  const escalated = second.strategicDossiers[dossier.id];
+  assert.equal(escalated.escalationCount, 2);
+  assert.equal(escalated.importance, 'critical');
+  assert.ok(escalated.entries.at(-1)?.title.includes('Escalade'));
+});
+
+test('le silence explicite résout la décision mais dégrade le canal sur un dossier urgent', () => {
+  const initial = createFrance2000World();
+  const dossierId = 'current-dotcom-exuberance';
+  const decision = initial.strategicDossiers[dossierId].pendingDecisions[0];
+  const resolved = resolveDossierDecision(initial, dossierId, decision, 'explicit_silence');
+  const dossier = resolved.strategicDossiers[dossierId];
+  assert.equal(dossier.pendingDecisions.length, 0);
+  assert.equal(dossier.decisionRecords?.at(-1)?.resolutionChannel, 'explicit_silence');
   assert.equal(dossier.trend, 'escalating');
 });
 

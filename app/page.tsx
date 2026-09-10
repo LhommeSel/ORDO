@@ -1086,10 +1086,24 @@ function DossiersPanel({ world, selectedId, onSelect, onWorldChange, onNotice, o
   };
   const resolveDecision = (decision: string, channel: 'local_action' | 'dialogue' | 'delegation' | 'explicit_silence') => {
     if (channel === 'dialogue') {
-      const opened = openDiplomaticDialogueForDossier(world, selected.id);
+      const opened = openDiplomaticDialogueForDossier(world, selected.id, undefined, decision);
       if (!opened.ok) { onNotice(opened.error); return; }
       onWorldChange(opened.state); onOpenDiplomacy?.(opened.dialogueId);
       onNotice(`Dialogue ouvert depuis « ${selected.title} » : la première réponse est locale et gratuite.`);
+      return;
+    }
+    if (channel === 'delegation') {
+      const prepared = prepareCommonAction(
+        world,
+        `Déléguer à l’administration le traitement du dossier « ${selected.title} » : ${decision}`,
+        { source: 'player', linkedDossierId: selected.id },
+      );
+      if (!prepared.ok) { onNotice(`Délégation impossible : ${prepared.error}`); return; }
+      const launched = launchCommonAction(world, prepared.action);
+      if (!launched.ok) { onNotice(`Délégation impossible : ${launched.error}`); return; }
+      const next = resolveDossierDecision(launched.state, selected.id, decision, channel);
+      onWorldChange(next);
+      onNotice(`Dossier délégué : un programme administratif est lancé et sera résolu au fil du temps.`);
       return;
     }
     const next = resolveDossierDecision(world, selected.id, decision, channel);
@@ -1107,7 +1121,7 @@ function DossiersPanel({ world, selectedId, onSelect, onWorldChange, onNotice, o
         return <button key={dossier.id} onClick={() => onSelect(dossier.id)} className={`w-full p-4 text-left transition-colors hover:bg-muted/30 ${selected.id === dossier.id ? 'bg-muted/30' : ''}`}>
           <div className="flex items-start justify-between gap-3"><div className="font-medium">{dossier.title}</div><span className={`font-mono text-[10px] uppercase ${dossierImportanceTone[dossier.importance]}`}>{dossier.importance}</span></div>
           <div className="mt-1 text-xs text-muted-foreground">{dossier.phase} · {dossier.updatedAt}</div>
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">{dossier.followed && <span className="text-primary">Épinglé</span>}{dossier.autoTracked && <span className="text-amber-300">Suivi majeur</span>}{review ? <span className={review.requiresImmediateReview ? 'text-red-300' : 'text-amber-200'}>{review.requiresImmediateReview ? 'Réévaluation prioritaire' : 'Réévaluation possible'}</span> : (dossier.importance === 'major' || dossier.importance === 'critical') && <span className="text-muted-foreground">Sous surveillance · aucun signal neuf</span>}{unread > 0 && <span className="ml-auto bg-primary/15 px-2 py-0.5 text-primary">{unread} nouveau{unread > 1 ? 'x' : ''}</span>}</div>
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">{dossier.followed && <span className="text-primary">Épinglé</span>}{dossier.autoTracked && <span className="text-amber-300">Suivi majeur</span>}{(dossier.escalationCount ?? 0) > 0 && <span className="text-red-300">Relances : {dossier.escalationCount}</span>}{review ? <span className={review.requiresImmediateReview ? 'text-red-300' : 'text-amber-200'}>{review.requiresImmediateReview ? 'Réévaluation prioritaire' : 'Réévaluation possible'}</span> : (dossier.importance === 'major' || dossier.importance === 'critical') && <span className="text-muted-foreground">Sous surveillance · aucun signal neuf</span>}{unread > 0 && <span className="ml-auto bg-primary/15 px-2 py-0.5 text-primary">{unread} nouveau{unread > 1 ? 'x' : ''}</span>}</div>
         </button>;
       })}</div>
     </section>
@@ -1116,7 +1130,7 @@ function DossiersPanel({ world, selectedId, onSelect, onWorldChange, onNotice, o
       <div className="border border-border bg-card/70 p-4">
         <div className="flex flex-wrap items-start justify-between gap-3"><div><div className={`font-mono text-[10px] uppercase tracking-wider ${dossierImportanceTone[selected.importance]}`}>{selected.kind} · {selected.status}</div><h2 className="mt-1 text-xl font-semibold">{selected.title}</h2></div><div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => onWorldChange(setDossierFollowed(world, selected.id, !selected.followed))}>{selected.followed ? <PinOff className="size-4" /> : <Pin className="size-4" />}{selected.followed ? 'Ne plus épingler' : 'Épingler'}</Button>{(selected.importance === 'moderate' || selected.importance === 'major' || selected.importance === 'critical') && <Button onClick={askDossierAI} disabled={dossierAIStatus === 'loading'}>{dossierAIStatus === 'loading' ? <LoaderCircle className="size-4 animate-spin" /> : <BrainCircuit className="size-4" />}Demander des options à l’IA</Button>}</div></div>
         <p className="mt-3 text-sm text-muted-foreground">{selected.publicSummary}</p>
-        <div className="mt-4 grid gap-2 sm:grid-cols-3"><Stat label="Phase" value={selected.phase} /><Stat label="Tendance" value={selected.trend} /><Stat label="Acteurs" value={selected.actorIds.map((id) => world.countries[id]?.flag ?? id).join(' ')} /></div>
+        <div className="mt-4 grid gap-2 sm:grid-cols-4"><Stat label="Phase" value={selected.phase} /><Stat label="Tendance" value={selected.trend} /><Stat label="Acteurs" value={selected.actorIds.map((id) => world.countries[id]?.flag ?? id).join(' ')} /><Stat label="Relances" value={String(selected.escalationCount ?? 0)} detail={selected.lastEscalatedAt ? `dernière : ${selected.lastEscalatedAt}` : 'aucune'} /></div>
         {selected.playerStance && <div className="mt-3 border-l-2 border-primary pl-3 text-sm"><b>Position du joueur :</b> {selected.playerStance}</div>}
       </div>
       {dossierAIForId === selected.id && dossierAIAnswer && <div className="border border-primary/45 bg-card/80 p-4">

@@ -1120,6 +1120,10 @@ export type StrategicDossier = {
   pendingDecisions: string[];
   /** Index enrichi ; les anciennes sauvegardes n’ont que pendingDecisions. */
   decisionRecords?: DossierDecision[];
+  /** Nombre de relances automatiques produites faute d’arbitrage. */
+  escalationCount?: number;
+  /** Dernière date à laquelle le moteur a relancé ce dossier. */
+  lastEscalatedAt?: ISODate;
   relatedCurrentIds: string[];
   relatedActionIds: string[];
   entries: DossierEntry[];

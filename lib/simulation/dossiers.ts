@@ -4,6 +4,8 @@ import type {
 } from './types';
 
 const importanceRank = { minor: 0, moderate: 1, major: 2, critical: 3 } as const;
+const decisionDelayMonths: Record<DossierDecision['urgency'], number> = { low: 4, medium: 3, high: 2, critical: 1 };
+const importanceByRank: StrategicDossier['importance'][] = ['minor', 'moderate', 'major', 'critical'];
 
 const entryVisibleToPlayer = (state: WorldState, entry: DossierEntry) =>
   entry.visibility === 'public'
@@ -98,6 +100,64 @@ export function dossierDecisionRecords(dossier: StrategicDossier): DossierDecisi
     }));
 }
 
+function monthsBetween(start: `${number}-${number}-${number}`, end: `${number}-${number}-${number}`) {
+  const [startYear, startMonth] = start.slice(0, 7).split('-').map(Number);
+  const [endYear, endMonth] = end.slice(0, 7).split('-').map(Number);
+  return Math.max(0, (endYear - startYear) * 12 + endMonth - startMonth);
+}
+
+/**
+ * Relance les décisions réellement en attente sans faire avancer tous les
+ * dossiers chaque mois. Les délais dépendent de l’urgence, puis les relances
+ * sont espacées de deux mois pour éviter le spam. Une deuxième relance peut
+ * faire monter un dossier modéré à majeur, puis un majeur à critique.
+ */
+export function advanceDossierEscalation(state: WorldState) {
+  let next = state;
+  for (const dossier of Object.values(state.strategicDossiers ?? {})) {
+    if (dossier.status === 'resolved' || dossier.pendingDecisions.length === 0) continue;
+    const records = dossierDecisionRecords(dossier);
+    const overdue = records.some((record) => monthsBetween(record.createdAt, state.currentDate) >= decisionDelayMonths[record.urgency]);
+    if (!overdue) continue;
+    if (dossier.lastEscalatedAt && monthsBetween(dossier.lastEscalatedAt, state.currentDate) < 2) continue;
+    const escalationCount = (dossier.escalationCount ?? 0) + 1;
+    const currentRank = importanceRank[dossier.importance];
+    const nextImportance = escalationCount >= 2
+      ? importanceByRank[Math.min(importanceByRank.length - 1, currentRank + 1)]
+      : dossier.importance;
+    const importanceChanged = nextImportance !== dossier.importance;
+    const title = escalationCount === 1 ? 'Relance faute d’arbitrage' : 'Escalade faute d’arbitrage';
+    const summary = importanceChanged
+      ? `Une décision reste sans réponse depuis plusieurs mois. Le dossier passe de « ${dossier.importance} » à « ${nextImportance} » et revient dans la file prioritaire.`
+      : 'Une décision reste sans réponse malgré une première relance. Le moteur augmente la pression de suivi sans appliquer d’action à la place du joueur.';
+    next = commitWorldAction(next, {
+      kind: 'political', actorId: state.playerCountryId,
+      targetIds: dossier.actorIds.filter((id) => id !== state.playerCountryId), origin: 'time', visibility: 'player',
+      intent: `Relancer le dossier « ${dossier.title} »`,
+      effects: [
+        {
+          kind: 'dossier_patch', dossierId: dossier.id,
+          patch: {
+            escalationCount, lastEscalatedAt: state.currentDate, trend: 'escalating',
+            ...(importanceChanged ? { importance: nextImportance } : {}),
+          },
+          reason: 'Le délai d’une décision importante déclenche une relance graduée.', visibility: 'player',
+        },
+        {
+          kind: 'dossier_entry_add', dossierId: dossier.id,
+          entry: {
+            id: `dossier-escalation-${dossier.id}-${state.currentDate}-${escalationCount}`,
+            date: state.currentDate, title, summary, importance: nextImportance,
+            actorIds: dossier.actorIds, requiresDecision: true, visibility: 'player',
+          },
+          reason: 'La relance est conservée dans la chronologie du dossier.', visibility: 'player',
+        },
+      ],
+    });
+  }
+  return next;
+}
+
 const dossierDecisionLabels: Record<DossierDecisionChannel, string> = {
   local_action: 'Décision gouvernementale engagée',
   dialogue: 'Ouverture d’un canal diplomatique',
@@ -106,10 +166,9 @@ const dossierDecisionLabels: Record<DossierDecisionChannel, string> = {
 };
 
 /**
- * Résout une décision sans inventer d’effet métier : le choix est inscrit dans
- * le dossier et le registre, puis les effets concrets peuvent être portés par
- * un programme ou une session diplomatique dédiée. Ainsi, ignorer un dossier
- * reste un choix jouable mais ne le fait pas disparaître silencieusement.
+ * Résout une décision en conservant le choix dans le dossier et le registre.
+ * Le dialogue et la délégation sont branchés par leurs workflows dédiés ; le
+ * silence explicite peut en plus dégrader la relation selon l’urgence.
  */
 export function resolveDossierDecision(
   state: WorldState,
@@ -127,6 +186,9 @@ export function resolveDossierDecision(
     ...(selectedRecord ? [{ ...selectedRecord, status: 'resolved' as const, resolvedAt: state.currentDate, resolutionChannel: channel }] : []),
   ];
   const label = dossierDecisionLabels[channel];
+  const silencePenalty: Record<DossierDecision['urgency'], number> = { low: 0, medium: -1, high: -3, critical: -5 };
+  const penalty = selectedRecord && channel === 'explicit_silence' ? silencePenalty[selectedRecord.urgency] : 0;
+  const counterpartIds = dossier.actorIds.filter((id) => id !== state.playerCountryId && Boolean(state.countries[id]));
   const entry: DossierEntry = {
     id: `decision-${dossierId}-${state.sequence + 1}`,
     date: state.currentDate,
@@ -145,8 +207,16 @@ export function resolveDossierDecision(
     intent: `${label} dans « ${dossier.title} »`,
     visibility: 'player',
     effects: [
-      { kind: 'dossier_patch', dossierId, patch: { pendingDecisions: remaining, decisionRecords, playerStance: normalized }, reason: 'Le joueur tranche une décision en attente dans le dossier.', visibility: 'player' },
+      { kind: 'dossier_patch', dossierId, patch: {
+        pendingDecisions: remaining, decisionRecords, playerStance: normalized,
+        ...(channel === 'explicit_silence' && selectedRecord && ['high', 'critical'].includes(selectedRecord.urgency) ? { trend: 'escalating' as const } : {}),
+      }, reason: 'Le joueur tranche une décision en attente dans le dossier.', visibility: 'player' },
       { kind: 'dossier_entry_add', dossierId, entry, reason: 'Le choix du joueur est conservé dans la chronologie du dossier.', visibility: 'player' },
+      ...(penalty !== 0 ? counterpartIds.map((targetId) => ({
+        kind: 'relation_delta' as const, from: state.playerCountryId, to: targetId,
+        relation: penalty, trust: Math.round(penalty * 0.7),
+        reason: 'Le silence explicite est perçu comme un désengagement par les autres acteurs du dossier.', visibility: 'player' as const,
+      })) : []),
     ],
   });
 }

@@ -84,16 +84,22 @@ export function openDiplomaticDialogue(state: WorldState, participantIds: Countr
 }
 
 /** Ouvre un dialogue depuis une décision de dossier et consomme cette décision. */
-export function openDiplomaticDialogueForDossier(state: WorldState, dossierId: string, openingMessage?: string) {
+export function openDiplomaticDialogueForDossier(state: WorldState, dossierId: string, openingMessage?: string, decisionPrompt?: string) {
   const dossier = state.strategicDossiers?.[dossierId];
   if (!dossier) return { ok: false as const, state, error: 'Dossier introuvable.' };
   const existing = Object.values(state.diplomaticDialogues ?? {}).find((dialogue) => dialogue.linkedDossierId === dossierId && dialogue.status !== 'closed');
-  if (existing) return { ok: true as const, state, dialogueId: existing.id };
+  if (existing) {
+    const decision = decisionPrompt && dossier.pendingDecisions.includes(decisionPrompt) ? decisionPrompt : undefined;
+    const nextState = decision ? resolveDossierDecision(state, dossierId, decision, 'dialogue') : state;
+    return { ok: true as const, state: nextState, dialogueId: existing.id };
+  }
   const counterparts = dossier.actorIds.filter((id) => id !== state.playerCountryId && Boolean(state.countries[id]));
   const message = openingMessage?.trim() || `Le gouvernement souhaite ouvrir une consultation sur le dossier « ${dossier.title} » et recueillir vos lignes rouges.`;
   const opened = openDiplomaticDialogue(state, counterparts, message, dossierId);
   if (!opened.ok) return opened;
-  const decision = dossier.pendingDecisions[0];
+  const decision = decisionPrompt && dossier.pendingDecisions.includes(decisionPrompt)
+    ? decisionPrompt
+    : dossier.pendingDecisions[0];
   const nextState = decision ? resolveDossierDecision(opened.state, dossierId, decision, 'dialogue') : opened.state;
   return { ok: true as const, state: nextState, dialogueId: opened.dialogueId };
 }

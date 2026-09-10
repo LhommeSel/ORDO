@@ -24,6 +24,8 @@ export type CommonActionPreparationOptions = {
   /** Origine de l’intention : affichée dans la traçabilité, sans effet privilégié. */
   source?: ActionIntent['source'];
   requestId?: string;
+  /** Dossier à suivre automatiquement jusqu’à la résolution du programme. */
+  linkedDossierId?: string;
 };
 
 const clamp = (value: number, minimum = 0, maximum = 100) => Math.min(maximum, Math.max(minimum, value));
@@ -312,6 +314,7 @@ export function prepareCommonAction(
       category,
       actorId: player.id,
       targetIds: targetId ? [targetId] : [],
+      ...(options.linkedDossierId ? { linkedDossierId: options.linkedDossierId } : {}),
       title: `${categoryLabels[category]}${targetId ? ` avec ${state.countries[targetId]?.name}` : ''}`,
       intent,
       durationMonths: durationFor(category),
