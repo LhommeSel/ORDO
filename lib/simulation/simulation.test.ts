@@ -946,6 +946,35 @@ test('un dialogue libre conserve la première réponse locale et réserve Luna a
   assert.equal(afterExpiry.treaties[acceptedTreaty!.id]?.status, 'expired');
 });
 
+test('un scope énergétique mal renvoyé dans un dialogue libre reste résoluble', () => {
+  const initial = createFrance2000World();
+  const opened = openDiplomaticDialogue(initial, ['DEU'], 'Ouvrons une coopération industrielle et énergétique.');
+  assert.equal(opened.ok, true);
+  if (!opened.ok) return;
+  const sent = sendDiplomaticDialogueMessage(opened.state, opened.dialogueId, 'Nous proposons une première phase de garanties.');
+  assert.equal(sent.ok, true);
+  if (!sent.ok) return;
+  const queued = requestDiplomaticDialogueAI(sent.state, opened.dialogueId);
+  assert.equal(queued.ok, true);
+  if (!queued.ok) return;
+  const applied = applyDiplomaticDialogueAIAnswer(queued.state, queued.jobId, {
+    headline: 'Contre-proposition', assessment: 'Une négociation progressive est possible.',
+    publicMessage: 'Nous pouvons avancer avec une coopération industrielle progressive.', proposals: [], requestedFacts: [], contextFactIds: [], approximateInputTokens: 120,
+  }, {
+    scope: 'energy_contract', kind: 'counter', annualVolume: null, durationYears: 10, pricePosture: null, clauses: ['technology_cooperation'],
+  });
+  assert.equal(applied.ok, true);
+  if (!applied.ok) return;
+  const dialogue = applied.state.diplomaticDialogues[opened.dialogueId];
+  assert.equal(dialogue.lastResponse?.kind, 'counter');
+  assert.match(dialogue.lastResponse?.position ?? '', /coopération industrielle progressive/);
+  assert.equal(dialogue.status, 'awaiting_player');
+  const resolved = resolveDiplomaticDialogueResponse(applied.state, opened.dialogueId, 'accept');
+  assert.equal(resolved.ok, true);
+  if (!resolved.ok) return;
+  assert.equal(resolved.state.diplomaticDialogues[opened.dialogueId].resolution?.status, 'accepted');
+});
+
 test('un programme autonome diplomatique ne peut pas cibler son propre État', () => {
   const initial = createFrance2000World();
   const request = createWorldPulseRequest(initial, initial.actions.length, 1, 'test-self-target');

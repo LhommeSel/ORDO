@@ -34,6 +34,32 @@ function turn(id: string, date: `${number}-${number}-${number}`, speakerId: Coun
   return { id, date, speakerId, kind, publicMessage };
 }
 
+/**
+ * Un dialogue libre ne doit jamais basculer silencieusement dans le contrat
+ * énergétique parce que le joueur a mentionné l'énergie. Le modèle peut
+ * malgré tout renvoyer le mauvais scope ; on le ramène alors dans le contrat
+ * générique en conservant sa décision et son message public.
+ */
+function normalizeDialogueMove(move: AIDiplomaticMove, publicMessage: string): Extract<AIDiplomaticMove, { scope: 'general_dialogue' }> {
+  if (move.scope === 'general_dialogue') return move;
+  const position = publicMessage.trim() || 'La position de l’interlocuteur doit être précisée avant tout engagement.';
+  return {
+    scope: 'general_dialogue',
+    kind: move.kind === 'counter' || move.kind === 'accept' || move.kind === 'refuse' ? move.kind : 'message',
+    agreementType: move.clauses.includes('technology_cooperation') || move.clauses.includes('infrastructure_investment')
+      ? 'industrial_cooperation'
+      : 'industrial_cooperation',
+    position,
+    concessions: move.clauses.includes('local_content') ? ['Étudier une participation industrielle locale.'] : [],
+    guaranteesRequested: move.clauses.includes('diplomatic_consultation') ? ['Prévoir des consultations régulières entre les deux gouvernements.'] : [],
+    conditions: move.annualVolume !== null || move.durationYears !== null
+      ? ['Préciser séparément les paramètres techniques lors de la prochaine phase de négociation.']
+      : [],
+    redLines: [],
+    timeline: move.durationYears !== null ? `Réexaminer les paramètres dans ${move.durationYears} an(s).` : 'À préciser lors de la prochaine réunion.',
+  };
+}
+
 /** Ouvre un canal bilatéral ou multilatéral. La première réponse est locale et gratuite. */
 export function openDiplomaticDialogue(state: WorldState, participantIds: CountryId[], openingMessage: string, linkedDossierId?: string) {
   const participants = unique([state.playerCountryId, ...participantIds]).filter((id) => Boolean(state.countries[id]));
@@ -214,15 +240,16 @@ export function applyDiplomaticDialogueAIAnswer(state: WorldState, jobId: string
   const nextSpeakerId = nextSpeaker(state, dialogue, [state.playerCountryId, speaker]);
   const response = outcome.publicMessage.trim();
   const relationEffect = move?.kind === 'accept' ? { relation: 5, trust: 3 } : move?.kind === 'refuse' ? { relation: -5, trust: -3 } : move?.kind === 'counter' ? { relation: 2, trust: 1 } : null;
-  const structuredResponse = move?.scope === 'general_dialogue' ? {
-    kind: move.kind,
-    agreementType: move.agreementType,
-    position: move.position,
-    concessions: move.concessions,
-    guaranteesRequested: move.guaranteesRequested,
-    conditions: move.conditions,
-    redLines: move.redLines,
-    timeline: move.timeline,
+  const normalizedMove = move ? normalizeDialogueMove(move, response) : null;
+  const structuredResponse = normalizedMove?.scope === 'general_dialogue' ? {
+    kind: normalizedMove.kind,
+    agreementType: normalizedMove.agreementType,
+    position: normalizedMove.position,
+    concessions: normalizedMove.concessions,
+    guaranteesRequested: normalizedMove.guaranteesRequested,
+    conditions: normalizedMove.conditions,
+    redLines: normalizedMove.redLines,
+    timeline: normalizedMove.timeline,
   } : dialogue.lastResponse;
   const nextDialogue: DiplomaticDialogue = {
     ...dialogue, status: 'awaiting_player', aiMode: 'ai', activeSpeakerId: nextSpeakerId, updatedAt: state.currentDate,
