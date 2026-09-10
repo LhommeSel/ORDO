@@ -1127,6 +1127,8 @@ export type StrategicDossier = {
   lastEscalatedAt?: ISODate;
   /** Date de mise en sommeil d’un dossier secondaire sans décision active. */
   sleepingAt?: ISODate;
+  /** Date du dernier réveil automatique après un signal externe significatif. */
+  reactivatedAt?: ISODate;
   relatedCurrentIds: string[];
   relatedActionIds: string[];
   entries: DossierEntry[];

@@ -10,7 +10,28 @@ import { advancePowerStruggles, detectPowerStruggleOpportunities } from './power
 import { advanceStakeholderReactions } from './stakeholders';
 import { runMinorEventCycle } from './minor-events';
 import { advanceDossierEscalation, advanceDossierLifecycle } from './dossiers';
+import { reactivateDossiersOnWorldSignals } from './dossiers';
+import { compactWorldForSave } from './persistence';
 import type { ISODate, SimulationStop, WorldEffect, WorldState } from './types';
+
+export type SimulationPhaseAudit = {
+  id: string;
+  chunkStart: ISODate;
+  chunkEnd: ISODate;
+  actionsBefore: number;
+  actionsAfter: number;
+  changesBefore: number;
+  changesAfter: number;
+};
+
+export type SimulationAudit = {
+  from: ISODate;
+  to: ISODate;
+  chunks: number;
+  phases: SimulationPhaseAudit[];
+  issues: string[];
+  ok: boolean;
+};
 
 export type AdvanceResult = {
   state: WorldState;
@@ -21,9 +42,11 @@ export type AdvanceResult = {
   stop?: SimulationStop;
   manifestations: HistoricalManifestation[];
   reviewedCountryIds: string[];
+  audit: SimulationAudit;
 };
 
 const elapsedDaysBetween = (start: ISODate, end: ISODate) => Math.max(0, Math.round((new Date(`${end}T12:00:00Z`).getTime() - new Date(`${start}T12:00:00Z`).getTime()) / 86_400_000));
+const RUNTIME_HISTORY_COMPACTION_THRESHOLD = 5_000;
 
 function nextMonthBoundary(date: ISODate): ISODate {
   const value = new Date(`${date}T12:00:00Z`);
@@ -128,6 +151,10 @@ function simulationPhases(
         return runMinorEventCycle(state, 3).state;
       },
     },
+    {
+      id: 'dossier-signals',
+      advance: (state, context) => reactivateDossiersOnWorldSignals(state, context.actionStartIndex ?? state.actions.length),
+    },
   ];
 }
 
@@ -137,7 +164,10 @@ export function advanceWorld(
   stops: SimulationStop[] = [],
 ): AdvanceResult {
   if (requestedDate <= state.currentDate) {
-    return { state, requestedDate, reachedDate: state.currentDate, elapsedDays: 0, elapsedMonths: 0, manifestations: [], reviewedCountryIds: [] };
+    return {
+      state, requestedDate, reachedDate: state.currentDate, elapsedDays: 0, elapsedMonths: 0, manifestations: [], reviewedCountryIds: [],
+      audit: { from: state.currentDate, to: state.currentDate, chunks: 0, phases: [], issues: [], ok: true },
+    };
   }
   const stop = stops
     .filter((candidate) => !state.processedStopIds.includes(candidate.id) && candidate.date > state.currentDate && candidate.date <= requestedDate)
@@ -148,6 +178,21 @@ export function advanceWorld(
   const manifestations: HistoricalManifestation[] = [];
   const reviewedCountryIds: string[] = [];
   const phases = simulationPhases(manifestations, reviewedCountryIds);
+  // Les actions du joueur écrites avant le clic d’avance doivent pouvoir
+  // réveiller un dossier endormi. Les frontières mensuelles suivantes ne
+  // réutilisent pas ce segment initial pour éviter une double activation.
+  const preAdvanceActionStartIndex = state.actions.map((action) => action.kind).lastIndexOf('time_advance') + 1;
+  const phaseAudit: SimulationPhaseAudit[] = [];
+  const auditedPhases = phases.map((phase) => ({
+    id: phase.id,
+    advance: (phaseState: WorldState, context: Parameters<typeof phase.advance>[1]) => {
+      const actionsBefore = phaseState.actions.length;
+      const changesBefore = phaseState.ledger.length;
+      const nextState = phase.advance(phaseState, context);
+      phaseAudit.push({ id: phase.id, chunkStart: context.chunkStart, chunkEnd: context.chunkEnd, actionsBefore, actionsAfter: nextState.actions.length, changesBefore, changesAfter: nextState.ledger.length });
+      return nextState;
+    },
+  }));
   let next = state;
   let cursor = state.currentDate;
 
@@ -170,13 +215,27 @@ export function advanceWorld(
       chunkEnd,
       elapsedMonths: chunkMonths,
       reachedMonthBoundary: chunkEnd === boundary,
-    }, phases);
+      actionStartIndex: cursor === state.currentDate ? preAdvanceActionStartIndex : next.actions.length,
+    }, auditedPhases);
+    // Une longue avance ne doit pas recopier plusieurs dizaines de milliers
+    // d’écritures techniques à chaque action. Les décisions, événements et
+    // une queue technique restent conservés ; seul l’historique froid est
+    // compacté, comme lors d’une sauvegarde manuelle.
+    if (next.actions.length > RUNTIME_HISTORY_COMPACTION_THRESHOLD) next = compactWorldForSave(next);
     cursor = chunkEnd;
   }
+  const issues: string[] = [];
+  if (next.currentDate !== reachedDate) issues.push(`La date atteinte (${next.currentDate}) ne correspond pas à la date de fin attendue (${reachedDate}).`);
+  if (next.actions.some((action, index) => next.actions.findIndex((candidate) => candidate.id === action.id) !== index)) issues.push('Le journal contient un identifiant d’action dupliqué.');
+  if (next.ledger.some((change, index) => next.ledger.findIndex((candidate) => candidate.id === change.id) !== index)) issues.push('Le registre causal contient un identifiant dupliqué.');
+  if (next.actions.some((action) => action.status !== 'applied')) issues.push('Une action de la simulation n’est pas dans l’état appliqué.');
+  if (Object.values(next.actionPrograms).some((program) => program.progressMonths < 0 || program.progressMonths > program.durationMonths)) issues.push('Un programme sort de ses bornes de progression.');
+  const audit: SimulationAudit = { from: state.currentDate, to: reachedDate, chunks: phaseAudit.length ? new Set(phaseAudit.map((item) => `${item.chunkStart}:${item.chunkEnd}`)).size : 0, phases: phaseAudit, issues, ok: issues.length === 0 };
   return {
     state: next, requestedDate, reachedDate, elapsedDays, elapsedMonths, stop,
     manifestations,
     reviewedCountryIds,
+    audit,
   };
 }
 

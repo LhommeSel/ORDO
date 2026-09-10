@@ -362,6 +362,7 @@ export function launchCommonAction(state: WorldState, prepared: PreparedCommonAc
       kind: categoryKinds[program.category], actorId: program.actorId, targetIds: program.targetIds,
       origin: 'player', intent: `Lancer : ${program.title}`, effects,
       assumptions: [`Résolution attendue vers le ${program.expectedCompletionAt}.`],
+      ...(program.linkedDossierId ? { metadata: { linkedDossierId: program.linkedDossierId } } : {}),
     }),
     programId: program.id,
   };

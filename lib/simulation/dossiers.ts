@@ -28,6 +28,11 @@ export function dossierUnreadCount(state: WorldState, dossierId: string) {
 export function dossiersRequiringAttention(state: WorldState) {
   return Object.values(state.strategicDossiers ?? {})
     .filter((dossier) => dossier.status !== 'resolved' && (dossier.followed || dossier.autoTracked))
+    .concat(Object.values(state.strategicDossiers ?? {}).filter((dossier) => {
+      if (dossier.status === 'resolved' || dossier.followed || dossier.autoTracked || !dossier.reactivatedAt) return false;
+      return monthsBetween(dossier.reactivatedAt, state.currentDate) <= 1;
+    }))
+    .filter((dossier, index, all) => all.findIndex((candidate) => candidate.id === dossier.id) === index)
     .filter((dossier) => !dossier.sleepingAt || dossier.followed)
     .filter((dossier) => dossier.pendingDecisions.length > 0 || dossierUnreadCount(state, dossier.id) > 0)
     .sort((a, b) =>
@@ -59,7 +64,7 @@ export function markDossierViewed(state: WorldState, dossierId: string) {
     ...state,
     strategicDossiers: {
       ...state.strategicDossiers,
-      [dossierId]: { ...dossier, lastViewedEntryId },
+      [dossierId]: { ...dossier, lastViewedEntryId, reactivatedAt: undefined },
     },
   };
 }
@@ -212,10 +217,67 @@ export function reactivateDossier(state: WorldState, dossierId: string) {
     targetIds: dossier.actorIds.filter((id) => id !== state.playerCountryId), origin: 'player', visibility: 'player',
     intent: `Réactiver le dossier « ${dossier.title} »`,
     effects: [
-      { kind: 'dossier_patch', dossierId, patch: { sleepingAt: undefined, status: 'active', trend: 'stable', phase: 'Réactivé par le joueur' }, reason: 'Le joueur remet un dossier secondaire dans le suivi actif.', visibility: 'player' },
+      { kind: 'dossier_patch', dossierId, patch: { sleepingAt: undefined, reactivatedAt: state.currentDate, status: 'active', trend: 'stable', phase: 'Réactivé par le joueur' }, reason: 'Le joueur remet un dossier secondaire dans le suivi actif.', visibility: 'player' },
       { kind: 'dossier_entry_add', dossierId, entry: { id: `dossier-reactivate-${dossierId}-${state.sequence + 1}`, date: state.currentDate, title: 'Dossier réactivé', summary: 'Le joueur demande à reprendre le suivi actif de cette situation.', importance: dossier.importance, actorIds: dossier.actorIds, requiresDecision: false, visibility: 'player' }, reason: 'La réactivation est conservée dans la chronologie.', visibility: 'player' },
     ],
   });
+}
+
+const nonSignalEffects = new Set([
+  'date_set', 'processed_stop_add', 'ai_job_add', 'ai_job_patch',
+  'dossier_add', 'dossier_patch', 'dossier_entry_add',
+]);
+
+/**
+ * Réveille un dossier secondaire lorsqu’un changement externe pertinent touche
+ * l’un de ses acteurs. Les événements mineurs et les écritures purement
+ * techniques sont volontairement ignorés pour ne pas recréer du bruit.
+ */
+export function reactivateDossiersOnWorldSignals(state: WorldState, actionStartIndex = 0) {
+  let next = state;
+  const signals = state.actions.slice(Math.max(0, actionStartIndex)).filter((action) => {
+    if (action.origin === 'time' || action.metadata?.minorEvent === true) return false;
+    if (!action.effects.some((effect) => !nonSignalEffects.has(effect.kind))) return false;
+    return action.kind !== 'political' || action.origin !== 'local_rule' || action.metadata?.worldPulse === true;
+  });
+  if (!signals.length) return next;
+  for (const dossier of Object.values(state.strategicDossiers ?? {})) {
+    if (!dossier.sleepingAt || dossier.status === 'resolved') continue;
+    const actorSet = new Set(dossier.actorIds);
+    const signal = signals.find((action) => {
+      const touchesActor = [action.actorId, ...(action.targetIds ?? [])].some((id) => actorSet.has(id));
+      // Une action générale du joueur ne doit pas réveiller tous les dossiers
+      // partageant son pays ; seules les actions explicitement liées au dossier
+      // ont cette propriété. Les signaux extérieurs restent plus ouverts.
+      if (action.actorId === state.playerCountryId && action.origin === 'player'
+        && action.metadata?.linkedDossierId !== dossier.id) return false;
+      return touchesActor;
+    });
+    if (!signal) continue;
+    next = commitWorldAction(next, {
+      kind: 'political', actorId: state.playerCountryId,
+      targetIds: dossier.actorIds.filter((id) => id !== state.playerCountryId), origin: 'local_rule', visibility: 'player',
+      intent: `Réactiver le dossier « ${dossier.title} » après un signal externe`,
+      effects: [
+        {
+          kind: 'dossier_patch', dossierId: dossier.id,
+          patch: { sleepingAt: undefined, reactivatedAt: state.currentDate, status: 'active', trend: 'stable', phase: 'Réactivé par signal externe' },
+          reason: 'Un changement significatif touche un acteur du dossier endormi.', visibility: 'player',
+        },
+        {
+          kind: 'dossier_entry_add', dossierId: dossier.id,
+          entry: {
+            id: `dossier-signal-${dossier.id}-${state.currentDate}-${signal.id}`,
+            date: state.currentDate, title: 'Signal externe : reprise du suivi',
+            summary: `Le dossier est réveillé par « ${signal.intent.slice(0, 220)} ». Aucun arbitrage n’est imposé sans nouvelle décision explicite.`,
+            importance: dossier.importance, actorIds: dossier.actorIds, requiresDecision: false, visibility: 'player', sourceActionId: signal.id,
+          },
+          reason: 'Le signal externe est rattaché à la chronologie du dossier sans supprimer son historique.', visibility: 'player',
+        },
+      ],
+    });
+  }
+  return next;
 }
 
 const dossierDecisionLabels: Record<DossierDecisionChannel, string> = {

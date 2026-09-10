@@ -491,7 +491,10 @@ export function commitWorldAction(state: WorldState, draft: ActionDraft): WorldS
     ...draft,
     id: nextId('act', actionSequence),
     createdAt: state.currentDate,
-    status: 'validated',
+    // Une action est atomique côté moteur : elle n’est jamais observable entre
+    // sa validation et l’application de ses effets. Éviter un second parcours
+    // de tout le journal réduit fortement le coût des longues simulations.
+    status: 'applied',
     targetIds: draft.targetIds ?? [],
   };
   let next: WorldState = {
@@ -500,11 +503,7 @@ export function commitWorldAction(state: WorldState, draft: ActionDraft): WorldS
     actions: [...state.actions, action],
   };
   for (const effect of action.effects) next = applyEffect(next, action, effect);
-  const applied = { ...action, status: 'applied' as const };
-  return {
-    ...next,
-    actions: next.actions.map((item) => (item.id === action.id ? applied : item)),
-  };
+  return next;
 }
 
 export function visibleLedger(state: WorldState, countryId = state.playerCountryId) {

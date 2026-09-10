@@ -1333,7 +1333,8 @@ export default function Home() {
     const result = advanceWorld(before, addMonths(before.currentDate, months));
     setWorld(result.state);
     const countries = [...new Set(result.reviewedCountryIds)].map((id) => result.state.countries[id]?.name).filter(Boolean);
-    const baseNotice = `${result.elapsedDays} jours simulés · ${countries.length} État(s) réévalué(s)${result.manifestations.length ? ` · ${result.manifestations.length} manifestation(s) historique(s)` : ''}`;
+    const auditNotice = result.audit.ok ? '' : ` · audit : ${result.audit.issues[0] ?? 'incohérence détectée'}`;
+    const baseNotice = `${result.elapsedDays} jours simulés · ${countries.length} État(s) réévalué(s)${result.manifestations.length ? ` · ${result.manifestations.length} manifestation(s) historique(s)` : ''}${auditNotice}`;
     setNotice(`${baseNotice} · pouls mondial IA en cours…`);
     try {
       // Les actions du joueur précèdent nécessairement le clic d'avance. On les

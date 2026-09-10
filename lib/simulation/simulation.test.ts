@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { answerAdvisorQuestion, assessStrategicPlan, classifyAdvisorQuestion } from './advisor';
+import { createAdvisorAIRequest } from '../ai/contracts';
 import { launchCommonAction, prepareCommonAction } from './action-programs';
 import { energyBalance, nodeAvailableExport, proposeEnergyContract } from './energy';
 import {
@@ -591,6 +592,41 @@ test('une manifestation historique alimente le dossier au lieu de rester isolée
   assert.equal(dossier.trend, 'escalating');
 });
 
+test('un passage du temps expose un audit de pipeline sans modifier la logique du tour', () => {
+  const result = advanceWorld(createFrance2000World(), '2000-04-01');
+  assert.equal(result.state.currentDate, '2000-04-01');
+  assert.equal(result.audit.ok, true);
+  assert.equal(result.audit.chunks, 3);
+  assert.ok(result.audit.phases.some((phase) => phase.id === 'macroeconomy'));
+  assert.ok(result.audit.phases.some((phase) => phase.id === 'dossier-signals'));
+  assert.ok(result.audit.phases.every((phase) => phase.actionsAfter >= phase.actionsBefore));
+});
+
+test('un signal externe significatif réveille automatiquement un dossier secondaire endormi', () => {
+  const initial = createFrance2000World();
+  const source = initial.strategicDossiers['current-lisbon-convergence'];
+  const sleeping = {
+    ...initial,
+    currentDate: '2000-08-01' as const,
+    strategicDossiers: {
+      ...initial.strategicDossiers,
+      [source.id]: { ...source, pendingDecisions: [], sleepingAt: '2000-02-01' as const, status: 'deescalating' as const, phase: 'Mise en sommeil' as const },
+    },
+  };
+  const signaled = commitWorldAction(sleeping, {
+    kind: 'diplomatic', actorId: 'DEU', targetIds: ['FRA'], origin: 'ai', visibility: 'player',
+    intent: 'Berlin demande une consultation économique urgente',
+    effects: [{ kind: 'relation_delta', from: 'DEU', to: 'FRA', relation: 2, trust: 1, reason: 'Une consultation bilatérale modifie le canal.' }],
+  });
+  const advanced = advanceWorld(signaled, '2000-09-01');
+  assert.equal(advanced.audit.ok, true);
+  const awakened = advanced.state.strategicDossiers[source.id];
+  assert.equal(awakened.sleepingAt, undefined);
+  assert.equal(awakened.reactivatedAt, '2000-09-01');
+  assert.equal(awakened.phase, 'Réactivé par signal externe');
+  assert.equal(awakened.entries.at(-1)?.sourceActionId, signaled.actions.at(-1)?.id);
+});
+
 test('une décision ignorée relance puis escalade le dossier avec un délai', () => {
   const initial = createFrance2000World();
   const first = advanceDossierEscalation({ ...initial, currentDate: '2000-03-01' });
@@ -1018,6 +1054,31 @@ test('un dialogue libre conserve la première réponse locale et réserve Luna a
   assert.ok((acceptedTreaty?.endDate ?? '') > accepted.state.currentDate);
   const afterExpiry = advanceWorld(accepted.state, '2002-01-01').state;
   assert.equal(afterExpiry.treaties[acceptedTreaty!.id]?.status, 'expired');
+});
+
+test('un message d’un dialogue lié est visible dans la chronologie du dossier', () => {
+  const initial = createFrance2000World();
+  const opened = openDiplomaticDialogue(initial, ['DEU'], 'Ouvrons une consultation sur la stratégie économique européenne.', 'current-lisbon-convergence');
+  assert.equal(opened.ok, true);
+  if (!opened.ok) return;
+  const sent = sendDiplomaticDialogueMessage(opened.state, opened.dialogueId, 'Nous proposons un calendrier en deux étapes avec garanties industrielles.');
+  assert.equal(sent.ok, true);
+  if (!sent.ok) return;
+  const dossier = sent.state.strategicDossiers['current-lisbon-convergence'];
+  assert.ok(dossier.entries.some((entry) => entry.title === 'Message du gouvernement'));
+  assert.ok(dossier.entries.some((entry) => entry.summary.includes('calendrier en deux étapes')));
+});
+
+test('le conseiller transmet les derniers échanges quand la question vise leur dossier', () => {
+  const initial = createFrance2000World();
+  const opened = openDiplomaticDialogue(initial, ['DEU'], 'Ouvrons une consultation sur la Stratégie économique européenne.', 'current-lisbon-convergence');
+  assert.equal(opened.ok, true);
+  if (!opened.ok) return;
+  const question = 'Quelles options pour la Stratégie économique européenne avec l’Allemagne ?';
+  const local = answerAdvisorQuestion(opened.state, question);
+  const request = createAdvisorAIRequest(opened.state, question, local, 'test-dialogue-context');
+  assert.ok(request.context.facts.some((fact) => fact.id.startsWith('dialogue-dialogue-')));
+  assert.ok(request.context.facts.some((fact) => fact.value.includes('consultation')));
 });
 
 test('un scope énergétique mal renvoyé dans un dialogue libre reste résoluble', () => {

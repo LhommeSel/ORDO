@@ -227,6 +227,7 @@ export function applyWorldPulseAnswer(
     // monde a changé depuis la compilation du contexte IA.
     if (requestedDossierId !== null && !existing) return;
     const dossierId = existing ? existing.id : `${item.id}-dossier-${index + 1}`;
+    const wakesSleeping = Boolean(existing?.sleepingAt);
     const currentImportance = existing?.importance;
     const raisesMajorCount = importanceRank[proposal.importance] >= importanceRank.major
       && (!currentImportance || importanceRank[currentImportance] < importanceRank.major);
@@ -295,6 +296,7 @@ export function applyWorldPulseAnswer(
             status: proposal.trend === 'deescalating' ? 'deescalating' : existing.status === 'resolved' ? 'resolved' : 'active',
             phase: proposal.phase.trim(), trend: proposal.trend, publicSummary: proposal.summary.trim(),
             pendingDecisions,
+            ...(wakesSleeping ? { sleepingAt: undefined, reactivatedAt: state.currentDate, status: 'active' as const } : {}),
             ...(decisionRecords ? { decisionRecords } : {}),
             ...(item.kind === 'world_autonomy' ? {
               lastAutonomousReviewAt: state.currentDate,

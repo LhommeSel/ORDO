@@ -5,6 +5,8 @@ export type SimulationPhaseContext = {
   chunkEnd: ISODate;
   elapsedMonths: number;
   reachedMonthBoundary: boolean;
+  /** Première action produite par ce segment, avant l’écriture de date_set. */
+  actionStartIndex?: number;
 };
 
 export type SimulationPhase = {
@@ -23,4 +25,3 @@ export function runSimulationPipeline(
 ) {
   return phases.reduce((next, phase) => phase.advance(next, context), state);
 }
-

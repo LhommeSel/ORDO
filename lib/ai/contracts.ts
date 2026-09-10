@@ -107,6 +107,31 @@ export type AdvisorAIResponse =
 
 const compactText = (value: string, maximum: number) => value.trim().slice(0, maximum);
 
+const comparable = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('fr');
+
+/** Joindre uniquement les échanges diplomatiques pertinents à la question. */
+function dialogueFactsForQuestion(world: WorldState, question: string) {
+  const normalizedQuestion = comparable(question);
+  return Object.values(world.diplomaticDialogues ?? {})
+    .filter((dialogue) => {
+      const participantMentioned = dialogue.participantIds.some((id) => {
+        const country = world.countries[id];
+        return id === world.playerCountryId || Boolean(country && normalizedQuestion.includes(comparable(country.name)));
+      });
+      const dossier = dialogue.linkedDossierId ? world.strategicDossiers[dialogue.linkedDossierId] : undefined;
+      const dossierMentioned = Boolean(dossier && normalizedQuestion.includes(comparable(dossier.title)));
+      return participantMentioned || dossierMentioned;
+    })
+    .flatMap((dialogue) => dialogue.turns.slice(-6).map((turn) => ({
+      id: `dialogue-${dialogue.id}-${turn.id}`,
+      label: `Dialogue · ${world.countries[turn.speakerId]?.name ?? turn.speakerId}`,
+      value: compactText(turn.publicMessage, 600),
+      confidence: 100,
+      sourcePath: `diplomaticDialogues.${dialogue.id}.turns.${turn.id}`,
+    })))
+    .slice(-8);
+}
+
 export function createAdvisorAIRequest(
   world: WorldState,
   question: string,
@@ -116,6 +141,8 @@ export function createAdvisorAIRequest(
 ): AdvisorAIRequest {
   if (question.length > ORDO_ADVISOR_QUESTION_MAX_CHARS) throw new RangeError('advisor_question_too_large');
   const player = world.countries[world.playerCountryId];
+  const maxFacts = localAnswer.responseMode === 'facts_and_options' ? 64 : 48;
+  const dialogueFacts = dialogueFactsForQuestion(world, question);
   return {
     schemaVersion: ORDO_AI_SCHEMA_VERSION,
     requestId: crypto.randomUUID(),
@@ -141,7 +168,10 @@ export function createAdvisorAIRequest(
         factIds: actor.factIds.slice(0, 24).map((id) => compactText(id, 100)),
       })),
       interpretation: localAnswer.interpretation,
-      facts: localAnswer.facts.slice(0, localAnswer.responseMode === 'facts_and_options' ? 64 : 48).map((fact) => ({
+      facts: [
+        ...localAnswer.facts.slice(0, Math.max(0, maxFacts - dialogueFacts.length)),
+        ...dialogueFacts,
+      ].slice(0, maxFacts).map((fact) => ({
         id: compactText(fact.id, 80),
         label: compactText(fact.label, 120),
         value: compactText(fact.value, 300),

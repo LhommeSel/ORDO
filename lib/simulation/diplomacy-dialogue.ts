@@ -79,6 +79,7 @@ export function openDiplomaticDialogue(state: WorldState, participantIds: Countr
   return { ok: true as const, state: commitWorldAction(state, {
     kind: 'diplomatic', actorId: state.playerCountryId, targetIds: counterparts, origin: 'player', visibility: 'player',
     intent: `Ouvrir un dialogue ${dialogue.kind === 'multilateral_dialogue' ? 'multilatéral' : 'bilatéral'}`,
+    ...(linkedDossierId ? { metadata: { linkedDossierId } } : {}),
     effects: [{ kind: 'diplomatic_dialogue_add', dialogue, reason: 'Le canal diplomatique conserve le premier message et la réponse locale gratuite.', visibility: 'player' }],
   }), dialogueId: id };
 }
@@ -124,7 +125,20 @@ export function sendDiplomaticDialogueMessage(state: WorldState, dialogueId: str
   };
   return { ok: true as const, state: commitWorldAction(state, {
     kind: 'diplomatic', actorId: state.playerCountryId, targetIds: dialogue.participantIds.filter((id) => id !== state.playerCountryId), origin: 'player', visibility: 'player',
-    intent: `Prendre la parole dans « ${dialogue.id} »`, effects: [{ kind: 'diplomatic_dialogue_patch', dialogueId, patch: next, reason: 'Le joueur relance le dialogue ; une réponse IA est désormais optionnelle et payante.', visibility: 'player' }],
+    intent: `Prendre la parole dans « ${dialogue.id} »`, effects: [
+      { kind: 'diplomatic_dialogue_patch', dialogueId, patch: next, reason: 'Le joueur relance le dialogue ; une réponse IA est désormais optionnelle et payante.', visibility: 'player' },
+      ...(dialogue.linkedDossierId && state.strategicDossiers[dialogue.linkedDossierId] ? [{
+        kind: 'dossier_entry_add' as const, dossierId: dialogue.linkedDossierId,
+        entry: {
+          id: `dialogue-player-entry-${dialogue.id}-${dialogue.turns.length + 1}`,
+          date: state.currentDate, title: 'Message du gouvernement', summary: normalizedMessage,
+          importance: state.strategicDossiers[dialogue.linkedDossierId].importance,
+          actorIds: dialogue.participantIds, requiresDecision: false, visibility: 'player' as const,
+        },
+        reason: 'Le message du joueur est conservé dans la chronologie du dossier lié.', visibility: 'player' as const,
+      }] : []),
+    ],
+    ...(dialogue.linkedDossierId ? { metadata: { linkedDossierId: dialogue.linkedDossierId } } : {}),
   }), speakerId: activeSpeaker };
 }
 
