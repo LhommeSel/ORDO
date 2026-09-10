@@ -603,8 +603,43 @@ function EnergyNegotiationPanel({
 }
 
 function WorldPulseAuditPanel({ entries, onClear }: { entries: WorldPulseAIAuditEntry[]; onClear: () => void }) {
+  const summary = entries.reduce((acc, entry) => {
+    if (!entry.response.ok) {
+      acc.failedPulses += 1;
+      return acc;
+    }
+    acc.successfulPulses += 1;
+    acc.inputTokens += entry.response.usage.inputTokens;
+    acc.outputTokens += entry.response.usage.outputTokens;
+    acc.costUsd += entry.response.usage.estimatedCostUsd;
+    acc.cacheHits += entry.response.usage.cacheDiagnostics?.type === 'cache_hit' ? 1 : 0;
+    entry.response.results.forEach((result) => {
+      if (result.ok) {
+        acc.successfulMissions += 1;
+      } else {
+        acc.rejectedMissions += 1;
+      }
+    });
+    return acc;
+  }, {
+    successfulPulses: 0,
+    failedPulses: 0,
+    successfulMissions: 0,
+    rejectedMissions: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    costUsd: 0,
+    cacheHits: 0,
+  });
+
   return <section className="border border-sky-400/35 bg-card/70 p-4">
     <div className="flex flex-wrap items-start justify-between gap-3"><div><div className="font-mono text-[10px] uppercase tracking-wider text-sky-300">Traçabilité des pouls mondiaux</div><h2 className="mt-1 text-lg font-semibold">Réponses IA reçues à chaque avancée</h2><p className="mt-1 text-xs text-muted-foreground">Journal local de test : les réponses complètes sont conservées sur cet appareil, jamais la clé API.</p></div>{entries.length > 0 && <Button size="sm" variant="outline" onClick={onClear}>Effacer le journal</Button>}</div>
+    {entries.length > 0 && <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+      <Stat label="Pouls enregistrés" value={`${summary.successfulPulses}/${entries.length}`} detail={summary.failedPulses ? `${summary.failedPulses} échec(s) global(aux)` : 'réponses globales validées'} />
+      <Stat label="Missions" value={`${summary.successfulMissions} validées`} detail={summary.rejectedMissions ? `${summary.rejectedMissions} rejetée(s), sans effet monde` : 'aucun rejet de mission'} />
+      <Stat label="Tokens cumulés" value={`${summary.inputTokens.toLocaleString('fr-FR')} in · ${summary.outputTokens.toLocaleString('fr-FR')} out`} detail={`${summary.cacheHits} pouls avec cache réutilisé`} />
+      <Stat label="Coût estimé" value={`$${summary.costUsd.toFixed(4)}`} detail="cumul des pouls visibles" />
+    </div>}
     {!entries.length && <div className="mt-4 border border-dashed border-border p-4 text-sm text-muted-foreground">Aucun pouls IA enregistré. Avancez la simulation pour capturer les deux voies spécialisées.</div>}
     <div className="mt-4 space-y-3">{entries.map((entry, index) => <details key={entry.id} className="border border-border bg-background/35 p-3" open={index === 0}>
       <summary className="cursor-pointer list-none"><div className="flex flex-wrap items-center justify-between gap-2 pr-5"><span className="font-semibold">Pouls du {entry.currentDate}</span><span className={`font-mono text-[10px] ${entry.response.ok ? 'text-emerald-300' : 'text-amber-300'}`}>{entry.response.ok ? `${entry.response.usage.model} · $${entry.response.usage.estimatedCostUsd.toFixed(4)}` : `échec · ${entry.response.code}`}</span></div><div className="mt-1 font-mono text-[10px] text-muted-foreground">{new Date(entry.createdAt).toLocaleString('fr-FR')} · {entry.response.ok ? `${entry.response.results.length} voie(s)` : 'réponse globale indisponible'}</div></summary>
