@@ -26,6 +26,8 @@ export type CommonActionPreparationOptions = {
   requestId?: string;
   /** Dossier à suivre automatiquement jusqu’à la résolution du programme. */
   linkedDossierId?: string;
+  /** Catégorie imposée par une interface structurée ; sinon le texte est interprété localement. */
+  category?: CommonActionCategory;
 };
 
 const clamp = (value: number, minimum = 0, maximum = 100) => Math.min(maximum, Math.max(minimum, value));
@@ -283,7 +285,7 @@ export function prepareCommonAction(
 ): CommonActionPreparation {
   const intent = text.trim();
   if (intent.length < 12) return { ok: false, error: 'Décrivez une intention un peu plus précise avant de la lancer.' };
-  const category = inferCategory(intent);
+  const category = options.category ?? inferCategory(intent);
   if (!category) return { ok: false, error: 'Le moteur ne reconnaît pas encore le domaine de cette intention. Précisez s’il s’agit de diplomatie, d’économie, d’administration, de défense ou de renseignement.' };
   const targetId = targetInText(state, intent);
   const requiresTarget = category === 'diplomacy' || category === 'intelligence';

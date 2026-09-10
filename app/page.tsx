@@ -32,7 +32,7 @@ import {
   dossierDecisionRecords,
   countrySheet,
   type AdvisorAnswer, type AdvisorQuestionKind, type EnergyAdministrativeOffer, type EnergyCounterpartResponse,
-  type EnergyOfferAdjustment, type ISODate, type StrategicDossier, type StrategicPlan,
+  type CommonActionCategory, type EnergyOfferAdjustment, type ISODate, type StrategicDossier, type StrategicPlan,
   type PreparedCommonAction, type PrototypeMeasureId, type StructuralDiagnosis, type WorldState,
 } from '@/lib/simulation';
 import {
@@ -1029,7 +1029,7 @@ function DossiersPanel({ world, selectedId, onSelect, onWorldChange, onNotice, o
   const [dossierAIAnswer, setDossierAIAnswer] = useState<AdvisorAIAnswer | null>(null);
   const [dossierAIUsage, setDossierAIUsage] = useState<AdvisorAIUsage | null>(null);
   const [dossierAIStatus, setDossierAIStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
-  const [preparedDossierOption, setPreparedDossierOption] = useState<{ title: string; action: PreparedCommonAction; warnings: string[] } | null>(null);
+  const [preparedDossierOption, setPreparedDossierOption] = useState<{ title: string; action: PreparedCommonAction; warnings: string[]; decision?: string } | null>(null);
   const rank = { minor: 0, moderate: 1, major: 2, critical: 3 } as const;
   const dossiers = Object.values(world.strategicDossiers).sort((a, b) => rank[b.importance] - rank[a.importance] || b.updatedAt.localeCompare(a.updatedAt));
   const scheduledReviews = useMemo(() => new globalThis.Map(rankStrategicDossierReviews(world).map((review) => [review.dossierId, review])), [world]);
@@ -1080,9 +1080,36 @@ function DossiersPanel({ world, selectedId, onSelect, onWorldChange, onNotice, o
     if (!preparedDossierOption) return;
     const result = launchCommonAction(world, preparedDossierOption.action);
     if (!result.ok) { onNotice(result.error); return; }
-    onWorldChange(result.state);
+    const next = preparedDossierOption.decision
+      ? resolveDossierDecision(result.state, selected.id, preparedDossierOption.decision, 'local_action')
+      : result.state;
+    onWorldChange(next);
     setPreparedDossierOption(null);
-    onNotice(`Programme lancé depuis le dossier : résolution attendue au fil du temps.`);
+    onNotice(preparedDossierOption.decision
+      ? 'Action locale engagée : la décision est résolue et le programme suivra le dossier dans le temps.'
+      : 'Programme lancé depuis le dossier : résolution attendue au fil du temps.');
+  };
+  const prepareLocalDecision = (decision: string) => {
+    const categoryByDossier: Record<StrategicDossier['kind'], CommonActionCategory> = {
+      economic: 'economic', security: 'defense', conflict: 'defense', diplomatic_crisis: 'diplomacy', cooperation: 'diplomacy', historical: 'institutional', power_struggle: 'institutional',
+    };
+    const category = categoryByDossier[selected.kind];
+    const counterpart = selected.actorIds
+      .filter((id) => id !== world.playerCountryId)
+      .map((id) => world.countries[id])
+      .find(Boolean);
+    const targetClause = category === 'diplomacy' && counterpart ? ` avec ${counterpart.name}` : '';
+    const categoryText: Record<CommonActionCategory, string> = {
+      economic: 'programme économique', diplomacy: 'initiative diplomatique', institutional: 'réforme administrative', defense: 'programme de défense', intelligence: 'opération de renseignement',
+    };
+    const result = prepareCommonAction(
+      world,
+      `Lancer un ${categoryText[category]}${targetClause} pour traiter le dossier « ${selected.title} » : ${decision}`,
+      { source: 'player', linkedDossierId: selected.id, category },
+    );
+    if (!result.ok) { onNotice(`Action locale impossible : ${result.error}`); return; }
+    setPreparedDossierOption({ title: `Action locale · ${selected.title}`, action: result.action, warnings: result.warnings, decision });
+    onNotice('Action locale préparée : confirmez pour engager budget et capacités.');
   };
   const resolveDecision = (decision: string, channel: 'local_action' | 'dialogue' | 'delegation' | 'explicit_silence') => {
     if (channel === 'dialogue') {
@@ -1141,10 +1168,10 @@ function DossiersPanel({ world, selectedId, onSelect, onWorldChange, onNotice, o
         {dossierAIUsage && <div className="mt-3 font-mono text-[10px] text-muted-foreground">{dossierAIUsage.inputTokens} jetons entrants · {dossierAIUsage.outputTokens} sortants · coût estimé ${dossierAIUsage.estimatedCostUsd.toFixed(4)} · {dossierAIUsage.latencyMs / 1000}s</div>}
         <div className="mt-2 text-xs text-muted-foreground">Ces options n’appliquent aucun effet. Pour agir, préparez ensuite une action depuis le Conseiller.</div>
       </div>}
-      {preparedDossierOption && <div className="border border-primary/45 bg-card/80 p-4"><div className="font-mono text-[10px] uppercase tracking-wider text-primary">Programme préparé · confirmation requise</div><h3 className="mt-1 font-semibold">{preparedDossierOption.title}</h3><div className="mt-2 grid gap-2 text-xs sm:grid-cols-3"><Stat label="Domaine" value={preparedDossierOption.action.category} /><Stat label="Durée" value={`${preparedDossierOption.action.durationMonths} mois`} /><Stat label="Budget" value={`${preparedDossierOption.action.budgetCost.toFixed(1)} unités`} /></div>{preparedDossierOption.warnings.length > 0 && <ul className="mt-2 space-y-1 text-xs text-amber-300">{preparedDossierOption.warnings.map((warning) => <li key={warning}>⚠ {warning}</li>)}</ul>}<div className="mt-3 flex flex-wrap gap-2"><Button onClick={launchDossierOption}><CheckCircle2 className="size-4" />Confirmer et lancer</Button><Button variant="outline" onClick={() => setPreparedDossierOption(null)}>Annuler</Button></div></div>}
+      {preparedDossierOption && <div className="border border-primary/45 bg-card/80 p-4"><div className="font-mono text-[10px] uppercase tracking-wider text-primary">Programme préparé · confirmation requise</div><h3 className="mt-1 font-semibold">{preparedDossierOption.title}</h3>{preparedDossierOption.decision && <p className="mt-2 border-l-2 border-primary pl-3 text-xs text-muted-foreground"><b>Décision concernée :</b> {preparedDossierOption.decision}</p>}<div className="mt-2 grid gap-2 text-xs sm:grid-cols-3"><Stat label="Domaine" value={preparedDossierOption.action.category} /><Stat label="Durée" value={`${preparedDossierOption.action.durationMonths} mois`} /><Stat label="Budget" value={`${preparedDossierOption.action.budgetCost.toFixed(1)} unités`} /></div>{preparedDossierOption.warnings.length > 0 && <ul className="mt-2 space-y-1 text-xs text-amber-300">{preparedDossierOption.warnings.map((warning) => <li key={warning}>⚠ {warning}</li>)}</ul>}<div className="mt-3 flex flex-wrap gap-2"><Button onClick={launchDossierOption}><CheckCircle2 className="size-4" />Confirmer et lancer</Button><Button variant="outline" onClick={() => setPreparedDossierOption(null)}>Annuler</Button></div></div>}
       {dossierAIForId === selected.id && dossierAIStatus === 'error' && <div className="border border-amber-400/40 bg-card/70 p-3 text-sm text-amber-200">L’analyse IA n’a pas abouti. Le dossier et son analyse locale restent disponibles.</div>}
       {(decisionRecords.length > 0 || selected.commitments.length > 0) && <div className="grid gap-3 lg:grid-cols-2">
-        <div className="border border-border bg-card/70 p-4"><div className="font-mono text-[10px] uppercase tracking-wider text-amber-300">Décisions attendues</div>{decisionRecords.length ? <div className="mt-3 space-y-3">{decisionRecords.map((decision) => <div key={decision.id} className="border border-amber-300/30 bg-amber-300/5 p-3"><div className="text-sm">{decision.prompt}</div><div className="mt-2 flex flex-wrap gap-2 font-mono text-[10px] text-muted-foreground"><span>urgence {decisionUrgencyLabels[decision.urgency] ?? decision.urgency}</span><span>origine : {decisionSourceLabels[decision.sourceKind] ?? decision.sourceKind}</span>{decision.sourceLabel && <span>· {decision.sourceLabel}</span>}</div><div className="mt-1 text-[11px] text-muted-foreground">Acteurs : {decision.actorIds.map((id) => world.countries[id]?.name ?? id).join(', ')} · canaux : {decision.availableChannels.map((channel) => decisionChannelLabels[channel] ?? channel).join(', ')}</div><div className="mt-3 flex flex-wrap gap-2"><Button size="sm" onClick={() => resolveDecision(decision.prompt, 'local_action')}>Décider localement</Button><Button size="sm" variant="outline" onClick={() => resolveDecision(decision.prompt, 'dialogue')}>Ouvrir un dialogue</Button><Button size="sm" variant="outline" onClick={() => resolveDecision(decision.prompt, 'delegation')}>Déléguer</Button><Button size="sm" variant="ghost" onClick={() => resolveDecision(decision.prompt, 'explicit_silence')}>Garder le silence</Button></div></div>)}</div> : <div className="mt-2 text-sm text-muted-foreground">Aucun arbitrage immédiat.</div>}</div>
+        <div className="border border-border bg-card/70 p-4"><div className="font-mono text-[10px] uppercase tracking-wider text-amber-300">Décisions attendues</div>{decisionRecords.length ? <div className="mt-3 space-y-3">{decisionRecords.map((decision) => <div key={decision.id} className="border border-amber-300/30 bg-amber-300/5 p-3"><div className="text-sm">{decision.prompt}</div><div className="mt-2 flex flex-wrap gap-2 font-mono text-[10px] text-muted-foreground"><span>urgence {decisionUrgencyLabels[decision.urgency] ?? decision.urgency}</span><span>origine : {decisionSourceLabels[decision.sourceKind] ?? decision.sourceKind}</span>{decision.sourceLabel && <span>· {decision.sourceLabel}</span>}</div><div className="mt-1 text-[11px] text-muted-foreground">Acteurs : {decision.actorIds.map((id) => world.countries[id]?.name ?? id).join(', ')} · canaux : {decision.availableChannels.map((channel) => decisionChannelLabels[channel] ?? channel).join(', ')}</div><div className="mt-3 flex flex-wrap gap-2"><Button size="sm" onClick={() => prepareLocalDecision(decision.prompt)}>Préparer une action locale</Button><Button size="sm" variant="outline" onClick={() => resolveDecision(decision.prompt, 'dialogue')}>Ouvrir un dialogue</Button><Button size="sm" variant="outline" onClick={() => resolveDecision(decision.prompt, 'delegation')}>Déléguer</Button><Button size="sm" variant="ghost" onClick={() => resolveDecision(decision.prompt, 'explicit_silence')}>Garder le silence</Button></div></div>)}</div> : <div className="mt-2 text-sm text-muted-foreground">Aucun arbitrage immédiat.</div>}</div>
         <div className="border border-border bg-card/70 p-4"><div className="font-mono text-[10px] uppercase tracking-wider text-emerald-300">Engagements mémorisés</div><ul className="mt-2 space-y-2 text-sm">{selected.commitments.length ? selected.commitments.map((item) => <li key={item}>— {item}</li>) : <li className="text-muted-foreground">Aucun engagement formel.</li>}</ul></div>
       </div>}
       {diplomaticSession && <div className="border border-border bg-card/70">
