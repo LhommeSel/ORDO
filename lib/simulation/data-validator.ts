@@ -1,4 +1,5 @@
 import type { CountryState, MacroeconomicState } from './types';
+import type { DefenseReference } from './country-sheet';
 
 export type RegistryIssue = {
   severity: 'error' | 'warning';
@@ -17,7 +18,7 @@ const finite = (value: unknown): value is number => typeof value === 'number' &&
 export function validateCountryRegistry(
   countries: Record<string, CountryState>,
   macroEconomies: Record<string, MacroeconomicState>,
-  options: { expectedMinimum?: number } = {},
+  options: { expectedMinimum?: number; defenseReferences?: Record<string, DefenseReference> } = {},
 ): RegistryIssue[] {
   const issues: RegistryIssue[] = [];
   const ids = Object.keys(countries);
@@ -52,13 +53,50 @@ export function validateCountryRegistry(
     if (macro.unemploymentPct < 0 || macro.unemploymentPct > 100) issues.push({ severity: 'error', countryId: id, field: 'unemploymentPct', message: 'Chômage hors de l’intervalle 0–100.' });
     if (macro.publicDebtPctGdp < 0) issues.push({ severity: 'error', countryId: id, field: 'publicDebtPctGdp', message: 'Dette publique négative.' });
   }
+
+  for (const [id, defense] of Object.entries(options.defenseReferences ?? {})) {
+    if (!countries[id]) issues.push({ severity: 'error', countryId: id, field: 'defenseReference', message: 'Référence militaire attachée à un pays inconnu.' });
+    for (const [field, value] of Object.entries({ budgetBillionUsd: defense.budgetBillionUsd, activePersonnelThousands: defense.activePersonnelThousands })) {
+      if (!finite(value) || value < 0) issues.push({ severity: 'error', countryId: id, field, message: 'Valeur militaire négative, non numérique ou non finie.' });
+    }
+    for (const [field, value] of Object.entries({ combatAvailabilityPct: defense.combatAvailabilityPct, sustainableProjectionPct: defense.sustainableProjectionPct })) {
+      if (value !== undefined && (!finite(value) || value < 0 || value > 100)) issues.push({ severity: 'error', countryId: id, field, message: 'Part militaire hors de l’intervalle 0–100.' });
+    }
+    const unitTotal = defense.unitTypes?.reduce((total, unit, index) => {
+      if (!unit.id.trim() || !unit.label.trim()) issues.push({ severity: 'error', countryId: id, field: `defense.unitTypes[${index}]`, message: 'Type d’unité sans identifiant ou libellé.' });
+      if (!finite(unit.personnelThousands) || unit.personnelThousands < 0) issues.push({ severity: 'error', countryId: id, field: `defense.unitTypes[${index}].personnelThousands`, message: 'Effectif d’unité invalide.' });
+      if (!finite(unit.quality) || unit.quality < 0 || unit.quality > 100) issues.push({ severity: 'error', countryId: id, field: `defense.unitTypes[${index}].quality`, message: 'Qualité d’unité hors de l’intervalle 0–100.' });
+      return total + (finite(unit.personnelThousands) ? unit.personnelThousands : 0);
+    }, 0) ?? 0;
+    if (unitTotal > defense.activePersonnelThousands + 0.01) issues.push({ severity: 'error', countryId: id, field: 'defense.unitTypes', message: 'Les types d’unités dépassent les effectifs actifs.' });
+    else if (defense.unitTypes?.length && Math.abs(unitTotal - defense.activePersonnelThousands) > 0.1) issues.push({ severity: 'warning', countryId: id, field: 'defense.unitTypes', message: 'Les types d’unités ne couvrent pas exactement les effectifs actifs.' });
+    const deploymentLocations = new Set<string>();
+    const deploymentTotal = defense.deployments?.reduce((total, deployment, index) => {
+      if (!deployment.location.trim() || deploymentLocations.has(deployment.location)) issues.push({ severity: 'error', countryId: id, field: `defense.deployments[${index}].location`, message: 'Théâtre militaire vide ou dupliqué.' });
+      deploymentLocations.add(deployment.location);
+      if (!finite(deployment.personnelThousands) || deployment.personnelThousands < 0) issues.push({ severity: 'error', countryId: id, field: `defense.deployments[${index}].personnelThousands`, message: 'Effectif de déploiement invalide.' });
+      const breakdownIds = new Set<string>();
+      const breakdownTotal = deployment.countryBreakdown?.reduce((subtotal, item, childIndex) => {
+        if (!countries[item.countryId]) issues.push({ severity: 'error', countryId: id, field: `defense.deployments[${index}].countryBreakdown[${childIndex}]`, message: `Pays d’accueil inconnu : ${item.countryId}.` });
+        if (breakdownIds.has(item.countryId)) issues.push({ severity: 'error', countryId: id, field: `defense.deployments[${index}].countryBreakdown`, message: `Pays d’accueil dupliqué : ${item.countryId}.` });
+        breakdownIds.add(item.countryId);
+        if (!finite(item.personnelThousands) || item.personnelThousands < 0) issues.push({ severity: 'error', countryId: id, field: `defense.deployments[${index}].countryBreakdown[${childIndex}].personnelThousands`, message: 'Effectif par pays invalide.' });
+        return subtotal + (finite(item.personnelThousands) ? item.personnelThousands : 0);
+      }, 0) ?? 0;
+      if (breakdownTotal > deployment.personnelThousands + 0.01) issues.push({ severity: 'error', countryId: id, field: `defense.deployments[${index}].countryBreakdown`, message: 'La ventilation par pays dépasse l’effectif du théâtre.' });
+      else if (deployment.countryBreakdown?.length && deployment.personnelThousands - breakdownTotal > 0.1) issues.push({ severity: 'warning', countryId: id, field: `defense.deployments[${index}].countryBreakdown`, message: 'La ventilation par pays est partielle.' });
+      return total + (finite(deployment.personnelThousands) ? deployment.personnelThousands : 0);
+    }, 0) ?? 0;
+    if (deploymentTotal > defense.activePersonnelThousands + 0.01) issues.push({ severity: 'error', countryId: id, field: 'defense.deployments', message: 'Les déploiements dépassent les effectifs actifs.' });
+    else if (defense.deployments?.length && Math.abs(deploymentTotal - defense.activePersonnelThousands) > 0.1) issues.push({ severity: 'warning', countryId: id, field: 'defense.deployments', message: 'Les déploiements ne couvrent pas exactement les effectifs actifs.' });
+  }
   return issues;
 }
 
 export function assertValidCountryRegistry(
   countries: Record<string, CountryState>,
   macroEconomies: Record<string, MacroeconomicState>,
-  options?: { expectedMinimum?: number },
+  options?: { expectedMinimum?: number; defenseReferences?: Record<string, DefenseReference> },
 ) {
   const issues = validateCountryRegistry(countries, macroEconomies, options);
   const errors = issues.filter((issue) => issue.severity === 'error');
