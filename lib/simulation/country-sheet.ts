@@ -7,6 +7,9 @@ export type DefenseReference = {
   activePersonnelThousands: number;
   posture: string;
   capabilities: string[];
+  /** Part des actifs immédiatement aptes au combat et part projetable durablement. */
+  combatAvailabilityPct?: number;
+  sustainableProjectionPct?: number;
   /** Inventaire agrégé pour le dossier militaire (ordre de grandeur jouable). */
   unitTypes?: Array<{ id: string; label: string; personnelThousands: number; quality: number; qualityLabel: string }>;
   /** Répartition indicative des forces par théâtre ou zone de projection. */
@@ -45,6 +48,8 @@ export const defenseReference2000: Record<CountryId, DefenseReference> = {
   FRA: {
     budgetBillionUsd: 44, activePersonnelThousands: 353, posture: 'dissuasion indépendante et projection',
     capabilities: ['dissuasion nucléaire', 'aéronavale', 'forces de projection'],
+    combatAvailabilityPct: 42,
+    sustainableProjectionPct: 28,
     unitTypes: [
       { id: 'army', label: 'Armée de terre', personnelThousands: 139, quality: 78, qualityLabel: 'Bonne · professionnalisation en cours' },
       { id: 'navy', label: 'Marine nationale', personnelThousands: 44, quality: 82, qualityLabel: 'Très bonne · haute disponibilité navale' },
