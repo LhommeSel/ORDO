@@ -178,6 +178,11 @@ export async function POST(request: Request) {
       const usage = readUsage(payload);
       const estimatedCostUsd = estimateAICost(policy.model, usage.inputTokens, usage.outputTokens, usage.cachedTokens);
       recordAICost(estimatedCostUsd);
+      const itemUsage = {
+        model: policy.model, inputTokens: usage.inputTokens, cachedInputTokens: usage.cachedTokens,
+        cacheWriteTokens: usage.cacheWriteTokens, cacheDiagnostics: usage.cacheDiagnostics,
+        outputTokens: usage.outputTokens, estimatedCostUsd, latencyMs: Math.round(performance.now() - upstreamStartedAt),
+      };
       let answer: unknown;
       try { answer = JSON.parse(extractOutputText(payload)); } catch { answer = null; }
       if (!isWorldPulseAnswer(answer, item.kind)) {
@@ -204,7 +209,7 @@ export async function POST(request: Request) {
           keys: outputRecord ? Object.keys(outputRecord).slice(0, 12) : null,
           proposalShape,
         });
-        return { id: item.id, kind: item.kind, ok: false, message: 'La réponse structurée de cette voie a été rejetée.' };
+        return { id: item.id, kind: item.kind, ok: false, message: 'La réponse structurée de cette voie a été rejetée.', usage: itemUsage };
       }
       const normalizedAnswer = normalizeWorldPulseAnswerDossierIds(answer);
       const factIds = new Set(item.context.facts.map((fact) => fact.id));
@@ -215,20 +220,16 @@ export async function POST(request: Request) {
         && (proposal.dossierId === null || factIds.has(`dossier:${proposal.dossierId}`)));
       if (!grounded) {
         console.error('ORDO world pulse grounding failure', { requestId: parsed.requestId, kind: item.kind });
-        return { id: item.id, kind: item.kind, ok: false, message: 'La réponse de cette voie cite des éléments absents du contexte.' };
+        return { id: item.id, kind: item.kind, ok: false, message: 'La réponse de cette voie cite des éléments absents du contexte.', usage: itemUsage };
       }
       return {
         id: item.id, kind: item.kind, ok: true, answer: normalizedAnswer,
-        usage: {
-          model: policy.model, inputTokens: usage.inputTokens, cachedInputTokens: usage.cachedTokens,
-          cacheWriteTokens: usage.cacheWriteTokens, cacheDiagnostics: usage.cacheDiagnostics,
-          outputTokens: usage.outputTokens, estimatedCostUsd, latencyMs: Math.round(performance.now() - upstreamStartedAt),
-        },
+        usage: itemUsage,
       };
     };
 
     const results = await Promise.all(parsed.pulses.map(callItem));
-    const usage = results.reduce((total, result) => result.ok ? {
+    const usage = results.reduce((total, result) => result.usage ? {
       inputTokens: total.inputTokens + result.usage.inputTokens,
       cachedInputTokens: total.cachedInputTokens + result.usage.cachedInputTokens,
       cacheWriteTokens: (total.cacheWriteTokens ?? 0) + (result.usage.cacheWriteTokens ?? 0),
@@ -236,7 +237,7 @@ export async function POST(request: Request) {
       estimatedCostUsd: total.estimatedCostUsd + result.usage.estimatedCostUsd,
       latencyMs: total.latencyMs,
     } : total, { inputTokens: 0, cachedInputTokens: 0, cacheWriteTokens: 0, outputTokens: 0, estimatedCostUsd: 0, latencyMs: 0 });
-    usage.latencyMs = Math.max(0, ...results.filter((result) => result.ok).map((result) => result.usage.latencyMs));
+    usage.latencyMs = Math.max(0, ...results.flatMap((result) => result.usage ? [result.usage.latencyMs] : []));
     return json({
       ok: true, results,
       usage: { model: policy.model, ...usage, remainingSessionRequestsToday: admission.remainingSessionRequestsToday },

@@ -1,6 +1,6 @@
 import { commitWorldAction, relationBetween } from './ledger';
 import { pickSeeded } from './random';
-import type { ArmamentProduct, CountryId, WorldState } from './types';
+import type { ArmamentProduct, WorldState } from './types';
 
 const clamp = (value: number, minimum = 0, maximum = 100) => Math.min(maximum, Math.max(minimum, value));
 

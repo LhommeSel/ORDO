@@ -121,6 +121,34 @@ test('une ancienne sauvegarde reçoit les socles sectoriels manquants à son cha
   assert.equal(restored.sectors['AGO-defense'].modelingLevel, 'aggregate');
 });
 
+test('une ancienne sauvegarde reçoit les pays ajoutés sans écraser son monde joué', () => {
+  const legacy = createFrance2000World();
+  legacy.currentDate = '2004-05-01';
+  legacy.countries.FRA.metrics.budget = 173;
+  const removedCountryIds = Object.keys(legacy.countries).filter((id) => !['FRA', 'DEU', 'ITA'].includes(id));
+  for (const id of removedCountryIds) {
+    delete legacy.countries[id];
+    delete legacy.countryEnergy[id];
+    delete legacy.decisionProfiles[id];
+    delete legacy.leadership[id];
+    delete legacy.politicalCycles[id];
+    delete legacy.politicalApparatus[id];
+  }
+  legacy.territorial = {
+    ...legacy.territorial,
+    territories: Object.fromEntries(Object.entries(legacy.territorial.territories).filter(([, territory]) => ['FRA', 'DEU', 'ITA'].includes(territory.sovereignCountryId))),
+    assets: Object.fromEntries(Object.entries(legacy.territorial.assets).filter(([, asset]) => legacy.territorial.territories[asset.territoryId] && ['FRA', 'DEU', 'ITA'].includes(legacy.territorial.territories[asset.territoryId].sovereignCountryId))),
+    entities: Object.fromEntries(Object.entries(legacy.territorial.entities).filter(([id]) => ['FRA', 'DEU', 'ITA'].includes(id))),
+  };
+  const restored = deserializeWorld(serializeWorld(legacy));
+  assert.equal(Object.keys(restored.countries).length, 195);
+  assert.equal(restored.currentDate, '2004-05-01');
+  assert.equal(restored.countries.FRA.metrics.budget, 173);
+  assert.ok(restored.countryEnergy.AGO);
+  assert.ok(restored.politicalCycles.AGO);
+  assert.ok(Object.values(restored.territorial.territories).some((territory) => territory.sovereignCountryId === 'AGO'));
+});
+
 test('les échéances politiques sont réparties et ouvrent un dossier avant les scrutins majeurs', () => {
   const initial = createFrance2000World();
   const atCampaign = { ...initial, currentDate: '2000-06-01' as const };
@@ -471,10 +499,9 @@ test('un accord issu d’un dialogue historique réduit la pression uniquement l
   const opened = openDiplomaticDialogueForDossier(signalled, dossierId, 'Nous proposons une coordination de sécurité durable.');
   assert.ok(opened.ok);
   if (!opened.ok) return;
-  const sent = sendDiplomaticDialogueMessage(opened.state, opened.dialogueId, 'Nous acceptons une coopération de renseignement avec garanties réciproques.');
-  assert.ok(sent.ok);
-  if (!sent.ok) return;
-  const queued = requestDiplomaticDialogueAI(sent.state, opened.dialogueId);
+  // L'ouverture attend la première réponse de l'interlocuteur. Le joueur ne
+  // peut pas envoyer artificiellement un second message avant cette réponse.
+  const queued = requestDiplomaticDialogueAI(opened.state, opened.dialogueId);
   assert.ok(queued.ok);
   if (!queued.ok) return;
   const answered = applyDiplomaticDialogueAIAnswer(queued.state, queued.jobId, {
@@ -490,6 +517,23 @@ test('un accord issu d’un dialogue historique réduit la pression uniquement l
   const anchor = accepted.state.historicalAnchors['mass-casualty-terrorism'];
   assert.ok(anchor.pressure < before);
   assert.equal(anchor.lastIntervention?.outcome, 'agreed');
+});
+
+test('une réforme nationale échouée libère le domaine et ouvre un arbitrage', () => {
+  const initial = createFrance2000World();
+  const prepared = prepareCommonAction(initial, 'Resserrer fortement les admissions migratoires et renforcer les contrôles');
+  assert.ok(prepared.ok);
+  if (!prepared.ok) return;
+  const launched = launchCommonAction(initial, { ...prepared.action, durationMonths: 1, successProbability: 0 });
+  assert.ok(launched.ok);
+  if (!launched.ok) return;
+  const active = launched.state.nationalReforms[reformStateKey('FRA', 'immigration')];
+  assert.equal(active.activeProgramId, launched.programId);
+  const resolved = advanceWorld(launched.state, '2000-02-15').state;
+  const reform = resolved.nationalReforms[reformStateKey('FRA', 'immigration')];
+  assert.equal(reform.activeProgramId, null);
+  assert.equal(reform.lastOutcome, 'stalled');
+  assert.ok(resolved.strategicDossiers['reform-FRA-immigration']?.pendingDecisions.length);
 });
 
 test('le pouls mondial IA ne peut créer que des mises à jour de dossiers citées et relationnelles bornées', () => {
@@ -556,6 +600,31 @@ test('un rejet du pouls IA est isolé et conserve le tour local en secours', asy
   assert.equal(result.fallbackApplied, 1);
   assert.match(result.errors[0] ?? '', /world_autonomy/);
   assert.equal(result.state.currentDate, launched.state.currentDate);
+});
+
+test('une réponse tardive du pouls conserve les actions faites pendant son calcul', async () => {
+  const initial = createFrance2000World();
+  const request = createWorldPulseRequest(initial, initial.actions.length, 1, 'test-world-pulse-rebase');
+  const latest = commitWorldAction(initial, {
+    kind: 'political', actorId: 'FRA', origin: 'player', visibility: 'player',
+    intent: 'Action effectuée pendant le calcul du pouls',
+    effects: [{ kind: 'metric_delta', countryId: 'FRA', metric: 'stability', delta: 0.25, reason: 'Vérifier la conservation des actions concurrentes.' }],
+  });
+  const results = request.pulses.map((item) => ({
+    id: item.id,
+    kind: item.kind,
+    ok: true as const,
+    answer: { headline: 'Aucun changement', synthesis: 'Le monde reste stable.', proposals: [], requestedFactIds: [] },
+    usage: { model: 'gpt-5.6-luna', inputTokens: 10, cachedInputTokens: 0, outputTokens: 10, estimatedCostUsd: 0, latencyMs: 1 },
+  }));
+  const fakeFetcher = async () => new Response(JSON.stringify({
+    ok: true,
+    results,
+    usage: { model: 'gpt-5.6-luna', inputTokens: 20, cachedInputTokens: 0, outputTokens: 20, estimatedCostUsd: 0, latencyMs: 1, remainingSessionRequestsToday: 1 },
+  }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  const result = await executeWorldPulse(initial, request, fakeFetcher as typeof fetch, () => latest);
+  assert.ok(result.state.actions.some((action) => action.intent === 'Action effectuée pendant le calcul du pouls'));
+  assert.equal(result.state.countries.FRA.metrics.stability, latest.countries.FRA.metrics.stability);
 });
 
 test('un rejet de l autonomie mondiale matérialise au plus un ancrage actif déjà visible', async () => {

@@ -26,7 +26,7 @@ const normalize = (value: string) => value
   .toLocaleLowerCase('fr').replace(/[’']/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim();
 
 function requestedTargetLabel(text: string) {
-  const match = text.match(/(?:avec|auprès de|aupres de|provenant de|acheter à|acheter a)\s+(?:(?:l['’]|le |la |les |du |de la |des )?)([\p{L}][\p{L}\s'’\-]{1,45}?)(?=\s+(?:afin|pour|de long terme|à long terme|a long terme|sur|sans)\b|[,.!?;]|$)/iu);
+  const match = text.match(/(?:avec|auprès de|aupres de|provenant de|acheter à|acheter a)\s+(?:(?:l['’]|le |la |les |du |de la |des )?)([\p{L}][\p{L}\s'’-]{1,45}?)(?=\s+(?:afin|pour|de long terme|à long terme|a long terme|sur|sans)\b|[,.!?;]|$)/iu);
   const label = match?.[1]?.trim();
   if (!label || /^(?:un|une|des|nouveau|fournisseur|partenaire)/i.test(label)) return undefined;
   return label.replace(/\s+/g, ' ');

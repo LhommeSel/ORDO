@@ -84,6 +84,8 @@ export type AIJobAIResponse =
       code: 'not_configured' | 'invalid_request' | 'rate_limited' | 'budget_exhausted' | 'upstream_error';
       message: string;
       retryAfterSeconds?: number;
+      /** Un JSON rejeté peut tout de même avoir été facturé par le fournisseur. */
+      usage?: AdvisorAIUsage;
     };
 
 const kinds: AIJobKind[] = ['power_struggle', 'diplomacy', 'historical_interpretation', 'advisor', 'free_action_interpretation'];

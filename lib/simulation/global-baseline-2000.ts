@@ -169,12 +169,13 @@ const clamp = (value: number, min: number, max: number) => Math.min(max, Math.ma
 
 /** Stable variation: same country, same inputs, same initial world. */
 function variation(id: string, amplitude: number) {
-  const value = [...id].reduce((hash, character) => (hash * 31 + character.charCodeAt(0)) % 997, 17);
+  let value = 17;
+  for (let index = 0; index < id.length; index += 1) value = (value * 31 + id.charCodeAt(index)) % 997;
   return ((value % 201) / 100 - 1) * amplitude;
 }
 
 function flagFromAlpha2(alpha2: string) {
-  return [...alpha2.toUpperCase()].map((character) => String.fromCodePoint(127397 + character.charCodeAt(0))).join('');
+  return alpha2.toUpperCase().split('').map((character) => String.fromCodePoint(127397 + character.charCodeAt(0))).join('');
 }
 
 function descriptorFromSeed(seed: GlobalCountrySeed): NationalBaselineDescriptor {

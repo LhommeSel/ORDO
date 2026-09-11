@@ -151,7 +151,7 @@ export function normalizeWorldPulseAnswerDossierIds(answer: WorldPulseAnswer): W
 
 export type WorldPulseItemResult =
   | { id: string; kind: WorldPulseKind; ok: true; answer: WorldPulseAnswer; usage: Omit<AdvisorAIUsage, 'remainingSessionRequestsToday'> }
-  | { id: string; kind: WorldPulseKind; ok: false; message: string };
+  | { id: string; kind: WorldPulseKind; ok: false; message: string; usage?: Omit<AdvisorAIUsage, 'remainingSessionRequestsToday'> };
 
 export type WorldPulseResponse =
   | { ok: true; results: WorldPulseItemResult[]; usage: AdvisorAIUsage }

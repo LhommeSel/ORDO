@@ -598,24 +598,29 @@ export async function executeWorldPulse(
   state: WorldState,
   request: WorldPulseRequest,
   fetcher: typeof fetch = fetch,
+  latestState?: () => WorldState,
 ): Promise<WorldPulseExecutionResult> {
+  // Le réseau peut répondre plusieurs secondes après le calcul local du tour.
+  // L'interface fournit alors son état le plus récent afin que le pouls ne
+  // réécrase pas une action effectuée pendant l'attente.
+  const stateAtApplication = () => latestState?.() ?? state;
   let response: Response;
   try {
     response = await fetcher('/api/ai/world-pulse', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request),
     });
   } catch {
-    return failedPulse(state, request, 'Le pouls IA est momentanément inaccessible.', request.pulses.length);
+    return failedPulse(stateAtApplication(), request, 'Le pouls IA est momentanément inaccessible.', request.pulses.length);
   }
   let payload: WorldPulseResponse;
   try { payload = await response.json() as WorldPulseResponse; } catch {
-    return failedPulse(state, request, 'Le pouls IA a renvoyé une réponse illisible.', request.pulses.length);
+    return failedPulse(stateAtApplication(), request, 'Le pouls IA a renvoyé une réponse illisible.', request.pulses.length);
   }
   if (!payload || typeof payload !== 'object' || typeof (payload as { ok?: unknown }).ok !== 'boolean') {
-    return failedPulse(state, request, 'Le pouls IA a renvoyé un format inattendu.', request.pulses.length);
+    return failedPulse(stateAtApplication(), request, 'Le pouls IA a renvoyé un format inattendu.', request.pulses.length);
   }
-  if (!payload.ok) return failedPulse(state, request, payload.message, request.pulses.length, payload);
-  let next = state;
+  if (!payload.ok) return failedPulse(stateAtApplication(), request, payload.message, request.pulses.length, payload);
+  let next = stateAtApplication();
   const createdDossierIds: string[] = [];
   const updatedDossierIds: string[] = [];
   const errors: string[] = [];

@@ -22,7 +22,10 @@ export const runtime = 'edge';
 
 const json = (body: AIJobAIResponse, status = 200, headers: HeadersInit = {}) => Response.json(body, {
   status,
-  headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', ...headers },
+  // HeadersInit peut être un objet, un tableau de tuples ou une instance de
+  // Headers. L'étaler directement dans un objet transformait un tableau en
+  // clés numériques et pouvait faire disparaître Retry-After.
+  headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', ...Object.fromEntries(new Headers(headers).entries()) },
 });
 
 const extractOutputText = (payload: Record<string, unknown>) => {
@@ -82,7 +85,9 @@ function extractFunctionCalls(payload: Record<string, unknown>): FunctionCall[] 
       && typeof record.call_id === 'string' && typeof record.arguments === 'string'
       ? [{ call_id: record.call_id, name: record.name, arguments: record.arguments }]
       : [];
-  }).slice(0, 2);
+  // Le contrat serveur autorise un seul aller-retour d'outil par appel. Accepter
+  // plusieurs tool calls ici augmentait silencieusement coût et latence.
+  }).slice(0, 1);
 }
 
 function parseSupplementalRequest(call: FunctionCall): SupplementalFactRequest | null {
@@ -203,6 +208,18 @@ export async function POST(request: Request) {
     }
     let payload = await upstream.json() as Record<string, unknown>;
     const totalUsage = readUsage(payload);
+    // Une réponse OpenAI réussie est facturée même si son JSON est ensuite
+    // rejeté par ORDO. Le garde-fou budgétaire doit donc compter cet usage dès
+    // qu'il est connu, pas seulement après validation métier.
+    recordAICost(estimateAICost(policy.model, totalUsage.input, totalUsage.output, totalUsage.cached));
+    const usageSummary = () => ({
+      model: policy.model, inputTokens: totalUsage.input, cachedInputTokens: totalUsage.cached,
+      cacheWriteTokens: totalUsage.cacheWrites, cacheDiagnostics: totalUsage.cacheDiagnostics,
+      outputTokens: totalUsage.output,
+      estimatedCostUsd: estimateAICost(policy.model, totalUsage.input, totalUsage.output, totalUsage.cached),
+      latencyMs: Math.round(performance.now() - requestStartedAt),
+      remainingSessionRequestsToday: admission.remainingSessionRequestsToday,
+    });
     const functionCalls = extractFunctionCalls(payload);
     if (functionCalls.length) {
       const requests = functionCalls.map(parseSupplementalRequest).filter((item): item is SupplementalFactRequest => Boolean(item));
@@ -225,10 +242,11 @@ export async function POST(request: Request) {
       ], false);
       if (!upstream.ok) {
         console.error('ORDO AI supplemental pass failure', { requestId: parsed.requestId, kind: parsed.job.kind, status: upstream.status });
-        return json({ ok: false, code: 'upstream_error', message: 'Le complément de contexte a échoué. Aucun nouvel essai automatique ne sera lancé.' }, 502);
+        return json({ ok: false, code: 'upstream_error', message: 'Le complément de contexte a échoué. Aucun nouvel essai automatique ne sera lancé.', usage: usageSummary() }, 502);
       }
       payload = await upstream.json() as Record<string, unknown>;
       const secondUsage = readUsage(payload);
+      recordAICost(estimateAICost(policy.model, secondUsage.input, secondUsage.output, secondUsage.cached));
       totalUsage.input += secondUsage.input;
       totalUsage.output += secondUsage.output;
       totalUsage.cached += secondUsage.cached;
@@ -239,20 +257,12 @@ export async function POST(request: Request) {
     try { answer = JSON.parse(extractOutputText(payload)); } catch { answer = null; }
     if (!isAIJobAIModelAnswer(answer, parsed.job.kind)) {
       console.error('ORDO AI job invalid output', { requestId: parsed.requestId, kind: parsed.job.kind });
-      return json({ ok: false, code: 'upstream_error', message: 'La réponse du modèle IA a été rejetée par le contrôle de cohérence.' }, 502);
+      return json({ ok: false, code: 'upstream_error', message: 'La réponse du modèle IA a été rejetée par le contrôle de cohérence.', usage: usageSummary() }, 502);
     }
-    const estimatedCostUsd = estimateAICost(policy.model, totalUsage.input, totalUsage.output, totalUsage.cached);
-    recordAICost(estimatedCostUsd);
     return json({
       ok: true,
       answer: sanitizeAIJobAIAnswer(answer),
-      usage: {
-        model: policy.model, inputTokens: totalUsage.input, cachedInputTokens: totalUsage.cached,
-        cacheWriteTokens: totalUsage.cacheWrites, cacheDiagnostics: totalUsage.cacheDiagnostics,
-        outputTokens: totalUsage.output, estimatedCostUsd,
-        latencyMs: Math.round(performance.now() - requestStartedAt),
-        remainingSessionRequestsToday: admission.remainingSessionRequestsToday,
-      },
+      usage: usageSummary(),
     });
   } catch (error) {
     console.error('ORDO AI job request failure', { requestId: parsed.requestId, name: error instanceof Error ? error.name : 'unknown' });

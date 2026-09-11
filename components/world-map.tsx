@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { LocateFixed, Minus, Plus } from 'lucide-react';
+import type { GeometryCollection, MultiPolygon, Polygon, Topology } from 'topojson-specification';
 
 type MapMode = 'diplomacy' | 'intelligence' | 'military';
 
@@ -19,9 +20,17 @@ type MapEntity = {
   path: string;
 };
 
+type AtlasProperties = { id?: string; name?: string; name_long?: string };
+type AtlasTopology = Topology<{ features: GeometryCollection<AtlasProperties> }>;
+type AtlasArea = Polygon<AtlasProperties> | MultiPolygon<AtlasProperties>;
+
 const viewWidth = 960;
 const viewHeight = 500;
-const historicalIds = new Set(['SRB', 'MNE', 'KOS', 'SDN', 'SSD']);
+// Le fond cartographique utilise quelques codes différents du registre ORDO
+// (PSX/PSE, SDS/SSD) et des frontières contemporaines. Ces alias empêchent
+// qu'une zone pourtant modélisée ouvre une fausse fiche « non modélisée ».
+const historicalIds = new Set(['SRB', 'MNE', 'KOS', 'SDN', 'SDS']);
+const atlasAliases: Record<string, string> = { PSX: 'PSE' };
 
 export function WorldMap({ mode, metrics, selectedId, onSelect, playerCountryId }: WorldMapProps) {
   const [transform, setTransform] = useState({ x: 0, y: 0, k: 1 });
@@ -44,21 +53,22 @@ export function WorldMap({ mode, metrics, selectedId, onSelect, playerCountryId 
       import('i18n-iso-countries/langs/fr.json'),
     ]).then(([d3, topojson, atlasModule, countriesModule, localeModule]) => {
       if (cancelled) return;
-      const world = atlasModule.default as any;
+      const world = atlasModule.default as AtlasTopology;
       const countries = countriesModule.default;
       countries.registerLocale(localeModule.default);
-      const topology = world as any;
-      const collection = topojson.feature(topology, topology.objects.features) as unknown as GeoJSON.FeatureCollection;
-      const geometries = topology.objects.features.geometries as any[];
+      const topology = world;
+      const collection = topojson.feature(topology, topology.objects.features);
+      const geometries = topology.objects.features.geometries.filter((item): item is AtlasArea => item.type === 'Polygon' || item.type === 'MultiPolygon');
       const ordinary = collection.features
         .filter((item) => !historicalIds.has(String(item.properties?.id ?? '')))
         .map((item) => {
-          const id = String(item.properties?.id ?? 'UNK');
+          const atlasId = String(item.properties?.id ?? 'UNK');
+          const id = atlasAliases[atlasId] ?? atlasId;
           const fallback = String(item.properties?.name_long ?? item.properties?.name ?? id);
           return { id, name: countries.getName(id, 'fr') ?? fallback, geometry: item.geometry };
         });
-      ordinary.push({ id: 'YUG', name: 'République fédérale de Yougoslavie', geometry: topojson.merge(topology, geometries.filter((item) => ['SRB', 'MNE', 'KOS'].includes(String(item.properties?.id)))) as GeoJSON.Geometry });
-      ordinary.push({ id: 'SDN', name: 'Soudan', geometry: topojson.merge(topology, geometries.filter((item) => ['SDN', 'SSD'].includes(String(item.properties?.id)))) as GeoJSON.Geometry });
+      ordinary.push({ id: 'SRB', name: 'République fédérale de Yougoslavie', geometry: topojson.merge(topology, geometries.filter((item) => ['SRB', 'MNE', 'KOS'].includes(String(item.properties?.id)))) as GeoJSON.Geometry });
+      ordinary.push({ id: 'SDN', name: 'Soudan', geometry: topojson.merge(topology, geometries.filter((item) => ['SDN', 'SDS'].includes(String(item.properties?.id)))) as GeoJSON.Geometry });
       const projection = d3.geoNaturalEarth1().fitExtent([[12, 14], [viewWidth - 12, viewHeight - 14]], { type: 'Sphere' });
       const path = d3.geoPath(projection);
       setEntities(ordinary.map((entity) => ({ id: entity.id, name: entity.name, path: path({ type: 'Feature', properties: { id: entity.id }, geometry: entity.geometry } as GeoJSON.Feature) ?? '' })));
@@ -87,7 +97,7 @@ export function WorldMap({ mode, metrics, selectedId, onSelect, playerCountryId 
 
   return (
     <div className="world-map-wrap">
-      {!entities.length && <div className="map-load-status" role="status">{loadError ? <><span>Carte indisponible. Les fiches et la liste des pays restent accessibles.</span><button type="button" onClick={() => setAttempt((n) => n + 1)}>Réessayer</button></> : 'Chargement de la carte…'}</div>}
+      {!entities.length && <output className="map-load-status">{loadError ? <><span>Carte indisponible. Les fiches et la liste des pays restent accessibles.</span><button type="button" onClick={() => setAttempt((n) => n + 1)}>Réessayer</button></> : 'Chargement de la carte…'}</output>}
       <div className="map-controls" aria-label="Contrôles de la carte">
         <button type="button" onClick={() => zoom(1.3)} aria-label="Zoomer"><Plus /></button>
         <button type="button" onClick={() => zoom(1 / 1.3)} aria-label="Dézoomer"><Minus /></button>

@@ -16,7 +16,6 @@ function aggregateSector(
   economy: MacroeconomicState,
   sector: StrategicSectorId,
 ): StrategicSectorState {
-  const manufacturing = economy.sectors.manufacturing;
   const agriculture = economy.sectors.agriculture;
   const services = economy.sectors.market_services;
   const defenseIntensity = clamp(country.weight * 0.55 + country.metrics.security * 0.25 + profile.industrialDepth * 0.2);

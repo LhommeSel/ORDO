@@ -263,7 +263,6 @@ export function resolveDiplomaticDialogueResponse(
     reason: decision === 'accept' ? 'L’acceptation d’un engagement diplomatique renforce la relation.' : 'Le refus d’une position diplomatique dégrade la relation.', visibility: 'player' as const,
   })));
   const formalAgreement = decision === 'accept' && (response.kind === 'accept' || response.kind === 'counter');
-  const agreementDossierId = `diplomatic-dialogue-${dialogue.id}`;
   if (!dialogue.linkedDossierId && (formalAgreement || decision === 'request_revision')) {
     const names = dialogue.participantIds.map((id) => state.countries[id]?.name ?? id).join(', ');
     const agreementLabel = response.agreementType.replaceAll('_', ' ');

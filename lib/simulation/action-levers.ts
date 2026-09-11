@@ -125,7 +125,7 @@ export function inferActionLever(category: CommonActionCategory, text: string): 
   }
   if (category === 'institutional') {
     if (/\b(corruption|integrite|transparence|conflit d interet)\b/.test(value)) return 'anti_corruption';
-    if (/\b(reforme|relig|laic|confession|immigr|asile|naturalisation|integration|societ|famille|ordre public|droits civils|egalite)\b/.test(value)) return 'national_reform';
+    if (/\b(reforme|relig\w*|laic\w*|confession\w*|immigr\w*|migrat\w*|asile|naturalisation|integration|societ\w*|famille|ordre public|droits civils|egalite)\b/.test(value)) return 'national_reform';
     if (/\b(ministere|sous ministere|secretariat d etat|gouvernement|cabinet)\b/.test(value)) return 'government_reorganization';
     return 'administrative_reform';
   }

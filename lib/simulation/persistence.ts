@@ -10,6 +10,7 @@ import { createLeadership2000, createPoliticalApparatus2000 } from './political-
 import { createPoliticalCycles2000 } from './political-cycles';
 import { createHistoricalAnchors2000 } from './historical-anchors-2000';
 import { createStrategicSectors2000 } from './strategic-sector-data-2000';
+import { createWorld2000 } from './scenario-2000';
 
 export type SaveEnvelope = {
   format: 'ordo-world';
@@ -23,6 +24,7 @@ export type SaveEnvelope = {
 };
 
 const SAVE_COMPACTION_THRESHOLD = 2_000;
+const LEDGER_COMPACTION_THRESHOLD = 4_000;
 const TECHNICAL_ACTION_TAIL = 120;
 const TECHNICAL_LEDGER_TAIL = 240;
 
@@ -35,7 +37,7 @@ const TECHNICAL_LEDGER_TAIL = 240;
  * liste d'actions.
  */
 export function compactWorldForSave(state: WorldState): WorldState {
-  if (state.actions.length <= SAVE_COMPACTION_THRESHOLD) return state;
+  if (state.actions.length <= SAVE_COMPACTION_THRESHOLD && state.ledger.length <= LEDGER_COMPACTION_THRESHOLD) return state;
   const firstTechnicalActionToKeep = Math.max(0, state.actions.length - TECHNICAL_ACTION_TAIL);
   const keepAction = (action: WorldState['actions'][number], index: number) =>
     action.origin === 'player'
@@ -85,6 +87,8 @@ type StoredSave = {
   format: 'ordo-world-gzip';
   savedAt: string;
   bytes: ArrayBuffer;
+  /** Les navigateurs anciens ne proposent pas toujours CompressionStream. */
+  encoding?: 'gzip' | 'plain';
 };
 
 const SAVE_DB_NAME = 'ordo-saves-v2';
@@ -95,18 +99,23 @@ function hasIndexedDb() {
   return typeof indexedDB !== 'undefined';
 }
 
-async function gzipText(value: string) {
-  if (typeof CompressionStream === 'undefined') return new TextEncoder().encode(value);
+async function gzipText(value: string): Promise<{ bytes: Uint8Array; encoding: 'gzip' | 'plain' }> {
+  if (typeof CompressionStream === 'undefined') {
+    return { bytes: new TextEncoder().encode(value), encoding: 'plain' };
+  }
   const stream = new CompressionStream('gzip');
   const writer = stream.writable.getWriter();
   await writer.write(new TextEncoder().encode(value));
   await writer.close();
-  return new Uint8Array(await new Response(stream.readable).arrayBuffer());
+  return { bytes: new Uint8Array(await new Response(stream.readable).arrayBuffer()), encoding: 'gzip' };
 }
 
-async function gunzipBytes(value: ArrayBuffer | Uint8Array) {
+async function gunzipBytes(value: ArrayBuffer | Uint8Array, encoding: 'gzip' | 'plain' = 'gzip') {
   const bytes = value instanceof Uint8Array ? value : new Uint8Array(value);
-  if (typeof DecompressionStream === 'undefined') return new TextDecoder().decode(bytes);
+  if (encoding === 'plain') return new TextDecoder().decode(bytes);
+  if (typeof DecompressionStream === 'undefined') {
+    throw new Error('Cette sauvegarde est compressée, mais ce navigateur ne sait pas la décompresser.');
+  }
   const stream = new DecompressionStream('gzip');
   const writer = stream.writable.getWriter();
   await writer.write(bytes as unknown as BufferSource);
@@ -162,32 +171,48 @@ function base64ToBytes(value: string) {
   return bytes;
 }
 
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+}
+
 /** Sauvegarde compressée du navigateur. IndexedDB évite la limite stricte de localStorage. */
 export async function saveWorldToBrowser(state: WorldState) {
   const raw = serializeWorld(state);
   const compressed = await gzipText(raw);
   if (hasIndexedDb()) {
-    await putIndexedSave({ format: 'ordo-world-gzip', savedAt: new Date().toISOString(), bytes: compressed.buffer });
-  } else if (typeof localStorage !== 'undefined') {
-    localStorage.setItem(SAVE_KEY, JSON.stringify({ format: 'ordo-world-gzip', savedAt: new Date().toISOString(), data: bytesToBase64(compressed) }));
+    try {
+      await putIndexedSave({ format: 'ordo-world-gzip', savedAt: new Date().toISOString(), bytes: toArrayBuffer(compressed.bytes), encoding: compressed.encoding });
+      return { rawBytes: new TextEncoder().encode(raw).byteLength, storedBytes: compressed.bytes.byteLength, compacted: compactWorldForSave(state).actions.length < state.actions.length };
+    } catch {
+      // Certains navigateurs privés exposent IndexedDB tout en refusant son
+      // ouverture. Le stockage local reste alors un secours valide.
+    }
+  }
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem(SAVE_KEY, JSON.stringify({ format: 'ordo-world-gzip', savedAt: new Date().toISOString(), data: bytesToBase64(compressed.bytes), encoding: compressed.encoding }));
   } else {
     throw new Error('Le navigateur ne fournit aucun stockage local.');
   }
-  return { rawBytes: new TextEncoder().encode(raw).byteLength, storedBytes: compressed.byteLength, compacted: compactWorldForSave(state).actions.length < state.actions.length };
+  return { rawBytes: new TextEncoder().encode(raw).byteLength, storedBytes: compressed.bytes.byteLength, compacted: compactWorldForSave(state).actions.length < state.actions.length };
 }
 
 /** Charge une sauvegarde v2 compressée, avec migration depuis la clé v1. */
 export async function loadWorldFromBrowser() {
   let raw: string | undefined;
   if (hasIndexedDb()) {
-    const stored = await getIndexedSave();
-    if (stored?.bytes) raw = await gunzipBytes(stored.bytes);
+    try {
+      const stored = await getIndexedSave();
+      if (stored?.bytes) raw = await gunzipBytes(stored.bytes, stored.encoding);
+    } catch {
+      // Même secours que lors de l'écriture : IndexedDB peut être présent mais
+      // interdit par le mode privé ou une politique du navigateur.
+    }
   }
   if (!raw && typeof localStorage !== 'undefined') {
     const compressed = localStorage.getItem(SAVE_KEY);
     if (compressed) {
-      const candidate = JSON.parse(compressed) as { format?: string; data?: string };
-      if (candidate.format === 'ordo-world-gzip' && candidate.data) raw = await gunzipBytes(base64ToBytes(candidate.data));
+      const candidate = JSON.parse(compressed) as { format?: string; data?: string; encoding?: 'gzip' | 'plain' };
+      if (candidate.format === 'ordo-world-gzip' && candidate.data) raw = await gunzipBytes(base64ToBytes(candidate.data), candidate.encoding);
     }
     raw ??= localStorage.getItem('ordo-world-v1') ?? undefined;
   }
@@ -206,7 +231,15 @@ export function deserializeWorld(raw: string): WorldState {
     throw new Error('État du monde incomplet.');
   }
   const restored = structuredClone(envelope.state);
-  const structuralProfiles = restored.structuralProfiles ?? createStructuralProfiles2000();
+  // Une sauvegarde garde l'état déjà joué, mais reçoit les pays et registres
+  // structurels ajoutés depuis sa création. Sans ce socle, une ancienne partie
+  // pouvait rester définitivement limitée à l'ancien catalogue national.
+  const baseline = createWorld2000(restored.playerCountryId);
+  const countries = { ...baseline.countries, ...restored.countries };
+  const structuralProfiles = {
+    ...createStructuralProfiles2000(countries),
+    ...restored.structuralProfiles,
+  };
   const defaultMacroEconomies = createMacroEconomies2000();
   const macroEconomies = Object.fromEntries(Object.entries(defaultMacroEconomies).map(([countryId, fallback]) => {
     const saved = restored.macroEconomies?.[countryId];
@@ -226,41 +259,56 @@ export function deserializeWorld(raw: string): WorldState {
     activeShocks: restored.worldEconomy?.activeShocks ?? [],
   };
   const sectors = createStrategicSectors2000(
-    restored.countries,
+    countries,
     structuralProfiles,
     macroEconomies,
     restored.sectors ?? {},
   );
-  const countryEnergy = Object.fromEntries(Object.entries(restored.countryEnergy).map(([countryId, energy]) => [countryId, {
+  const countryEnergy = Object.fromEntries(Object.entries({ ...baseline.countryEnergy, ...restored.countryEnergy }).map(([countryId, energy]) => [countryId, {
     ...energy,
     legacyImports: energy.legacyImports ?? {
       oil: Math.max(0, energy.annualDemand.oil - energy.domesticProduction.oil),
       gas: Math.max(0, energy.annualDemand.gas - energy.domesticProduction.gas),
     },
   }]));
+  const representedTerritorialCountries = new Set(Object.values(restored.territorial?.territories ?? {}).map((territory) => territory.sovereignCountryId));
+  const baselineTerritories = Object.fromEntries(Object.entries(baseline.territorial.territories)
+    .filter(([, territory]) => !representedTerritorialCountries.has(territory.sovereignCountryId)));
+  const baselineAssets = Object.fromEntries(Object.entries(baseline.territorial.assets)
+    .filter(([, asset]) => Boolean(baselineTerritories[asset.territoryId])));
+  const territorial = restored.territorial
+    ? indexTerritorialState({
+      ...baseline.territorial,
+      ...restored.territorial,
+      territories: { ...baselineTerritories, ...restored.territorial.territories },
+      assets: { ...baselineAssets, ...restored.territorial.assets },
+      entities: { ...baseline.territorial.entities, ...restored.territorial.entities },
+    })
+    : createTerritorialState({ countries, macroEconomies });
   return {
     ...restored,
-    territorial: restored.territorial
-      ? indexTerritorialState(restored.territorial)
-      : createTerritorialState({ countries: restored.countries, macroEconomies }),
+    countries,
+    relations: { ...baseline.relations, ...restored.relations },
+    intelligence: { ...baseline.intelligence, ...restored.intelligence },
+    territorial,
     countryEnergy,
-    baselineEnergyFlows: Object.fromEntries(Object.entries(restored.baselineEnergyFlows ?? {}).map(([id, flow]) => [id, {
+    baselineEnergyFlows: Object.fromEntries(Object.entries({ ...baseline.baselineEnergyFlows, ...restored.baselineEnergyFlows }).map(([id, flow]) => [id, {
       ...flow, sourceNodeId: flow.sourceNodeId,
     }])),
     strategicDossiers: restored.strategicDossiers ?? {},
-    historicalAnchors: restored.historicalAnchors ?? createHistoricalAnchors2000(),
+    historicalAnchors: { ...createHistoricalAnchors2000(), ...restored.historicalAnchors },
     macroEconomies,
     sectors,
     worldEconomy,
-    tradeFlows: restored.tradeFlows ?? createTradeFlows2000(),
-    decisionProfiles: restored.decisionProfiles ?? createDecisionProfiles2000(restored.countries),
-    leadership: restored.leadership ?? createLeadership2000(restored.countries),
-    politicalCycles: restored.politicalCycles ?? createPoliticalCycles2000(restored.countries),
-    politicalApparatus: restored.politicalApparatus ?? createPoliticalApparatus2000(restored.countries),
+    tradeFlows: { ...createTradeFlows2000(), ...restored.tradeFlows },
+    decisionProfiles: { ...createDecisionProfiles2000(countries), ...restored.decisionProfiles },
+    leadership: { ...createLeadership2000(countries), ...restored.leadership },
+    politicalCycles: { ...createPoliticalCycles2000(countries), ...restored.politicalCycles },
+    politicalApparatus: { ...createPoliticalApparatus2000(countries), ...restored.politicalApparatus },
     structuralProfiles,
-    stakeholderGroups: restored.stakeholderGroups ?? createStakeholderGroups2000(restored.countries, structuralProfiles),
+    stakeholderGroups: { ...createStakeholderGroups2000(countries, structuralProfiles), ...restored.stakeholderGroups },
     stakeholderReactions: restored.stakeholderReactions ?? {},
-    nationalReforms: restored.nationalReforms ?? createNationalReforms2000(restored.countries, restored.currentDate),
+    nationalReforms: { ...createNationalReforms2000(countries, restored.currentDate), ...restored.nationalReforms },
     powerActors: restored.powerActors ?? {},
     powerStruggleCampaigns: restored.powerStruggleCampaigns ?? {},
     aiJobs: restored.aiJobs ?? (restored as unknown as { powerStruggleAIRequests?: WorldState['aiJobs'] }).powerStruggleAIRequests ?? {},

@@ -58,9 +58,9 @@ function RegionalMap({ regions, selected, onSelect, geometryUrl, world }: {
   };
   return <div className="territory-map-area">
     <div className="territory-toolbar"><label><input type="checkbox" checked={showAssets} onChange={(event) => setShowAssets(event.target.checked)} /> Afficher les actifs</label><span>Bleu : sélection · ● énergie · ■ port</span></div>
-    {geometryUrl && !collection ? <div className="territory-map-placeholder" role="status">
+    {geometryUrl && !collection ? <output className="territory-map-placeholder">
       {error ? <>Carte indisponible. La liste reste utilisable. <Button variant="outline" onClick={() => setAttempt((n) => n + 1)}>Réessayer</Button></> : 'Chargement des contours…'}
-    </div> : <svg className="territory-map" viewBox="0 0 760 480" role="group" aria-label="Territoires sélectionnables au clic ou au clavier">
+    </output> : <svg className="territory-map" viewBox="0 0 760 480" role="group" aria-label="Territoires sélectionnables au clic ou au clavier">
       {!collection && <path d={path({ type: 'Sphere' }) ?? ''} className="map-sphere" />}
       {collection?.features.filter((feature) => allowed.has(String(feature.properties?.id))).map((feature) => {
         const id = String(feature.properties?.id);

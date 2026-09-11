@@ -96,8 +96,9 @@ export function reformPositionLabel(domain: NationalReformDomain, position: numb
   return position >= 68 ? 'Droits civils étendus' : position >= 45 ? 'Compromis sociétal' : 'Ordre public et normes traditionnelles';
 }
 
-export function nationalReformSupport(state: WorldState, domain: NationalReformDomain, targetPosition: number) {
-  const country = state.countries[state.playerCountryId];
+export function nationalReformSupport(state: WorldState, domain: NationalReformDomain, targetPosition: number, countryId = state.playerCountryId) {
+  const country = state.countries[countryId];
+  if (!country) return { score: 0, obstacles: ['Le pays porteur de la réforme est absent du monde simulé.'] };
   const reform = state.nationalReforms?.[reformStateKey(country.id, domain)];
   if (!reform) return { score: 35, obstacles: ['Profil de réforme absent de cette ancienne sauvegarde.'] };
   const ideal = clamp(50 + country.politics.doctrine.social * 0.45);
@@ -112,8 +113,9 @@ export function nationalReformSupport(state: WorldState, domain: NationalReformD
   return { score, obstacles };
 }
 
-export function nationalReformEffects(state: WorldState, intent: string, outcome: NationalReformOutcome): WorldEffect[] {
-  const country = state.countries[state.playerCountryId];
+export function nationalReformEffects(state: WorldState, intent: string, outcome: NationalReformOutcome, countryId = state.playerCountryId): WorldEffect[] {
+  const country = state.countries[countryId];
+  if (!country) return [];
   const domain = reformDomainFromText(intent);
   const option = reformOptionForText(intent, domain);
   const current = domain ? state.nationalReforms?.[reformStateKey(country.id, domain)] : undefined;

@@ -63,7 +63,7 @@ function inferCategory(text: string): CommonActionCategory | undefined {
   const value = normalize(text);
   if (/\b(renseignement|dgse|espion|surveill|infiltr|ecoute)\b/.test(value)) return 'intelligence';
   if (/\b(militaire|defense|armee|arme|troupe|deploi|dissuasion)\b/.test(value)) return 'defense';
-  if (/\b(ministere|sous ministere|administration|institution|reforme|service public|relig|laic|immigr|asile|naturalisation|integration|societ|famille|ordre public|droits civils|egalite)\b/.test(value)) return 'institutional';
+  if (/\b(ministere|sous ministere|administration|institution|reforme|service public|relig\w*|laic\w*|immigr\w*|migrat\w*|asile|naturalisation|integration|societ\w*|famille|ordre public|droits civils|egalite)\b/.test(value)) return 'institutional';
   if (/\b(n egocier|negocier|negociation|alliance|cooperation|cooperer|dialogue|accord|partenariat|sommet|mediation)\b/.test(value)) return 'diplomacy';
   if (/\b(programme|plan|industrie|industriel|budget|budgetaire|fiscal|deficit|depense|austerite|consolidation|assainir|investir|investissement|production|commerce|croissance|dette|emploi|energie|energetique|gaz|petrole|semiconducteur|nucleaire|relance|filiere)\b/.test(value)) return 'economic';
   return undefined;
@@ -538,7 +538,18 @@ export function advanceCommonActionPrograms(state: WorldState, elapsedMonths: nu
     }
     const roll = seededUnit(next.seed, `${program.id}:${program.expectedCompletionAt}`) * 100;
     const outcome = roll <= program.successProbability ? 'succeeded' : roll <= program.successProbability + 14 ? 'partially_succeeded' : 'failed';
-    const resultEffects = outcome === 'succeeded' ? program.successEffects : outcome === 'partially_succeeded' ? program.partialEffects : [];
+    // Les effets d'une réforme dépendent de l'état politique au moment où elle
+    // aboutit. Ils sont donc recalculés à la résolution. Cela garantit aussi
+    // qu'un échec libère activeProgramId au lieu de bloquer définitivement le
+    // domaine de réforme.
+    const resultEffects = program.lever === 'national_reform'
+      ? nationalReformEffects(
+          next,
+          program.intent,
+          outcome === 'succeeded' ? 'adopted' : outcome === 'partially_succeeded' ? 'partial' : 'stalled',
+          program.actorId,
+        )
+      : outcome === 'succeeded' ? program.successEffects : outcome === 'partially_succeeded' ? program.partialEffects : [];
     const resolution = outcome === 'succeeded'
       ? 'Programme achevé : les objectifs immédiats sont atteints.'
       : outcome === 'partially_succeeded'

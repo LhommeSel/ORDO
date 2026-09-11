@@ -29,7 +29,7 @@ const nextMonth = (date: string) => {
 };
 
 const requestToOrigin = (input: RequestInfo | URL, init: RequestInit = {}) => {
-  const path = typeof input === 'string' && input.startsWith('/') ? input : String(input);
+  const path = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
   const headers = new Headers(init.headers);
   headers.set('Origin', origin);
   headers.set('cf-connecting-ip', `ordo-year-integration-${sessionId}`);

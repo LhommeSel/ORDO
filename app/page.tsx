@@ -208,7 +208,7 @@ function WorldPanel({ world, onWorldChange, onNotice }: {
             <div className="mt-3 space-y-2">{reactions.length ? reactions.map((reaction) => {
               const group = world.stakeholderGroups[reaction.groupId];
               return <details key={reaction.id} className="border border-border bg-background/35 p-3">
-                <summary className="cursor-pointer list-none">
+                <summary className="cursor-pointer list-none" aria-label={`Voir le signal ${reaction.label}`}>
                   <div className="flex items-start justify-between gap-3">
                     <div><div className="font-medium">{reaction.label}</div><div className="mt-1 text-xs text-muted-foreground">{reaction.causes[0]}</div></div>
                     <div className="shrink-0 text-right"><div className={`font-mono text-[10px] uppercase ${reactionTone[reaction.level]}`}>{reactionLevelLabels[reaction.level]}</div><div className="mt-1 text-[10px] text-muted-foreground">{reactionTrendLabels[reaction.trend]}</div></div>
@@ -448,7 +448,7 @@ function StructuralDiagnosisCard({ diagnosis }: { diagnosis: StructuralDiagnosis
       ? 'text-amber-300'
       : 'text-sky-300';
   return <details className={`border bg-background/35 p-3 ${tone}`}>
-    <summary className="cursor-pointer list-none">
+    <summary className="cursor-pointer list-none" aria-label={`Voir le diagnostic ${diagnosis.title}`}>
       <div className="flex items-start justify-between gap-3">
         <div><div className="font-medium">{diagnosis.title}</div><p className="mt-1 text-xs leading-5 text-muted-foreground">{diagnosis.summary}</p></div>
         <span className={`shrink-0 font-mono text-[10px] ${signal}`}>{diagnosis.severity}/100</span>
@@ -734,8 +734,8 @@ function EnergyNegotiationPanel({
       </div>}
       {aiNegotiationStatus !== 'idle' && <div className={`border p-3 text-xs ${aiNegotiationStatus === 'unavailable' ? 'border-amber-400/50 text-amber-200' : 'border-primary/30 text-muted-foreground'}`}>{aiNegotiationStatus === 'loading' && <LoaderCircle className="mr-2 inline size-3 animate-spin" />}{aiNegotiationMessage}</div>}
       {response && response.status !== 'refused' && !signedContractId && world.diplomaticSessions[offer.id]?.aiMode === 'ai' && <div className="border border-border bg-muted/20 p-3">
-        <label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Répondre à l’interlocuteur</label>
-        <Textarea value={playerReply} onChange={(event) => onPlayerReplyChange(event.target.value)} placeholder="Ex. Nous acceptons la prime si vous garantissez la priorité de livraison et un réexamen après cinq ans." className="mt-2 min-h-24" />
+        <label htmlFor="energy-negotiation-reply" className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Répondre à l’interlocuteur</label>
+        <Textarea id="energy-negotiation-reply" value={playerReply} onChange={(event) => onPlayerReplyChange(event.target.value)} placeholder="Ex. Nous acceptons la prime si vous garantissez la priorité de livraison et un réexamen après cinq ans." className="mt-2 min-h-24" />
         <Button className="mt-2" variant="outline" disabled={playerReply.trim().length < 3 || aiNegotiationStatus === 'loading'} onClick={onReplyAI}><Send className="size-4" /> Poursuivre avec Luna</Button>
       </div>}
       {signedContractId ? <div className="flex items-center gap-3 border border-emerald-400/50 bg-emerald-400/5 p-4 text-sm"><CheckCircle2 className="size-5 text-emerald-300" /><div><b>Accord signé et activé.</b><div className="font-mono text-[10px] text-muted-foreground">{signedContractId}</div></div></div> : <div className="flex flex-wrap gap-2">
@@ -790,7 +790,7 @@ function WorldPulseAuditPanel({ entries, onClear }: { entries: WorldPulseAIAudit
     {!entries.length && <div className="mt-4 border border-dashed border-border p-4 text-sm text-muted-foreground">Aucun pouls IA enregistré. Avancez la simulation pour capturer les deux voies spécialisées.</div>}
     <div className="mt-4 space-y-3">{entries.map((entry, index) => <details key={entry.id} className="border border-border bg-background/35 p-3" open={index === 0}>
       <summary className="cursor-pointer list-none"><div className="flex flex-wrap items-center justify-between gap-2 pr-5"><span className="font-semibold">Pouls du {entry.currentDate}</span><span className={`font-mono text-[10px] ${entry.response.ok ? 'text-emerald-300' : 'text-amber-300'}`}>{entry.response.ok ? `${entry.response.usage.model} · $${entry.response.usage.estimatedCostUsd.toFixed(4)}` : `échec · ${entry.response.code}`}</span></div><div className="mt-1 font-mono text-[10px] text-muted-foreground">{new Date(entry.createdAt).toLocaleString('fr-FR')} · {entry.response.ok ? `${entry.response.results.length} voie(s)` : 'réponse globale indisponible'}</div></summary>
-      {entry.response.ok ? <div className="mt-3 space-y-3">{entry.response.results.map((result) => <div key={result.id} className="border border-border bg-muted/15 p-3"><div className="flex flex-wrap items-center justify-between gap-2"><b>{result.kind === 'player_reaction' ? 'Réaction aux actions du joueur' : 'Autonomie du monde'}</b><span className="font-mono text-[10px] text-muted-foreground">{result.ok ? `${result.usage.inputTokens} in · ${result.usage.outputTokens} out · ${(result.usage.latencyMs / 1000).toFixed(1)} s` : 'réponse rejetée'}</span></div>{result.ok ? <pre className="mt-2 max-h-[34rem] overflow-auto whitespace-pre-wrap break-words font-mono text-[10px] text-muted-foreground">{JSON.stringify(result.answer, null, 2)}</pre> : <div className="mt-2 text-xs text-amber-200">{result.message}</div>}</div>)}</div> : <div className="mt-3 text-xs text-amber-200">{entry.response.message}</div>}
+      {entry.response.ok ? <div className="mt-3 space-y-3">{entry.response.results.map((result) => <div key={result.id} className="border border-border bg-muted/15 p-3"><div className="flex flex-wrap items-center justify-between gap-2"><b>{result.kind === 'player_reaction' ? 'Réaction aux actions du joueur' : 'Autonomie du monde'}</b><span className="font-mono text-[10px] text-muted-foreground">{result.ok ? `${result.usage.inputTokens} in · ${result.usage.outputTokens} out · ${(result.usage.latencyMs / 1000).toFixed(1)} s` : result.usage ? `rejetée · ${result.usage.inputTokens} in · ${result.usage.outputTokens} out · $${result.usage.estimatedCostUsd.toFixed(4)}` : 'réponse rejetée sans usage mesurable'}</span></div>{result.ok ? <pre className="mt-2 max-h-[34rem] overflow-auto whitespace-pre-wrap break-words font-mono text-[10px] text-muted-foreground">{JSON.stringify(result.answer, null, 2)}</pre> : <div className="mt-2 text-xs text-amber-200">{result.message}</div>}</div>)}</div> : <div className="mt-3 text-xs text-amber-200">{entry.response.message}</div>}
     </details>)}</div>
   </section>;
 }
@@ -1037,8 +1037,8 @@ function AdvisorPanel({ world, onWorldChange, onNotice }: { world: WorldState; o
     <section className="border border-border bg-card/70 p-4">
       <div className="flex items-center gap-2 font-semibold"><BrainCircuit className="size-4 text-primary" /> Action ou question libre</div>
       <p className="mt-1 text-sm text-muted-foreground">Écrivez votre intention comme vous la formuleriez à votre administration. Le pays, la ressource et l’objectif sont extraits de la phrase ; aucun partenaire n’est imposé par un menu.</p>
-      <label className="mt-5 block font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Votre demande</label>
-      <Textarea value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="Ex. Je veux sécuriser un contrat gazier de long terme avec l’Algérie afin de diversifier nos approvisionnements." className="mt-2 min-h-36" />
+      <label htmlFor="advisor-question" className="mt-5 block font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Votre demande</label>
+      <Textarea id="advisor-question" value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="Ex. Je veux sécuriser un contrat gazier de long terme avec l’Algérie afin de diversifier nos approvisionnements." className="mt-2 min-h-36" />
       <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
         <span className="text-muted-foreground">Interprétation :</span>
         {(['auto', 'fact', 'strategy', 'diplomacy', 'free'] as const).map((kind) => {
@@ -1148,7 +1148,7 @@ function AutonomousProgramsPanel({ world }: { world: WorldState }) {
       const actor = world.countries[program.actorId];
       const targets = program.targetIds.map((id) => world.countries[id]?.name ?? id).join(', ') || 'Aucun interlocuteur direct';
       return <details key={program.id} className="border border-border bg-background/35 p-3">
-        <summary className="cursor-pointer list-none">
+        <summary className="cursor-pointer list-none" aria-label={`Voir le programme ${program.title}`}>
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div><div className="font-medium">{actor?.flag} {actor?.name ?? program.actorId}</div><div className="mt-1 text-sm">{program.title}</div></div>
             <span className={`font-mono text-[10px] uppercase ${programStatusTone[program.status] ?? 'text-muted-foreground'}`}>{programStatusLabels[program.status] ?? program.status}</span>
@@ -1631,6 +1631,12 @@ function TurnBriefingPanel({ briefing, onOpenDossier }: { briefing: TurnBriefing
 
 export default function Home() {
   const [world, setWorld] = useState<WorldState>(() => createWorld2000('FRA'));
+  const worldRef = useRef(world);
+  const advanceRunIdRef = useRef(0);
+  const updateWorld = (next: WorldState) => {
+    worldRef.current = next;
+    setWorld(next);
+  };
   const [startingCountryId, setStartingCountryId] = useState<string>('FRA');
   const [pulseAudit, setPulseAudit] = useState<WorldPulseAIAuditEntry[]>(readWorldPulseAudit);
   const [panel, setPanel] = useState<Panel>('map');
@@ -1640,18 +1646,18 @@ export default function Home() {
   const [lastBriefing, setLastBriefing] = useState<TurnBriefing | null>(null);
   const [isAdvancing, setIsAdvancing] = useState(false);
   const player = world.countries[world.playerCountryId];
-  useEffect(() => { setStartingCountryId(world.playerCountryId); }, [world.playerCountryId]);
   const autonomousCount = useMemo(() => new Set(world.actions.filter((action) => action.origin === 'local_rule').map((action) => action.actorId)).size, [world.actions]);
   const dossierAlerts = useMemo(() => dossiersRequiringAttention(world), [world]);
   const openDossier = (id: string) => { setSelectedDossierId(id); setPanel('dossiers'); };
 
   const advance = async (months: number) => {
     if (isAdvancing) return;
+    const runId = ++advanceRunIdRef.current;
     setIsAdvancing(true);
     const before = world;
     const requestedDate = addMonths(before.currentDate, months);
     const result = advanceWorld(before, requestedDate, politicalCycleStops(before, requestedDate));
-    setWorld(result.state);
+    updateWorld(result.state);
     setLastBriefing(buildTurnBriefing(before, result.state));
     const countries = [...new Set(result.reviewedCountryIds)].map((id) => result.state.countries[id]?.name).filter(Boolean);
     const auditNotice = result.audit.ok ? '' : ` · audit : ${result.audit.issues[0] ?? 'incohérence détectée'}`;
@@ -1664,7 +1670,16 @@ export default function Home() {
       // les actions ajoutées par advanceWorld dans cet appel.
       const lastTimeAdvance = before.actions.map((action) => action.kind).lastIndexOf('time_advance');
       const request = createWorldPulseRequest(result.state, lastTimeAdvance + 1, result.elapsedMonths, worldPulseSessionId());
-      const pulse = await executeWorldPulse(result.state, request);
+      const pulse = await executeWorldPulse(
+        result.state,
+        request,
+        fetch,
+        () => advanceRunIdRef.current === runId ? worldRef.current : result.state,
+      );
+      // Charger ou recommencer une partie invalide le pouls de l'ancienne
+      // chronologie. Sa réponse est alors ignorée au lieu de contaminer le
+      // nouveau monde.
+      if (advanceRunIdRef.current !== runId) return;
       if (pulse.response) {
         setPulseAudit((previous) => {
           const next = [{ id: `${request.pulseId}-${Date.now()}`, createdAt: new Date().toISOString(), currentDate: result.state.currentDate, response: pulse.response! }, ...previous].slice(0, worldPulseAuditMaximumEntries);
@@ -1672,7 +1687,7 @@ export default function Home() {
           return next;
         });
       }
-      setWorld(pulse.state);
+      updateWorld(pulse.state);
       setLastBriefing(buildTurnBriefing(before, pulse.state));
       const touched = pulse.createdDossierIds.length + pulse.updatedDossierIds.length;
       if (pulse.createdDossierIds.length) setSelectedDossierId(pulse.createdDossierIds[0]);
@@ -1687,7 +1702,7 @@ export default function Home() {
       // Le tour local reste valable même si le navigateur ne peut pas lancer le pouls.
       setNotice(`${baseNotice} · le pouls IA n’a pas pu démarrer ; le monde local reste cohérent.`);
     } finally {
-      setIsAdvancing(false);
+      if (advanceRunIdRef.current === runId) setIsAdvancing(false);
     }
   };
   const save = async () => {
@@ -1702,17 +1717,20 @@ export default function Home() {
     try {
       const restored = await loadWorldFromBrowser();
       if (!restored) return setNotice('Aucune sauvegarde locale.');
-      setWorld(restored);
+      advanceRunIdRef.current += 1;
+      setIsAdvancing(false);
+      updateWorld(restored);
+      setStartingCountryId(restored.playerCountryId);
       setLastBriefing(null);
       setNotice('Sauvegarde locale restaurée.');
     } catch {
       setNotice('La sauvegarde locale est illisible ou obsolète.');
     }
   };
-  const reset = () => { setWorld(createWorld2000(world.playerCountryId)); setLastBriefing(null); setNotice(`Scénario ${player.name} · 2000 réinitialisé.`); };
+  const reset = () => { advanceRunIdRef.current += 1; setIsAdvancing(false); updateWorld(createWorld2000(world.playerCountryId)); setStartingCountryId(world.playerCountryId); setLastBriefing(null); setNotice(`Scénario ${player.name} · 2000 réinitialisé.`); };
   const startCountryGame = () => {
     const next = createWorld2000(startingCountryId);
-    setWorld(next); setLastBriefing(null); setSelectedDossierId(null); setSelectedDialogueId(null); setPanel('map');
+    advanceRunIdRef.current += 1; setIsAdvancing(false); updateWorld(next); setStartingCountryId(next.playerCountryId); setLastBriefing(null); setSelectedDossierId(null); setSelectedDialogueId(null); setPanel('map');
     setNotice(`Nouvelle partie ${next.countries[next.playerCountryId].name} · 1er janvier 2000 chargée.`);
   };
   const clearPulseAudit = () => { localStorage.removeItem(worldPulseAuditStorageKey); setPulseAudit([]); };
@@ -1731,16 +1749,16 @@ export default function Home() {
     <div className="border-b border-border bg-muted/20"><div className="mx-auto flex max-w-[1600px] items-center justify-between gap-4 px-4 py-2 text-xs text-muted-foreground lg:px-6"><span>{notice}</span><span className="hidden font-mono sm:block">{autonomousCount} acteurs autonomes · seed {world.seed} · séquence {world.sequence}</span></div></div>
     {lastBriefing && <TurnBriefingPanel briefing={lastBriefing} onOpenDossier={openDossier} />}
     <div className="mx-auto max-w-[1600px] p-4 lg:p-6">
-      {panel === 'world' && <><WorldPanel world={world} onWorldChange={setWorld} onNotice={setNotice} /><div className="mt-4"><WorldPulseAuditPanel entries={pulseAudit} onClear={clearPulseAudit} /></div></>}
+      {panel === 'world' && <><WorldPanel world={world} onWorldChange={updateWorld} onNotice={setNotice} /><div className="mt-4"><WorldPulseAuditPanel entries={pulseAudit} onClear={clearPulseAudit} /></div></>}
       {panel === 'map' && <MapPanel world={world} />}
       {panel === 'economy' && <EconomyPanel world={world} />}
       {panel === 'energy' && <EnergyPanel world={world} />}
-      {panel === 'industry' && <IndustryPanel world={world} onWorldChange={setWorld} onNotice={setNotice} />}
-      {panel === 'reforms' && <ReformsPanel world={world} onWorldChange={setWorld} onNotice={setNotice} />}
+      {panel === 'industry' && <IndustryPanel world={world} onWorldChange={updateWorld} onNotice={setNotice} />}
+      {panel === 'reforms' && <ReformsPanel world={world} onWorldChange={updateWorld} onNotice={setNotice} />}
       {panel === 'military' && <MilitaryPanel world={world} onNotice={setNotice} />}
-      {panel === 'dossiers' && <DossiersPanel world={world} selectedId={selectedDossierId} onSelect={setSelectedDossierId} onWorldChange={setWorld} onNotice={setNotice} onOpenDiplomacy={(dialogueId) => { setSelectedDialogueId(dialogueId); setPanel('diplomacy'); }} />}
-      {panel === 'diplomacy' && <DiplomacyPanel world={world} onWorldChange={setWorld} onNotice={setNotice} initialDialogueId={selectedDialogueId} />}
-      {panel === 'advisor' && <AdvisorPanel world={world} onWorldChange={setWorld} onNotice={setNotice} />}
+      {panel === 'dossiers' && <DossiersPanel world={world} selectedId={selectedDossierId} onSelect={setSelectedDossierId} onWorldChange={updateWorld} onNotice={setNotice} onOpenDiplomacy={(dialogueId) => { setSelectedDialogueId(dialogueId); setPanel('diplomacy'); }} />}
+      {panel === 'diplomacy' && <DiplomacyPanel world={world} onWorldChange={updateWorld} onNotice={setNotice} initialDialogueId={selectedDialogueId} />}
+      {panel === 'advisor' && <AdvisorPanel world={world} onWorldChange={updateWorld} onNotice={setNotice} />}
       {panel === 'ledger' && <LedgerPanel world={world} />}
     </div>
   </main>;
