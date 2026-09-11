@@ -73,6 +73,14 @@ type DiplomaticResponseResolution = {
 
 type QuickReply = { label: string; value: string };
 
+type DialogueSummary = {
+  id: string;
+  kind: 'bilateral_dialogue' | 'multilateral_dialogue';
+  participantIds: string[];
+  status: string;
+  label: string;
+};
+
 type DiplomacySheetProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -82,6 +90,9 @@ type DiplomacySheetProps = {
   participantIds?: string[];
   participantOptions?: SheetCountry[];
   onAddParticipant?: (id: string) => void;
+  dialogues?: DialogueSummary[];
+  onSelectDialogue?: (id: string) => void;
+  selectedDialogueId?: string | null;
   selectedCountry: SheetCountry;
   messages: SheetMessage[];
   structuredResponse?: StructuredDiplomaticResponse;
@@ -155,6 +166,9 @@ export function DiplomacySheet({
   participantIds = [],
   participantOptions = [],
   onAddParticipant,
+  dialogues = [],
+  onSelectDialogue,
+  selectedDialogueId,
   selectedCountry,
   messages,
   structuredResponse,
@@ -195,6 +209,17 @@ export function DiplomacySheet({
 
         <div className="diplomacy-sheet-layout">
           <nav className="diplomacy-contact-list" aria-label="Interlocuteurs diplomatiques">
+            {dialogues.length > 0 && onSelectDialogue && <div className="mb-2 border-b border-border/70 pb-2">
+              <p className="px-3 pb-2 pt-3 font-mono text-[8px] tracking-[0.12em] text-muted-foreground">CANAUX RÉCENTS</p>
+              <div className="space-y-1 px-2">
+                {dialogues.slice(0, 8).map((item) => {
+                  return <button key={item.id} type="button" onClick={() => onSelectDialogue(item.id)} className={`block w-full border px-2 py-1.5 text-left text-[11px] ${item.id === selectedDialogueId ? 'border-primary bg-primary/10' : 'border-border hover:bg-muted/30'}`}>
+                    <span className="block font-medium">{item.kind === 'multilateral_dialogue' ? 'Groupe' : 'Canal'} · {item.label || 'Dialogue'}</span>
+                    <span className="block text-[9px] text-muted-foreground">{item.status} · {item.participantIds.length - 1} interlocuteur(s)</span>
+                  </button>;
+                })}
+              </div>
+            </div>}
             <p className="px-3 pb-2 pt-3 font-mono text-[8px] tracking-[0.12em] text-muted-foreground">PAYS DISPONIBLES</p>
             {countries.map((country) => (
               <button
