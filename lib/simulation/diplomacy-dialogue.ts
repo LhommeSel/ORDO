@@ -3,7 +3,7 @@ import { commitWorldAction } from './ledger';
 import { relationBetween } from './ledger';
 import { resolveDossierDecision } from './dossiers';
 import { historicalAnchorChannelEffects } from './history';
-import type { DiplomaticDialogue, DiplomaticTurn, GeneralAIJob, CountryId, WorldState, AIJobOutcome, DossierEntry, StrategicDossier } from './types';
+import type { DiplomaticAgreementType, DiplomaticDialogue, DiplomaticTurn, GeneralAIJob, CountryId, WorldState, AIJobOutcome, DossierEntry, StrategicDossier } from './types';
 import type { AIDiplomaticMove } from '../ai/job-contracts';
 
 const unique = <T,>(items: T[]) => [...new Set(items)];
@@ -39,9 +39,11 @@ function normalizeDialogueMove(move: AIDiplomaticMove, publicMessage: string): E
   return {
     scope: 'general_dialogue',
     kind: move.kind === 'counter' || move.kind === 'accept' || move.kind === 'refuse' ? move.kind : 'message',
-    agreementType: move.clauses.includes('technology_cooperation') || move.clauses.includes('infrastructure_investment')
-      ? 'industrial_cooperation'
-      : 'industrial_cooperation',
+    // Un dialogue libre peut mentionner un contrat ou un corridor énergétique.
+    // On conserve alors la nature de coordination énergétique sans fabriquer
+    // un volume physique : le contrat chiffré reste la responsabilité de la
+    // session énergie dédiée.
+    agreementType: 'energy_cooperation',
     position,
     concessions: move.clauses.includes('local_content') ? ['Étudier une participation industrielle locale.'] : [],
     guaranteesRequested: move.clauses.includes('diplomatic_consultation') ? ['Prévoir des consultations régulières entre les deux gouvernements.'] : [],
@@ -233,12 +235,19 @@ export function resolveDiplomaticDialogueResponse(
   ];
   if (decision === 'accept' && (response.kind === 'accept' || response.kind === 'counter')) {
     const treatyId = `dialogue-commitment-${dialogue.id}-${state.sequence + 1}`;
-    const durationByType: Record<typeof response.agreementType, number> = {
-      industrial_cooperation: 36, information_sharing: 24, security_cooperation: 24,
+    const durationByType: Record<DiplomaticAgreementType, number> = {
+      industrial_cooperation: 36, energy_cooperation: 24, information_sharing: 24, security_cooperation: 24,
       political_guarantee: 18, mediation: 12, defense_cooperation: 36,
     };
-    const monthlyByType: Record<typeof response.agreementType, Array<{ countryId: CountryId; metric: 'budget' | 'industry' | 'stability' | 'security'; delta: number }>> = {
+    const monthlyByType: Record<DiplomaticAgreementType, Array<{ countryId: CountryId; metric: 'budget' | 'industry' | 'stability' | 'security'; delta: number }>> = {
       industrial_cooperation: dialogue.participantIds.map((countryId) => ({ countryId, metric: 'industry', delta: countryId === state.playerCountryId ? 0.05 : 0.035 })),
+      // Ce cadre améliore la coordination, la résilience et la sécurité des
+      // approvisionnements, mais ne débite aucun gisement et ne crée aucun
+      // contrat : les volumes passent par energy-negotiation.
+      energy_cooperation: dialogue.participantIds.flatMap((countryId) => [
+        { countryId, metric: 'industry' as const, delta: countryId === state.playerCountryId ? 0.025 : 0.018 },
+        { countryId, metric: 'stability' as const, delta: 0.012 },
+      ]),
       information_sharing: [],
       security_cooperation: dialogue.participantIds.map((countryId) => ({ countryId, metric: 'security', delta: countryId === state.playerCountryId ? 0.05 : 0.035 })),
       political_guarantee: dialogue.participantIds.map((countryId) => ({ countryId, metric: 'stability', delta: countryId === state.playerCountryId ? 0.035 : 0.025 })),
@@ -254,6 +263,12 @@ export function resolveDiplomaticDialogueResponse(
       effects.push(...dialogue.participantIds.filter((id) => id !== state.playerCountryId).map((targetId) => ({
         kind: 'intelligence_delta' as const, observerId: state.playerCountryId, targetId, delta: 8,
         reason: 'Un accord d’échange d’informations améliore la connaissance de l’interlocuteur.', visibility: 'player' as const,
+      })));
+    }
+    if (response.agreementType === 'energy_cooperation') {
+      effects.push(...dialogue.participantIds.filter((id) => id !== state.playerCountryId).map((targetId) => ({
+        kind: 'capacity_commitment' as const, countryId: state.playerCountryId, domain: 'economy' as const, delta: 2,
+        reason: `Le cadre énergétique avec ${state.countries[targetId]?.name ?? targetId} mobilise la coordination économique.`, visibility: 'player' as const,
       })));
     }
   }
@@ -289,6 +304,12 @@ export function resolveDiplomaticDialogueResponse(
 export function requestDiplomaticDialogueAI(state: WorldState, dialogueId: string) {
   const dialogue = state.diplomaticDialogues?.[dialogueId];
   if (!dialogue || dialogue.status !== 'awaiting_ai') return { ok: false as const, state, error: 'Aucune réponse IA n’est en attente pour ce dialogue.' };
+  // Protection contre un double clic ou deux composants qui soumettraient la
+  // même réponse avant que le premier job ne soit résolu. Sans ce garde-fou,
+  // deux appels facturés pouvaient être créés pour un seul tour diplomatique.
+  const alreadyPending = Object.values(state.aiJobs ?? {}).some((job) =>
+    job.kind === 'diplomacy' && job.status === 'pending' && job.context.dialogueId === dialogueId);
+  if (alreadyPending) return { ok: false as const, state, error: 'Une réponse IA est déjà en cours pour ce dialogue.' };
   if (!dialogue.participantIds.includes(dialogue.activeSpeakerId) || dialogue.activeSpeakerId === state.playerCountryId || !state.countries[dialogue.activeSpeakerId]) {
     return { ok: false as const, state, error: 'L’interlocuteur du dialogue est invalide ; aucun appel IA n’a été lancé.' };
   }

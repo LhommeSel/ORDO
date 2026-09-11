@@ -1883,6 +1883,8 @@ test('un scope énergétique mal renvoyé dans un dialogue libre reste résolubl
   const queued = requestDiplomaticDialogueAI(sent.state, opened.dialogueId);
   assert.equal(queued.ok, true);
   if (!queued.ok) return;
+  const duplicate = requestDiplomaticDialogueAI(queued.state, opened.dialogueId);
+  assert.equal(duplicate.ok, false);
   const applied = applyDiplomaticDialogueAIAnswer(queued.state, queued.jobId, {
     headline: 'Contre-proposition', assessment: 'Une négociation progressive est possible.',
     publicMessage: 'Nous pouvons avancer avec une coopération industrielle progressive.', proposals: [], requestedFacts: [], contextFactIds: [], approximateInputTokens: 120,
@@ -1893,12 +1895,16 @@ test('un scope énergétique mal renvoyé dans un dialogue libre reste résolubl
   if (!applied.ok) return;
   const dialogue = applied.state.diplomaticDialogues[opened.dialogueId];
   assert.equal(dialogue.lastResponse?.kind, 'counter');
+  assert.equal(dialogue.lastResponse?.agreementType, 'energy_cooperation');
   assert.match(dialogue.lastResponse?.position ?? '', /coopération industrielle progressive/);
   assert.equal(dialogue.status, 'awaiting_player');
   const resolved = resolveDiplomaticDialogueResponse(applied.state, opened.dialogueId, 'accept');
   assert.equal(resolved.ok, true);
   if (!resolved.ok) return;
   assert.equal(resolved.state.diplomaticDialogues[opened.dialogueId].resolution?.status, 'accepted');
+  const treaty = Object.values(resolved.state.treaties).find((item) => item.id.startsWith(`dialogue-commitment-${opened.dialogueId}`));
+  assert.ok(treaty?.label.includes('energy cooperation'));
+  assert.ok(treaty?.monthlyEffects.some((effect) => effect.metric === 'industry'));
 });
 
 test('un programme autonome diplomatique ne peut pas cibler son propre État', () => {

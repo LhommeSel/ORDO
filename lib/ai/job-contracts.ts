@@ -7,6 +7,7 @@ import type {
   AIJobPriority,
   PowerStruggleAIProposal,
   PowerStruggleTactic,
+  DiplomaticAgreementType,
 } from '../simulation/types';
 import type { AIContextFact, AIContextPacket } from '../simulation/ai/context';
 import { ORDO_AI_MODEL, ORDO_AI_SCHEMA_VERSION, type AdvisorAIUsage } from './contracts';
@@ -56,7 +57,7 @@ export type AIEnergyDiplomaticMove = {
 export type AIGenericDiplomaticMove = {
   scope: 'general_dialogue';
   kind: 'accept' | 'counter' | 'refuse' | 'request_clarification' | 'message';
-  agreementType: 'industrial_cooperation' | 'information_sharing' | 'security_cooperation' | 'political_guarantee' | 'mediation' | 'defense_cooperation';
+  agreementType: DiplomaticAgreementType;
   position: string;
   concessions: string[];
   guaranteesRequested: string[];
@@ -239,7 +240,7 @@ function isDiplomaticMove(value: unknown): value is AIDiplomaticMove | null {
     return value.kind !== 'counter' || (value.annualVolume !== null && value.durationYears !== null && value.pricePosture !== null);
   }
   return typeof value.kind === 'string' && ['accept', 'counter', 'refuse', 'request_clarification', 'message'].includes(value.kind)
-    && typeof value.agreementType === 'string' && ['industrial_cooperation', 'information_sharing', 'security_cooperation', 'political_guarantee', 'mediation', 'defense_cooperation'].includes(value.agreementType)
+    && typeof value.agreementType === 'string' && ['industrial_cooperation', 'energy_cooperation', 'information_sharing', 'security_cooperation', 'political_guarantee', 'mediation', 'defense_cooperation'].includes(value.agreementType)
     && isString(value.position, 900, 1)
     && isStringArray(value.concessions, 5, 400)
     && isStringArray(value.guaranteesRequested, 5, 400)
@@ -340,7 +341,7 @@ const generalDiplomaticMoveSchema = {
   properties: {
     scope: { type: 'string', enum: ['general_dialogue'] },
     kind: { type: 'string', enum: ['accept', 'counter', 'refuse', 'request_clarification', 'message'] },
-    agreementType: { type: 'string', enum: ['industrial_cooperation', 'information_sharing', 'security_cooperation', 'political_guarantee', 'mediation', 'defense_cooperation'] },
+    agreementType: { type: 'string', enum: ['industrial_cooperation', 'energy_cooperation', 'information_sharing', 'security_cooperation', 'political_guarantee', 'mediation', 'defense_cooperation'] },
     position: { type: 'string', maxLength: 900 },
     concessions: { type: 'array', maxItems: 5, items: { type: 'string', maxLength: 400 } },
     guaranteesRequested: { type: 'array', maxItems: 5, items: { type: 'string', maxLength: 400 } },

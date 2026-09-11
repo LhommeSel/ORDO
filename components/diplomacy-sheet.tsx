@@ -56,7 +56,7 @@ type SheetMessage = {
 
 type StructuredDiplomaticResponse = {
   kind: 'accept' | 'counter' | 'refuse' | 'request_clarification' | 'message';
-  agreementType: 'industrial_cooperation' | 'information_sharing' | 'security_cooperation' | 'political_guarantee' | 'mediation' | 'defense_cooperation';
+  agreementType: 'industrial_cooperation' | 'energy_cooperation' | 'information_sharing' | 'security_cooperation' | 'political_guarantee' | 'mediation' | 'defense_cooperation';
   position: string;
   concessions: string[];
   guaranteesRequested: string[];
@@ -153,7 +153,7 @@ function relationshipTags(country: SheetCountry) {
 }
 
 const agreementTypeLabels: Record<StructuredDiplomaticResponse['agreementType'], string> = {
-  industrial_cooperation: 'Coopération industrielle', information_sharing: 'Partage d’informations',
+  industrial_cooperation: 'Coopération industrielle', energy_cooperation: 'Coopération énergétique', information_sharing: 'Partage d’informations',
   security_cooperation: 'Coopération de sécurité', political_guarantee: 'Garantie politique',
   mediation: 'Médiation', defense_cooperation: 'Coopération militaire',
 };

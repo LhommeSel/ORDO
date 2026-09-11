@@ -380,10 +380,20 @@ export type DiplomaticTurn = {
   proposalRevision?: number;
 };
 
+/** Typologie commune des engagements issus d’un dialogue libre. */
+export type DiplomaticAgreementType =
+  | 'industrial_cooperation'
+  | 'energy_cooperation'
+  | 'information_sharing'
+  | 'security_cooperation'
+  | 'political_guarantee'
+  | 'mediation'
+  | 'defense_cooperation';
+
 /** Position structurée affichée après une réponse IA dans un dialogue politique libre. */
 export type DiplomaticDialogueResponse = {
   kind: 'accept' | 'counter' | 'refuse' | 'request_clarification' | 'message';
-  agreementType: 'industrial_cooperation' | 'information_sharing' | 'security_cooperation' | 'political_guarantee' | 'mediation' | 'defense_cooperation';
+  agreementType: DiplomaticAgreementType;
   position: string;
   concessions: string[];
   guaranteesRequested: string[];
