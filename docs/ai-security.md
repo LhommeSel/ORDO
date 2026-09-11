@@ -28,6 +28,6 @@ Ne jamais enregistrer les deux secrets dans le code, `.openai/hosting.json`, une
 
 ## Limite actuelle du prototype
 
-Les compteurs applicatifs sont conservés dans la mémoire de chaque instance serveur. Le quota par IP et la limite de taille réduisent la rotation de sessions et les requêtes coûteuses, mais ne constituent pas un plafond financier mondial durable lorsque plusieurs instances fonctionnent en parallèle. La limite dure du projet OpenAI reste donc obligatoire.
+Les limites minute et le nombre de requêtes simultanées restent en mémoire pour couper rapidement les rafales. Les compteurs quotidiens par IP et par partie, ainsi que le coût global de la journée, sont persistés dans D1 lorsque le binding `DB` est disponible ; les clés stockées sont des hachés et aucun contenu de partie n’y figure. En local ou si D1 est momentanément indisponible, le serveur revient aux compteurs mémoire et la limite dure du projet OpenAI reste obligatoire.
 
-Avant une bêta publique gratuite, remplacer ces compteurs par un quota durable lié à un compte joueur et stocké dans D1, ajouter une protection antibot, puis vérifier le coupe-circuit par un test contrôlé. Ne pas publier un accès anonyme illimité.
+Avant une bêta publique gratuite, lier le quota à un compte joueur (plutôt qu’à la seule clé de partie), ajouter une protection antibot, puis vérifier le coupe-circuit par un test contrôlé. Ne pas publier un accès anonyme illimité.

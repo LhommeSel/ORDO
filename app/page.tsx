@@ -1,6 +1,6 @@
 'use client';
 
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity, Archive, BrainCircuit, ChevronRight, Database, Factory,
   BellRing, CheckCircle2, Eye, FlaskConical, Fuel, History, Landmark, Map, Pin,
@@ -10,12 +10,12 @@ import {
 
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-// Ces vues chargent séparément leurs dépendances cartographiques et
-// diplomatiques. Le noyau de simulation reste immédiatement disponible,
-// mais la première ouverture n'embarque plus toutes les vues lourdes.
-const WorldMap = lazy(() => import('@/components/world-map').then((module) => ({ default: module.WorldMap })));
-const TerritoryExplorer = lazy(() => import('@/components/territory-explorer').then((module) => ({ default: module.TerritoryExplorer })));
-const DiplomacySheet = lazy(() => import('@/components/diplomacy-sheet').then((module) => ({ default: module.DiplomacySheet })));
+import { DeferredPanel, DiplomacySheet, TerritoryExplorer, WorldMap } from '@/components/panel-loaders';
+import {
+  advisorAuditMaximumEntries, advisorAuditStorageKey, readAdvisorAudit,
+  readWorldPulseAudit, worldPulseAuditMaximumEntries, worldPulseAuditStorageKey,
+  type AdvisorAIAuditEntry, type WorldPulseAIAuditEntry,
+} from '@/lib/ai/audit-storage';
 import {
   advanceWorld, answerAdvisorQuestion, armamentAdvisorFacts,
   actionLeverProfiles,
@@ -46,54 +46,13 @@ import {
 } from '@/lib/simulation';
 import {
   createAdvisorAIRequest,
-  type AdvisorAIRequest,
   type AdvisorAIAnswer,
   type AdvisorAIOption,
   type AdvisorAIResponse,
   type AdvisorAIUsage,
 } from '@/lib/ai/contracts';
-import type { WorldPulseResponse } from '@/lib/ai/world-pulse-contracts';
 
 type Panel = 'world' | 'map' | 'economy' | 'energy' | 'industry' | 'reforms' | 'military' | 'dossiers' | 'diplomacy' | 'advisor' | 'ledger';
-
-type AdvisorAIAuditEntry = {
-  id: string;
-  createdAt: string;
-  request: Pick<AdvisorAIRequest, 'requestId' | 'question' | 'context'>;
-  result: { ok: true; answer: AdvisorAIAnswer; usage: AdvisorAIUsage; source?: 'llm' | 'local_fallback' } | { ok: false; message: string; usage?: AdvisorAIUsage; diagnostics?: { issues: string[]; truncated: boolean } };
-};
-
-type WorldPulseAIAuditEntry = {
-  id: string;
-  createdAt: string;
-  currentDate: ISODate;
-  response: WorldPulseResponse;
-};
-
-const advisorAuditStorageKey = 'ordo-advisor-ai-audit-v1';
-const advisorAuditMaximumEntries = 20;
-const worldPulseAuditStorageKey = 'ordo-world-pulse-ai-audit-v1';
-const worldPulseAuditMaximumEntries = 24;
-
-function readAdvisorAudit(): AdvisorAIAuditEntry[] {
-  if (typeof window === 'undefined') return [];
-  try {
-    const parsed: unknown = JSON.parse(localStorage.getItem(advisorAuditStorageKey) ?? '[]');
-    return Array.isArray(parsed) ? parsed.slice(0, advisorAuditMaximumEntries) as AdvisorAIAuditEntry[] : [];
-  } catch {
-    return [];
-  }
-}
-
-function readWorldPulseAudit(): WorldPulseAIAuditEntry[] {
-  if (typeof window === 'undefined') return [];
-  try {
-    const parsed: unknown = JSON.parse(localStorage.getItem(worldPulseAuditStorageKey) ?? '[]');
-    return Array.isArray(parsed) ? parsed.slice(0, worldPulseAuditMaximumEntries) as WorldPulseAIAuditEntry[] : [];
-  } catch {
-    return [];
-  }
-}
 
 const panels: Array<{ id: Panel; label: string; icon: typeof Activity }> = [
   { id: 'world', label: 'Monde', icon: Activity },
@@ -394,7 +353,7 @@ function MapPanel({ world }: { world: WorldState }) {
       <div className="ml-auto font-mono text-[10px] text-muted-foreground">{activeCountries.length} / 195 États modélisés</div>
     </div>
     <div className="map-command-layout">
-      <Suspense fallback={<div className="map-load-status">Chargement de la carte…</div>}><WorldMap mode="military" metrics={activeMetrics} playerCountryId={world.playerCountryId} selectedId={selectedCountryId} onSelect={(id) => setSelectedCountryId(id)} /></Suspense>
+      <DeferredPanel fallback={<div className="map-load-status">Chargement de la carte…</div>}><WorldMap mode="military" metrics={activeMetrics} playerCountryId={world.playerCountryId} selectedId={selectedCountryId} onSelect={(id) => setSelectedCountryId(id)} /></DeferredPanel>
       <aside className="map-dossier">
         {selected ? <>
           <div className="font-mono text-[10px] uppercase tracking-wider text-emerald-300">État modélisé</div>
@@ -427,7 +386,7 @@ function MapPanel({ world }: { world: WorldState }) {
       <div className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">États actifs · sélectionnez un pays pour ses territoires</div>
       <div className="mt-2 flex flex-wrap gap-2">{activeCountries.map((country) => <button key={country.id} onClick={() => setSelectedCountryId(country.id)} className={`border px-2 py-1 text-xs transition-colors ${selectedCountryId === country.id ? 'border-primary bg-primary/10 text-foreground' : 'border-border bg-muted/20 text-muted-foreground hover:border-primary'}`}>{country.flag} {country.name}</button>)}</div>
     </div>
-    {selected && <Suspense fallback={<div className="border-t border-border p-4 text-sm text-muted-foreground">Chargement du référentiel territorial…</div>}><TerritoryExplorer key={selectedCountryId} world={world} countryId={selectedCountryId} /></Suspense>}
+    {selected && <DeferredPanel fallback={<div className="border-t border-border p-4 text-sm text-muted-foreground">Chargement du référentiel territorial…</div>}><TerritoryExplorer key={selectedCountryId} world={world} countryId={selectedCountryId} /></DeferredPanel>}
   </section>;
 }
 
@@ -1597,7 +1556,7 @@ function DiplomacyPanel({ world, onWorldChange, onNotice, initialDialogueId }: {
       </div>
       {lastAIUsage && <div className="mt-3 font-mono text-[10px] text-muted-foreground">Dernier appel : {lastAIUsage}</div>}
     </section>
-    <Suspense fallback={<div className="border border-border p-4 text-sm text-muted-foreground">Chargement du centre diplomatique…</div>}><DiplomacySheet open={open} onOpenChange={setOpen} countries={sheetCountries} selectedId={selectedSheetCountry.id} participantIds={dialogue?.participantIds} participantOptions={dialogue ? participantOptions : []} onAddParticipant={dialogue ? addParticipant : undefined} dialogues={recentDialogues.slice(0, 8).map((item) => ({ id: item.id, kind: item.kind, participantIds: item.participantIds, status: item.status, label: item.participantIds.filter((id) => id !== player.id).map((id) => world.countries[id]?.name ?? id).join(', ') }))} selectedDialogueId={dialogueId} onSelectDialogue={selectDialogue} onNewDialogue={openIndependentDialogue} onSelectCountry={(id) => { if (dialogue && !dialogue.participantIds.includes(id)) return; setSelectedId(id); }} selectedCountry={selectedSheetCountry} messages={messages} structuredResponse={dialogue?.lastResponse} responseResolution={dialogue?.resolution} onResolveResponse={dialogue?.status === 'awaiting_player' && dialogue?.lastResponse && !dialogue?.resolution ? resolveResponse : undefined} draft={draft} onDraftChange={setDraft} onSend={send} isThinking={isThinking} playerCountryName={player.name} participantCount={dialogue?.participantIds.length ?? (participants.length + 1)} activeSpeakerLabel={dialogue ? (world.countries[dialogue.activeSpeakerId]?.name ?? dialogue.activeSpeakerId) : undefined} statusLabel={!dialogue ? 'Aucun canal ouvert — rédigez le premier message' : dialogue.status === 'awaiting_ai' ? 'Réponse IA disponible — validation explicite nécessaire' : dialogue.status === 'awaiting_player' ? 'Votre tour — vous pouvez répondre ou demander une option structurée' : 'Canal fermé'} quickReplies={dialogue?.status === 'awaiting_player' ? quickReplies : []} onQuickReply={(value) => setDraft(value)} canRequestAI={Boolean(dialogue && dialogue.status === 'awaiting_ai')} onRequestAI={askAI} memories={memories} agreements={agreements} onResolveEvent={() => undefined} /></Suspense>
+    <DeferredPanel fallback={<div className="border border-border p-4 text-sm text-muted-foreground">Chargement du centre diplomatique…</div>}><DiplomacySheet open={open} onOpenChange={setOpen} countries={sheetCountries} selectedId={selectedSheetCountry.id} participantIds={dialogue?.participantIds} participantOptions={dialogue ? participantOptions : []} onAddParticipant={dialogue ? addParticipant : undefined} dialogues={recentDialogues.slice(0, 8).map((item) => ({ id: item.id, kind: item.kind, participantIds: item.participantIds, status: item.status, label: item.participantIds.filter((id) => id !== player.id).map((id) => world.countries[id]?.name ?? id).join(', ') }))} selectedDialogueId={dialogueId} onSelectDialogue={selectDialogue} onNewDialogue={openIndependentDialogue} onSelectCountry={(id) => { if (dialogue && !dialogue.participantIds.includes(id)) return; setSelectedId(id); }} selectedCountry={selectedSheetCountry} messages={messages} structuredResponse={dialogue?.lastResponse} responseResolution={dialogue?.resolution} onResolveResponse={dialogue?.status === 'awaiting_player' && dialogue?.lastResponse && !dialogue?.resolution ? resolveResponse : undefined} draft={draft} onDraftChange={setDraft} onSend={send} isThinking={isThinking} playerCountryName={player.name} participantCount={dialogue?.participantIds.length ?? (participants.length + 1)} activeSpeakerLabel={dialogue ? (world.countries[dialogue.activeSpeakerId]?.name ?? dialogue.activeSpeakerId) : undefined} statusLabel={!dialogue ? 'Aucun canal ouvert — rédigez le premier message' : dialogue.status === 'awaiting_ai' ? 'Réponse IA disponible — validation explicite nécessaire' : dialogue.status === 'awaiting_player' ? 'Votre tour — vous pouvez répondre ou demander une option structurée' : 'Canal fermé'} quickReplies={dialogue?.status === 'awaiting_player' ? quickReplies : []} onQuickReply={(value) => setDraft(value)} canRequestAI={Boolean(dialogue && dialogue.status === 'awaiting_ai')} onRequestAI={askAI} memories={memories} agreements={agreements} onResolveEvent={() => undefined} /></DeferredPanel>
   </div>;
 }
 

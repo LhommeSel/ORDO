@@ -16,6 +16,7 @@ import {
   recordAICost,
   requestIp,
 } from '@/lib/ai/security';
+import { claimPersistentAIRequest, recordPersistentAICost } from '@/lib/ai/persistent-quota';
 
 export const runtime = 'edge';
 
@@ -126,6 +127,11 @@ export async function POST(request: Request) {
     const retry = admission.response.retryAfterSeconds;
     return json(admission.response, admission.response.code === 'not_configured' ? 503 : 429, retry ? { 'Retry-After': String(retry) } : {});
   }
+  const persistentAdmission = await claimPersistentAIRequest(ipKey, sessionKey);
+  if (!persistentAdmission.ok) {
+    admission.release();
+    return json({ ok: false, code: persistentAdmission.code, message: persistentAdmission.message, retryAfterSeconds: persistentAdmission.retryAfterSeconds }, 429, { 'Retry-After': String(persistentAdmission.retryAfterSeconds) });
+  }
 
   try {
     const policy = aiRuntimePolicy();
@@ -179,6 +185,7 @@ export async function POST(request: Request) {
       const usage = readUsage(payload);
       const estimatedCostUsd = estimateAICost(policy.model, usage.inputTokens, usage.outputTokens, usage.cachedTokens);
       recordAICost(estimatedCostUsd);
+      await recordPersistentAICost(estimatedCostUsd);
       const itemUsage = {
         model: policy.model, inputTokens: usage.inputTokens, cachedInputTokens: usage.cachedTokens,
         cacheWriteTokens: usage.cacheWriteTokens, cacheDiagnostics: usage.cacheDiagnostics,
@@ -241,7 +248,14 @@ export async function POST(request: Request) {
     usage.latencyMs = Math.max(0, ...results.flatMap((result) => result.usage ? [result.usage.latencyMs] : []));
     return json({
       ok: true, results,
-      usage: { model: policy.model, ...usage, remainingSessionRequestsToday: admission.remainingSessionRequestsToday },
+      usage: {
+        model: policy.model,
+        ...usage,
+        remainingSessionRequestsToday: Math.min(
+          admission.remainingSessionRequestsToday,
+          persistentAdmission.remainingSessionRequestsToday ?? admission.remainingSessionRequestsToday,
+        ),
+      },
     });
   } catch (error) {
     console.error('ORDO world pulse request failure', { requestId: parsed.requestId, name: error instanceof Error ? error.name : 'unknown' });

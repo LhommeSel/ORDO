@@ -15,6 +15,7 @@ import {
   requestIp,
   supportsReasoning,
 } from '@/lib/ai/security';
+import { claimPersistentAIRequest, recordPersistentAICost } from '@/lib/ai/persistent-quota';
 import type { AIJobBudgetTier, AIJobKind } from '@/lib/simulation/types';
 import { conceptsFromText, selectSupplementalFacts, type SupplementalFactRequest } from '@/lib/simulation/ai/context';
 
@@ -123,6 +124,11 @@ export async function POST(request: Request) {
     const retry = admission.response.retryAfterSeconds;
     return json(admission.response, admission.response.code === 'not_configured' ? 503 : 429, retry ? { 'Retry-After': String(retry) } : {});
   }
+  const persistentAdmission = await claimPersistentAIRequest(ipKey, sessionKey);
+  if (!persistentAdmission.ok) {
+    admission.release();
+    return json({ ok: false, code: persistentAdmission.code, message: persistentAdmission.message, retryAfterSeconds: persistentAdmission.retryAfterSeconds }, 429, { 'Retry-After': String(persistentAdmission.retryAfterSeconds) });
+  }
   try {
     const policy = aiRuntimePolicy();
     const requestStartedAt = performance.now();
@@ -212,14 +218,19 @@ export async function POST(request: Request) {
     // Une réponse OpenAI réussie est facturée même si son JSON est ensuite
     // rejeté par ORDO. Le garde-fou budgétaire doit donc compter cet usage dès
     // qu'il est connu, pas seulement après validation métier.
-    recordAICost(estimateAICost(policy.model, totalUsage.input, totalUsage.output, totalUsage.cached));
+    const firstCost = estimateAICost(policy.model, totalUsage.input, totalUsage.output, totalUsage.cached);
+    recordAICost(firstCost);
+    await recordPersistentAICost(firstCost);
     const usageSummary = () => ({
       model: policy.model, inputTokens: totalUsage.input, cachedInputTokens: totalUsage.cached,
       cacheWriteTokens: totalUsage.cacheWrites, cacheDiagnostics: totalUsage.cacheDiagnostics,
       outputTokens: totalUsage.output,
       estimatedCostUsd: estimateAICost(policy.model, totalUsage.input, totalUsage.output, totalUsage.cached),
       latencyMs: Math.round(performance.now() - requestStartedAt),
-      remainingSessionRequestsToday: admission.remainingSessionRequestsToday,
+      remainingSessionRequestsToday: Math.min(
+        admission.remainingSessionRequestsToday,
+        persistentAdmission.remainingSessionRequestsToday ?? admission.remainingSessionRequestsToday,
+      ),
     });
     const functionCalls = extractFunctionCalls(payload);
     if (functionCalls.length) {
@@ -247,7 +258,9 @@ export async function POST(request: Request) {
       }
       payload = await upstream.json() as Record<string, unknown>;
       const secondUsage = readUsage(payload);
-      recordAICost(estimateAICost(policy.model, secondUsage.input, secondUsage.output, secondUsage.cached));
+      const secondCost = estimateAICost(policy.model, secondUsage.input, secondUsage.output, secondUsage.cached);
+      recordAICost(secondCost);
+      await recordPersistentAICost(secondCost);
       totalUsage.input += secondUsage.input;
       totalUsage.output += secondUsage.output;
       totalUsage.cached += secondUsage.cached;

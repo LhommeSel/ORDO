@@ -17,6 +17,7 @@ import {
   recordAICost,
   requestIp,
 } from '@/lib/ai/security';
+import { claimPersistentAIRequest, recordPersistentAICost } from '@/lib/ai/persistent-quota';
 
 export const runtime = 'edge';
 
@@ -181,6 +182,11 @@ export async function POST(request: Request) {
     const retry = admission.response.retryAfterSeconds;
     return json(admission.response, admission.response.code === 'not_configured' ? 503 : 429, retry ? { 'Retry-After': String(retry) } : {});
   }
+  const persistentAdmission = await claimPersistentAIRequest(ipKey, sessionKey);
+  if (!persistentAdmission.ok) {
+    admission.release();
+    return json(persistentAdmission, persistentAdmission.code === 'budget_exhausted' ? 429 : 429, { 'Retry-After': String(persistentAdmission.retryAfterSeconds) });
+  }
 
   try {
     const policy = aiRuntimePolicy();
@@ -254,6 +260,7 @@ export async function POST(request: Request) {
     const cachedTokens = cache.cachedTokens;
     const estimatedCostUsd = estimateAICost(policy.model, inputTokens, outputTokens, cachedTokens);
     recordAICost(estimatedCostUsd);
+    await recordPersistentAICost(estimatedCostUsd);
     const usageSummary = {
       model: policy.model,
       inputTokens,
@@ -263,7 +270,10 @@ export async function POST(request: Request) {
       outputTokens,
       estimatedCostUsd,
       latencyMs: Math.round(performance.now() - upstreamStartedAt),
-      remainingSessionRequestsToday: admission.remainingSessionRequestsToday,
+      remainingSessionRequestsToday: Math.min(
+        admission.remainingSessionRequestsToday,
+        persistentAdmission.remainingSessionRequestsToday ?? admission.remainingSessionRequestsToday,
+      ),
     };
     const parsedOutput = parseStructuredOutput(payload);
     const answer = parsedOutput.value;
