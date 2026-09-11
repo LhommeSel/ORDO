@@ -17,7 +17,7 @@ import { evaluateStrategicAction, selectStrategicAction } from './decision-makin
 import { reviewCountryStrategy } from './autonomy';
 import { countrySheet } from './country-sheet';
 import type { GovernmentMeasure, StrategicActionCandidate } from './types';
-import { createFrance2000World } from './scenario-2000';
+import { createFrance2000World, createWorld2000 } from './scenario-2000';
 import { deriveStructuralDiagnostics } from './structural-diagnostics';
 import {
   enactGovernmentMeasure, enactPrototypeGovernmentMeasure, stakeholderPressureByChannel, visibleStakeholderReactions,
@@ -42,7 +42,7 @@ import { validateCountryRegistry } from './data-validator';
 import { buildTurnBriefing } from './turn-briefing';
 import { queueAutonomousProgram } from './ai/autonomous-programs';
 import { authorizeArmamentProspect, createAutomaticArmamentProspects, rankArmamentProspectBuyers, rejectArmamentProspect } from './industry';
-import { advancePoliticalCycles, assessPoliticalSupport, politicalCycleStops } from './political-cycles';
+import { advancePoliticalCycles, assessPoliticalSupport, choosePoliticalCampaignStrategy, politicalCampaignDecisionPrompt, politicalCycleStops } from './political-cycles';
 
 test('le scénario 2000 charge un monde cohérent et jouable', () => {
   const state = createFrance2000World();
@@ -55,6 +55,16 @@ test('le scénario 2000 charge un monde cohérent et jouable', () => {
   assert.ok(Object.keys(state.strategicDossiers).length >= 2);
   assert.ok(Object.keys(state.historicalAnchors).length >= 20);
   assert.equal(Object.keys(state.politicalCycles).length, 195);
+});
+
+test('une nouvelle partie peut attribuer au joueur n’importe quel pays du registre', () => {
+  const japan = createWorld2000('JPN');
+  assert.equal(japan.playerCountryId, 'JPN');
+  assert.equal(japan.scenarioId, 'jpn-2000-01');
+  assert.equal(japan.strategicDossiers['current-dotcom-exuberance'].pendingDecisions.length, 0);
+  const usa = createWorld2000('USA');
+  assert.match(usa.strategicDossiers['current-dotcom-exuberance'].pendingDecisions[0], /États-Unis/);
+  assert.equal(createWorld2000('PAYS_INCONNU').playerCountryId, 'FRA');
 });
 
 test('les échéances politiques sont réparties et ouvrent un dossier avant les scrutins majeurs', () => {
@@ -123,6 +133,47 @@ test('une avance longue s’arrête avant l’échéance politique du pays joué
   assert.equal(result.stop?.kind, 'political');
   assert.equal(result.state.politicalCycles.FRA.status, 'campaign');
   assert.ok(result.state.strategicDossiers['political-cycle-fra-1']);
+});
+
+test('la campagne nationale exige une posture sans permettre de choisir le vainqueur', () => {
+  const initial = createFrance2000World();
+  initial.currentDate = '2001-12-01';
+  const campaign = advancePoliticalCycles(initial);
+  const dossier = campaign.strategicDossiers['political-cycle-fra-1'];
+  assert.equal(dossier.pendingDecisions[0], politicalCampaignDecisionPrompt);
+  const baseline = assessPoliticalSupport(campaign, 'FRA').supportScore;
+  const governmentBefore = campaign.countries.FRA.capacities.government.committed;
+  const mobilized = choosePoliticalCampaignStrategy(campaign, 'majority_mobilization');
+  assert.equal(mobilized.politicalCycles.FRA.campaignStrategy, 'majority_mobilization');
+  assert.equal(mobilized.countries.FRA.capacities.government.committed, governmentBefore + 5);
+  assert.ok(assessPoliticalSupport(mobilized, 'FRA').supportScore > baseline + 4);
+  assert.equal(mobilized.strategicDossiers[dossier.id].pendingDecisions.length, 0);
+});
+
+test('les moyens de campagne sont libérés après le scrutin', () => {
+  const initial = createFrance2000World();
+  initial.currentDate = '2001-12-01';
+  const campaign = advancePoliticalCycles(initial);
+  const governmentBefore = campaign.countries.FRA.capacities.government.committed;
+  const mobilized = choosePoliticalCampaignStrategy(campaign, 'majority_mobilization');
+  mobilized.currentDate = '2002-04-01';
+  const resolved = advancePoliticalCycles(mobilized);
+  assert.equal(resolved.countries.FRA.capacities.government.committed, governmentBefore);
+  assert.equal(resolved.politicalCycles.FRA.campaignStrategy, null);
+  assert.equal(resolved.strategicDossiers['political-cycle-fra-1'].status, 'resolved');
+});
+
+test('le silence de campagne laisse le bilan décider et expire proprement l’arbitrage', () => {
+  const initial = createFrance2000World();
+  initial.currentDate = '2001-12-01';
+  const campaign = advancePoliticalCycles(initial);
+  const baseline = assessPoliticalSupport(campaign, 'FRA').supportScore;
+  campaign.currentDate = '2002-04-01';
+  const resolved = advancePoliticalCycles(campaign);
+  const dossier = resolved.strategicDossiers['political-cycle-fra-1'];
+  assert.equal(resolved.politicalCycles.FRA.lastSupportScore, baseline);
+  assert.equal(dossier.pendingDecisions.length, 0);
+  assert.equal(dossier.decisionRecords?.[0]?.status, 'expired');
 });
 
 test('un dossier actif transmet une pression bornée au macro-modèle et les engagements l’amortissent', () => {
@@ -934,6 +985,16 @@ test('un prospect d’armement peut être autorisé ou refusé sans engagement d
   if (!rejected.ok) return;
   assert.equal(rejected.state.armamentProducts[product.id].prospects.find((item) => item.id === prospect.id)?.status, 'lost');
   assert.equal(rejected.state.armamentProducts[product.id].backlogMonths, product.backlogMonths);
+});
+
+test('un joueur étranger ne peut pas décider pour l’industrie d’armement française', () => {
+  const initial = createWorld2000('JPN');
+  const product = structuredClone(initial.armamentProducts.rafale);
+  product.prospects = [{ id: 'rafale-test-jpn', countryId: 'IND', quantity: 12, status: 'approval_required', politicalSensitivity: 40 }];
+  initial.armamentProducts.rafale = product;
+  const attempted = authorizeArmamentProspect(initial, 'rafale', 'rafale-test-jpn');
+  assert.equal(attempted.ok, false);
+  assert.match(attempted.error, /pays producteur/);
 });
 
 test('la direction et l’appareil politique modulent une action du joueur et ses oppositions', () => {

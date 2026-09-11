@@ -2,6 +2,7 @@ import type {
   ArmamentProduct,
   BaselineEnergyFlow,
   CapacityState,
+  CountryId,
   CountryState,
   CountryEnergyState,
   EnergyNode,
@@ -511,18 +512,26 @@ function defaultCountryEnergy2000(country: CountryState): CountryEnergyState {
   };
 }
 
-export function createFrance2000World(): WorldState {
+export function createWorld2000(requestedPlayerCountryId: CountryId = 'FRA'): WorldState {
   const structuralProfiles = createStructuralProfiles2000(allCountries);
   const macroEconomies = createMacroEconomies2000();
   assertValidCountryRegistry(allCountries, macroEconomies);
+  const playerCountryId = allCountries[requestedPlayerCountryId] ? requestedPlayerCountryId : 'FRA';
+  const playerCountry = allCountries[playerCountryId];
+  const dossiers = structuredClone(strategicDossiers);
+  const dotcom = dossiers['current-dotcom-exuberance'];
+  const playerDirectlyExposed = dotcom.actorIds.includes(playerCountryId);
+  dotcom.pendingDecisions = playerDirectlyExposed
+    ? [`Déterminer si ${playerCountry.name} prépare un dispositif de prévention financière.`]
+    : [];
   return {
     version: 1,
     territorial: createTerritorialState({ countries: allCountries, macroEconomies }),
-    scenarioId: 'france-2000-01',
+    scenarioId: `${playerCountryId.toLowerCase()}-2000-01`,
     seed: 20000101,
     sequence: 0,
     currentDate: '2000-01-01',
-    playerCountryId: 'FRA',
+    playerCountryId,
     countries: structuredClone(allCountries),
     relations: {
       'FRA:DEU': { from: 'FRA', to: 'DEU', relation: 68, trust: 61, tradeIntensity: 82, securityAlignment: 65, memories: [] },
@@ -584,7 +593,12 @@ export function createFrance2000World(): WorldState {
     diplomaticDialogues: {},
     sectors: structuredClone(sectors),
     armamentProducts: structuredClone(armamentProducts),
-    strategicDossiers: structuredClone(strategicDossiers),
+    strategicDossiers: dossiers,
     actions: [], ledger: [], processedStopIds: [],
   };
+}
+
+/** Alias conservé pour les anciennes sauvegardes, tests et intégrations. */
+export function createFrance2000World(): WorldState {
+  return createWorld2000('FRA');
 }

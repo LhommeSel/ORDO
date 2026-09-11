@@ -100,6 +100,7 @@ export function authorizeArmamentProspect(state: WorldState, productId: string, 
   const product = state.armamentProducts[productId];
   const prospect = product?.prospects.find((item) => item.id === prospectId);
   if (!product || !prospect) return { ok: false as const, state, error: 'Prospect industriel inconnu.' };
+  if (product.countryId !== actorId) return { ok: false as const, state, error: 'Seul le gouvernement du pays producteur peut autoriser cette exportation.' };
   if (!['approval_required', 'negotiating'].includes(prospect.status)) return { ok: false as const, state, error: 'Ce dossier n’est plus ouvert.' };
   const updatedProspects = product.prospects.map((item) => item.id === prospectId ? { ...item, status: 'won' as const } : item);
   const client = product.clients.find((item) => item.countryId === prospect.countryId);
@@ -122,6 +123,7 @@ export function rejectArmamentProspect(state: WorldState, productId: string, pro
   const product = state.armamentProducts[productId];
   const prospect = product?.prospects.find((item) => item.id === prospectId);
   if (!product || !prospect) return { ok: false as const, state, error: 'Prospect industriel inconnu.' };
+  if (product.countryId !== actorId) return { ok: false as const, state, error: 'Seul le gouvernement du pays producteur peut refuser cette exportation.' };
   if (!['approval_required', 'negotiating'].includes(prospect.status)) return { ok: false as const, state, error: 'Ce dossier n’est plus ouvert.' };
   const updatedProspects = product.prospects.map((item) => item.id === prospectId ? { ...item, status: 'lost' as const } : item);
   return {

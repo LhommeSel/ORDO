@@ -1,4 +1,5 @@
 import { commitWorldAction } from './ledger';
+import { makeDossierDecision } from './dossier-decisions';
 import { seededUnit } from './random';
 import type {
   CountryId,
@@ -8,6 +9,7 @@ import type {
   GovernmentDoctrine,
   ISODate,
   PoliticalApparatusProfile,
+  PoliticalCampaignStrategy,
   PoliticalCycle,
   PoliticalCycleMode,
   StrategicDossier,
@@ -18,6 +20,38 @@ import type {
 
 const clamp = (value: number, minimum = 0, maximum = 100) => Math.min(maximum, Math.max(minimum, value));
 const round = (value: number, digits = 1) => Number(value.toFixed(digits));
+
+export const politicalCampaignDecisionPrompt = 'Choisir la posture du gouvernement pendant la campagne.';
+
+export const politicalCampaignOptions: Array<{
+  id: PoliticalCampaignStrategy;
+  title: string;
+  summary: string;
+  cost: string;
+  risk: string;
+}> = [
+  {
+    id: 'govern_record',
+    title: 'Gouverner sur le bilan',
+    summary: 'Ne pas détourner l’appareil d’État vers la campagne. Le résultat dépend entièrement du bilan économique, de l’approbation et de la cohésion du pouvoir.',
+    cost: 'Aucun moyen supplémentaire engagé.',
+    risk: 'Aucun amortisseur si la conjoncture se retourne avant le scrutin.',
+  },
+  {
+    id: 'majority_mobilization',
+    title: 'Mobiliser la majorité',
+    summary: 'Coordonner la majorité, les ministres et les relais territoriaux pour défendre activement le mandat.',
+    cost: '5 points de capacité gouvernementale et 1,5 unité budgétaire jusqu’au scrutin.',
+    risk: 'Polarisation accrue ; une administration déjà surchargée réduit fortement le bénéfice.',
+  },
+  {
+    id: 'institutional_neutrality',
+    title: 'Garantir la neutralité institutionnelle',
+    summary: 'Préparer l’administration à appliquer loyalement le résultat et à préserver la continuité de l’État.',
+    cost: '3 points de capacité administrative jusqu’au scrutin.',
+    risk: 'Le pouvoir renonce à une partie de son avantage de campagne, mais une alternance devient moins déstabilisante.',
+  },
+];
 
 function addMonths(date: ISODate, months: number): ISODate {
   const value = new Date(`${date}T12:00:00Z`);
@@ -113,7 +147,8 @@ export function assessPoliticalSupport(state: WorldState, countryId: CountryId, 
   const security = clamp(country.metrics.security);
   const coordination = clamp(state.leadership[countryId]?.executiveCoordination ?? 60);
   const uncertainty = (seededUnit(state.seed, `${countryId}:${cycle.nextReviewDate}:${cycle.cycleNumber}:politics`) - 0.5) * 18;
-  const supportScore = clamp(approval * 0.4 + stability * 0.2 + economic * 0.2 + security * 0.08 + coordination * 0.12 + uncertainty);
+  const campaignModifier = cycle.campaignSupportModifier ?? 0;
+  const supportScore = clamp(approval * 0.4 + stability * 0.2 + economic * 0.2 + security * 0.08 + coordination * 0.12 + uncertainty + campaignModifier);
   const threshold: Record<PoliticalCycleMode, number> = {
     competitive_election: 52,
     managed_election: 36,
@@ -130,6 +165,9 @@ export function assessPoliticalSupport(state: WorldState, countryId: CountryId, 
       { label: 'Conjoncture économique', value: round(economic) },
       { label: 'Stabilité institutionnelle', value: round(stability) },
       { label: 'Cohésion de la direction', value: round(coordination) },
+      ...(cycle.status === 'campaign' || cycle.campaignStrategy
+        ? [{ label: 'Posture de campagne', value: round(campaignModifier) }]
+        : []),
     ],
   };
 }
@@ -237,6 +275,12 @@ function cycleDossier(state: WorldState, countryId: CountryId, cycle: PoliticalC
   const country = state.countries[countryId];
   const dossierId = `political-cycle-${countryId.toLowerCase()}-${cycle.cycleNumber}`;
   const importance = countryId === state.playerCountryId || country.weight >= 90 ? 'major' : 'moderate';
+  const requiresPlayerDecision = countryId === state.playerCountryId;
+  const decisionRecord = requiresPlayerDecision ? makeDossierDecision({
+    id: `${dossierId}-campaign-posture`, prompt: politicalCampaignDecisionPrompt,
+    createdAt: state.currentDate, importance, actorIds: [countryId],
+    sourceKind: 'player_action', sourceId: dossierId, sourceLabel: 'Échéance politique nationale',
+  }) : undefined;
   return {
     id: dossierId,
     title: `Échéance politique · ${country.name}`,
@@ -253,14 +297,17 @@ function cycleDossier(state: WorldState, countryId: CountryId, cycle: PoliticalC
     followed: false,
     autoTracked: importance === 'major',
     commitments: [],
-    pendingDecisions: [],
+    pendingDecisions: requiresPlayerDecision ? [politicalCampaignDecisionPrompt] : [],
+    decisionRecords: decisionRecord ? [decisionRecord] : [],
     relatedCurrentIds: [],
     relatedActionIds: [],
     entries: [{
       id: `${dossierId}-opening`, date: state.currentDate,
       title: 'Ouverture de la séquence politique',
-      summary: `L’échéance est prévue au ${cycle.nextReviewDate}. Les indicateurs du monde détermineront le rapport de force.`,
-      importance, actorIds: [countryId], requiresDecision: false, visibility: 'public',
+      summary: requiresPlayerDecision
+        ? `L’échéance est prévue au ${cycle.nextReviewDate}. Le gouvernement peut choisir une posture, mais le résultat restera déterminé par l’état réel du pays.`
+        : `L’échéance est prévue au ${cycle.nextReviewDate}. Les indicateurs du monde détermineront le rapport de force.`,
+      importance, actorIds: [countryId], requiresDecision: requiresPlayerDecision, visibility: 'public',
     }],
   };
 }
@@ -282,6 +329,62 @@ function openCampaign(state: WorldState, cycle: PoliticalCycle) {
     kind: 'political', actorId: cycle.countryId, origin: 'local_rule', visibility: 'public',
     intent: `Ouvrir la séquence politique de ${state.countries[cycle.countryId].name}`,
     metadata: { politicalCycle: true, politicalCycleStage: 'campaign' }, effects,
+  });
+}
+
+function campaignCommitment(strategy: PoliticalCampaignStrategy) {
+  if (strategy === 'majority_mobilization') return { domain: 'government' as const, amount: 5 };
+  if (strategy === 'institutional_neutrality') return { domain: 'administration' as const, amount: 3 };
+  return null;
+}
+
+/**
+ * Engage une posture politique concrète. Le joueur ne choisit jamais le gagnant :
+ * il mobilise (ou non) des moyens, puis le moteur recalcule le rapport de force.
+ */
+export function choosePoliticalCampaignStrategy(
+  state: WorldState,
+  strategy: PoliticalCampaignStrategy,
+  countryId: CountryId = state.playerCountryId,
+) {
+  const cycle = state.politicalCycles[countryId];
+  if (!cycle || cycle.status !== 'campaign' || countryId !== state.playerCountryId || cycle.campaignStrategy) return state;
+  const country = state.countries[countryId];
+  const commitment = campaignCommitment(strategy);
+  const overloaded = commitment
+    ? country.capacities[commitment.domain].committed + commitment.amount > country.capacities[commitment.domain].maximum
+    : false;
+  const supportModifier = strategy === 'majority_mobilization' ? (overloaded ? 1.5 : 5) : strategy === 'institutional_neutrality' ? -2 : 0;
+  const stabilityModifier = strategy === 'institutional_neutrality' ? 4 : 0;
+  const effects: WorldEffect[] = [{
+    kind: 'political_cycle_patch', countryId,
+    patch: { campaignStrategy: strategy, campaignSupportModifier: supportModifier, transitionStabilityModifier: stabilityModifier, campaignChosenAt: state.currentDate },
+    reason: 'La posture de campagne est enregistrée sans prédéterminer le résultat.', visibility: 'player',
+  }];
+  if (commitment) effects.push({
+    kind: 'capacity_commitment', countryId, domain: commitment.domain, delta: commitment.amount,
+    reason: 'Des moyens institutionnels sont engagés jusqu’à l’échéance politique.', visibility: 'player',
+  });
+  if (strategy === 'majority_mobilization') {
+    effects.push(
+      { kind: 'metric_delta', countryId, metric: 'budget', delta: -1.5, reason: 'Coordination territoriale et gouvernementale de la campagne.', visibility: 'player' },
+      { kind: 'metric_delta', countryId, metric: 'stability', delta: overloaded ? -2 : -0.8, reason: overloaded ? 'La mobilisation surcharge un appareil déjà tendu et accroît la désorganisation.' : 'La mobilisation de la majorité polarise modérément la vie politique.', visibility: 'player' },
+    );
+  }
+  const dossier = cycle.dossierId ? state.strategicDossiers[cycle.dossierId] : undefined;
+  if (dossier) {
+    const records = (dossier.decisionRecords ?? []).map((record) => record.prompt === politicalCampaignDecisionPrompt && record.status === 'pending'
+      ? { ...record, status: 'resolved' as const, resolvedAt: state.currentDate, resolutionChannel: 'local_action' as const }
+      : record);
+    effects.push(
+      { kind: 'dossier_patch', dossierId: dossier.id, patch: { pendingDecisions: dossier.pendingDecisions.filter((prompt) => prompt !== politicalCampaignDecisionPrompt), decisionRecords: records, playerStance: politicalCampaignOptions.find((option) => option.id === strategy)?.title }, reason: 'Le choix de campagne est consigné dans le dossier.', visibility: 'player' },
+      { kind: 'dossier_entry_add', dossierId: dossier.id, entry: { id: `${dossier.id}-strategy-${strategy}`, date: state.currentDate, title: politicalCampaignOptions.find((option) => option.id === strategy)?.title ?? strategy, summary: `La posture modifie le rapport de force de ${supportModifier >= 0 ? '+' : ''}${supportModifier} points internes et la stabilité de transition de ${stabilityModifier >= 0 ? '+' : ''}${stabilityModifier}. Elle ne garantit aucun résultat.`, importance: dossier.importance, actorIds: [countryId], requiresDecision: false, visibility: 'player' }, reason: 'La posture et ses effets attendus deviennent auditables.', visibility: 'player' },
+    );
+  }
+  return commitWorldAction(state, {
+    kind: 'political', actorId: countryId, origin: 'player', visibility: 'player',
+    intent: politicalCampaignOptions.find((option) => option.id === strategy)?.title ?? 'Choisir une posture de campagne',
+    metadata: { politicalCycle: true, politicalCycleStage: 'campaign_strategy', campaignStrategy: strategy, overloaded }, effects,
   });
 }
 
@@ -308,7 +411,7 @@ function resolveCycle(state: WorldState, cycle: PoliticalCycle) {
   const effects: WorldEffect[] = [
     {
       kind: 'political_cycle_patch', countryId: cycle.countryId,
-      patch: { status: 'scheduled', lastReviewDate: state.currentDate, nextReviewDate: nextDate, cycleNumber: cycle.cycleNumber + 1, lastOutcome: outcome, lastSupportScore: assessment.supportScore, dossierId: null },
+      patch: { status: 'scheduled', lastReviewDate: state.currentDate, nextReviewDate: nextDate, cycleNumber: cycle.cycleNumber + 1, lastOutcome: outcome, lastSupportScore: assessment.supportScore, dossierId: null, campaignStrategy: null, campaignSupportModifier: 0, transitionStabilityModifier: 0, campaignChosenAt: null },
       reason: `L’échéance est résolue avec un soutien de ${assessment.supportScore}/100 ; la suivante est planifiée.`, visibility: 'public',
     },
     {
@@ -329,6 +432,15 @@ function resolveCycle(state: WorldState, cycle: PoliticalCycle) {
       reason: changed ? 'Le rapport de force produit une nouvelle ligne gouvernementale.' : 'La reconduction maintient la ligne générale avec une dérive politique limitée.', visibility: 'public',
     },
   ];
+  const commitment = cycle.campaignStrategy ? campaignCommitment(cycle.campaignStrategy) : null;
+  if (commitment) effects.push({
+    kind: 'capacity_commitment', countryId: cycle.countryId, domain: commitment.domain, delta: -commitment.amount,
+    reason: 'Les moyens temporairement affectés à la campagne sont libérés après l’échéance.', visibility: 'player',
+  });
+  if ((cycle.transitionStabilityModifier ?? 0) !== 0) effects.push({
+    kind: 'metric_delta', countryId: cycle.countryId, metric: 'stability', delta: cycle.transitionStabilityModifier ?? 0,
+    reason: 'La préparation institutionnelle amortit le passage de pouvoir ou consolide la continuité.', visibility: 'public',
+  });
   if (changed) {
     effects.push(
       { kind: 'leadership_patch', countryId: cycle.countryId, patch: transitionedLeadership(state, cycle.countryId, doctrine, !competitive, cycle.cycleNumber), reason: 'La direction effective est remplacée par le résultat systémique de la transition.', visibility: 'public' },
@@ -342,13 +454,17 @@ function resolveCycle(state: WorldState, cycle: PoliticalCycle) {
   }
   const dossierId = cycle.dossierId;
   if (dossierId && state.strategicDossiers[dossierId]) {
-    const importance = state.strategicDossiers[dossierId].importance;
+    const dossier = state.strategicDossiers[dossierId];
+    const importance = dossier.importance;
+    const decisionRecords = (dossier.decisionRecords ?? []).map((record) => record.status === 'pending'
+      ? { ...record, status: 'expired' as const, expiredAt: state.currentDate }
+      : record);
     effects.push(
       {
         kind: 'dossier_patch', dossierId,
         patch: {
           status: 'resolved', phase: changed ? competitive ? 'Alternance politique' : 'Succession du pouvoir' : 'Pouvoir reconduit',
-          trend: 'deescalating', updatedAt: state.currentDate,
+          trend: 'deescalating', updatedAt: state.currentDate, pendingDecisions: [], decisionRecords,
           publicSummary: changed
             ? `Le soutien de ${assessment.supportScore}/100 n’a pas suffi : ${country.name} change de direction politique. La nouvelle ligne découle du monde simulé, pas de la chronologie réelle.`
             : `Avec un soutien de ${assessment.supportScore}/100, le pouvoir de ${country.name} est reconduit.`,

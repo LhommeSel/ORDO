@@ -88,6 +88,11 @@ export type PoliticalCycleMode =
   | 'dynastic_succession'
   | 'institutional_review';
 
+export type PoliticalCampaignStrategy =
+  | 'govern_record'
+  | 'majority_mobilization'
+  | 'institutional_neutrality';
+
 /**
  * Calendrier institutionnel minimal. Il décrit quand le pouvoir doit être
  * réévalué, sans pré-écrire le vainqueur historique ni conserver éternellement
@@ -103,6 +108,11 @@ export type PoliticalCycle = {
   cycleNumber: number;
   status: 'scheduled' | 'campaign';
   dossierId?: string | null;
+  /** Posture choisie par le joueur : elle influe sur le rapport de force sans désigner le vainqueur. */
+  campaignStrategy?: PoliticalCampaignStrategy | null;
+  campaignSupportModifier?: number;
+  transitionStabilityModifier?: number;
+  campaignChosenAt?: ISODate | null;
   lastOutcome?: 'renewal' | 'alternation' | 'succession' | 'continuity';
   lastSupportScore?: number;
 };

@@ -17,7 +17,7 @@ import {
   advanceWorld, answerAdvisorQuestion, armamentAdvisorFacts,
   actionLeverProfiles,
   acceptEnergyOffer, adjustEnergyOffer, assessStrategicPlan,
-  continueEnergyNegotiationAI, createAdministrativeEnergyOffer, createFrance2000World,
+  continueEnergyNegotiationAI, createAdministrativeEnergyOffer, createWorld2000,
   dossierUnreadCount, dossiersRequiringAttention, dossierUpdatesSinceView, assessDossierResolution, energyBalance,
   energyCounterpartResponseFromSession, evaluatePoliticalPathway, executeAIJob, markDossierViewed, productEvidenceSummary,
   enactPrototypeGovernmentMeasure, reactionLevelLabels, reactionTrendLabels,
@@ -34,11 +34,11 @@ import {
   dossierDecisionRecords,
   dossierPressureProfile,
   buildTurnBriefing,
-  politicalCycleStops,
+  assessPoliticalSupport, choosePoliticalCampaignStrategy, politicalCampaignOptions, politicalCycleStops,
   countrySheet,
   type AdvisorAnswer, type AdvisorQuestionKind, type EnergyAdministrativeOffer, type EnergyCounterpartResponse,
   type CommonActionCategory, type EnergyOfferAdjustment, type HistoricalInterventionDirection, type ISODate, type StrategicDossier, type StrategicPlan,
-  type PreparedCommonAction, type PrototypeMeasureId, type StructuralDiagnosis, type TurnBriefing, type WorldState,
+  type PoliticalCampaignStrategy, type PreparedCommonAction, type PrototypeMeasureId, type StructuralDiagnosis, type TurnBriefing, type WorldState,
 } from '@/lib/simulation';
 import {
   createAdvisorAIRequest,
@@ -166,7 +166,7 @@ function WorldPanel({ world, onWorldChange, onNotice }: {
   return <div className="grid gap-4 xl:grid-cols-[1.15fr_.85fr]">
     <section className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Stat label="Pays modélisés" value={String(Object.keys(world.countries).length)} detail="France active · architecture multi-pays" />
+        <Stat label="Pays modélisés" value={String(Object.keys(world.countries).length)} detail={`${player.name} actif · architecture multi-pays`} />
         <Stat label="Budget" value={player.metrics.budget.toFixed(1)} detail="Ressource chiffrée, pas de capital politique" />
         <Stat label="Actions" value={String(world.actions.length)} detail={`${world.ledger.length} modifications causales`} />
         <Stat label="Courants actifs" value={String(Object.values(world.historicalCurrents).filter((item) => item.status === 'active').length)} detail="Manifestations non prédéterminées" />
@@ -513,6 +513,9 @@ function EnergyPanel({ world }: { world: WorldState }) {
 }
 
 function IndustryPanel({ world, onWorldChange, onNotice }: { world: WorldState; onWorldChange: (world: WorldState) => void; onNotice: (message: string) => void }) {
+  const player = world.countries[world.playerCountryId];
+  const nationalSectors = Object.values(world.sectors).filter((sector) => sector.countryId === world.playerCountryId);
+  const nationalProducts = Object.values(world.armamentProducts).filter((product) => product.countryId === world.playerCountryId);
   const evidence = Object.fromEntries(armamentAdvisorFacts(world).map((item) => [item.productId, item]));
   const resolveProspect = (productId: string, prospectId: string, decision: 'authorize' | 'reject') => {
     const result = decision === 'authorize'
@@ -523,15 +526,15 @@ function IndustryPanel({ world, onWorldChange, onNotice }: { world: WorldState; 
     onNotice(decision === 'authorize' ? 'Exportation autorisée et commande inscrite au carnet.' : 'Exportation refusée ; le prospect est clos.');
   };
   return <div className="space-y-4">
-    <div className="grid gap-3 lg:grid-cols-3">{Object.values(world.sectors).map((sector) => <div key={sector.id} className="border border-border bg-card/70 p-4">
+    <div className="grid gap-3 lg:grid-cols-3">{nationalSectors.map((sector) => <div key={sector.id} className="border border-border bg-card/70 p-4">
       <div className="font-medium capitalize">{sector.countryId} · {sector.sector.replaceAll('_', ' ')}</div>
       <div className="mt-3 grid grid-cols-2 gap-2 text-xs"><div>Capacité <b>{sector.capacity}</b></div><div>Utilisation <b>{sector.utilization.toFixed(0)}%</b></div><div>Santé <b>{sector.health.toFixed(0)}</b></div><div>Dépendance <b>{sector.foreignDependency}</b></div></div>
       <div className="mt-3 text-xs text-muted-foreground">Charge : {sector.workloadMonths.toFixed(1)} mois · inertie {sector.expansionLeadMonths} mois</div>
-    </div>)}</div>
+    </div>)}{nationalSectors.length === 0 && <div className="border border-dashed border-border bg-card/50 p-4 text-sm text-muted-foreground">Aucune filière industrielle détaillée n’est encore inventoriée pour {player.name}. Les indicateurs macroéconomiques nationaux restent actifs.</div>}</div>
 
     <div className="border border-border bg-card/70">
-      <div className="border-b border-border p-4"><div className="flex items-center gap-2 font-semibold"><Shield className="size-4 text-primary" /> Produits phares d’armement français</div><p className="mt-1 text-xs text-muted-foreground">Bouquet suivi individuellement, sans chaîne de production à la Victoria.</p></div>
-      <div className="grid gap-px bg-border md:grid-cols-2 xl:grid-cols-3">{Object.values(world.armamentProducts).map((product) => {
+      <div className="border-b border-border p-4"><div className="flex items-center gap-2 font-semibold"><Shield className="size-4 text-primary" /> Produits phares d’armement · {player.name}</div><p className="mt-1 text-xs text-muted-foreground">Bouquet suivi individuellement, sans chaîne de production à la Victoria.</p></div>
+      <div className="grid gap-px bg-border md:grid-cols-2 xl:grid-cols-3">{nationalProducts.map((product) => {
         const proof = evidence[product.id] ?? productEvidenceSummary(product);
         return <div key={product.id} className="bg-card p-4">
           <div className="flex justify-between gap-3"><div><div className="font-semibold">{product.name}</div><div className="text-xs text-muted-foreground">{product.manufacturer} · {product.family}</div></div><span className="font-mono text-[10px] text-primary">{product.status}</span></div>
@@ -543,7 +546,7 @@ function IndustryPanel({ world, onWorldChange, onNotice }: { world: WorldState; 
             return <div key={prospect.id} className="border border-border bg-background/30 p-2 text-xs"><div className="flex items-start justify-between gap-2"><span>{buyer?.flag} {buyer?.name ?? prospect.countryId} · {prospect.quantity} unités</span><span className="font-mono text-[10px] text-primary">{prospect.status}</span></div><div className="mt-1 text-muted-foreground">Sensibilité politique : {prospect.politicalSensitivity}/100</div>{pending && <div className="mt-2 flex gap-2"><Button size="sm" onClick={() => resolveProspect(product.id, prospect.id, 'authorize')}>Autoriser</Button><Button size="sm" variant="outline" onClick={() => resolveProspect(product.id, prospect.id, 'reject')}>Refuser</Button></div>}</div>;
           })}</div>}
         </div>;
-      })}</div>
+      })}{nationalProducts.length === 0 && <div className="col-span-full bg-card p-4 text-sm text-muted-foreground">Aucun produit vitrine n’est encore documenté pour ce pays. Les exportations d’armement détaillées restent indisponibles tant que cet inventaire n’est pas ajouté.</div>}</div>
     </div>
   </div>;
 }
@@ -593,7 +596,7 @@ function EnergyNegotiationPanel({
         <Stat label="Prix" value={offer.pricePosture === 'market' ? 'Marché' : offer.pricePosture === 'seller_premium' ? 'Prime fournisseur' : 'Décote'} detail={offer.priceSummary} />
         <Stat label="Moyens" value={offer.diplomaticEffort} detail={`${offer.adjustments.length} ajustement(s)`} />
       </div>
-      <p className="text-sm text-muted-foreground">L’administration a dimensionné l’offre selon les <b className="text-foreground">besoins français</b> et la <b className="text-foreground">capacité réellement disponible</b> du fournisseur. Vous pouvez l’envoyer telle quelle.</p>
+      <p className="text-sm text-muted-foreground">L’administration a dimensionné l’offre selon les <b className="text-foreground">besoins de {world.countries[world.playerCountryId].name}</b> et la <b className="text-foreground">capacité réellement disponible</b> du fournisseur. Vous pouvez l’envoyer telle quelle.</p>
       {leadership && <div className="border-l-2 border-primary bg-primary/5 p-3 text-xs"><b>Décision effective :</b> {leadership.figures.map((figure) => `${figure.name} (${figure.authorityShare} % d’autorité)`).join(' · ')}<span className="mt-1 block text-muted-foreground">Le moteur combine leurs orientations avec les contraintes de l’appareil politique du pays.</span></div>}
       {showAdjustments && !signedContractId && <div className="border border-border bg-muted/20 p-3">
         <div className="mb-2 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Ajustements facultatifs</div>
@@ -1065,6 +1068,24 @@ function DossiersPanel({ world, selectedId, onSelect, onWorldChange, onNotice, o
   const historicalAnchor = selected?.relatedAnchorId ? world.historicalAnchors?.[selected.relatedAnchorId] : undefined;
   const dossierImpact = selected ? dossierPressureProfile(world, selected) : null;
   const resolutionAssessment = selected ? assessDossierResolution(world, selected) : null;
+  const campaignCycle = selected?.kind === 'political_transition'
+    ? Object.values(world.politicalCycles).find((cycle) => cycle.dossierId === selected.id && cycle.countryId === world.playerCountryId)
+    : undefined;
+  const campaignAssessment = campaignCycle ? assessPoliticalSupport(world, campaignCycle.countryId, campaignCycle) : undefined;
+  const campaignProjection = campaignAssessment
+    ? campaignAssessment.supportScore - campaignAssessment.threshold > 8 ? 'Reconduction plutôt favorable'
+      : campaignAssessment.supportScore - campaignAssessment.threshold < -8 ? 'Alternance plutôt favorable'
+        : 'Scrutin indécis'
+    : 'Projection indisponible';
+  const chooseCampaignStrategy = (strategy: PoliticalCampaignStrategy) => {
+    const next = choosePoliticalCampaignStrategy(world, strategy);
+    if (next === world) {
+      onNotice('Cette posture ne peut plus être modifiée pour l’échéance en cours.');
+      return;
+    }
+    onWorldChange(next);
+    onNotice('Posture de campagne enregistrée : le résultat reste déterminé par la situation du pays.');
+  };
   const askDossierAI = async () => {
     if (!selected || dossierAIStatus === 'loading') return;
     const actors = selected.actorIds.map((id) => world.countries[id]?.name ?? id).join(', ');
@@ -1073,7 +1094,7 @@ function DossiersPanel({ world, selectedId, onSelect, onWorldChange, onNotice, o
       .flatMap((dialogue) => dialogue.turns.slice(-4).map((turn) => `${world.countries[turn.speakerId]?.name ?? turn.speakerId}: ${turn.publicMessage}`))
       .slice(-8);
     const question = `Dossier « ${selected.title} » (${selected.importance}) concernant ${actors || 'les acteurs documentés'}. `
-      + `À la date ${world.currentDate}, propose exactement trois réponses concrètes que la France pourrait envisager. `
+      + `À la date ${world.currentDate}, propose exactement trois réponses concrètes que ${world.countries[world.playerCountryId].name} pourrait envisager. `
       + 'Pour chacune, précise le levier, le calendrier, les réactions plausibles, les avantages, les risques et les conséquences estimées. Ne traite pas cette demande comme une action déjà exécutée.'
       + (dialogueHistory.length ? ` Intègre aussi ces échanges diplomatiques récents, sans les inventer : ${dialogueHistory.join(' | ')}` : '');
     const local = answerAdvisorQuestion(world, question, { questionKind: 'strategy' });
@@ -1223,6 +1244,15 @@ function DossiersPanel({ world, selectedId, onSelect, onWorldChange, onNotice, o
           {historicalAnchor.divergence && <p className="mt-2 border-l-2 border-cyan-300 pl-2 text-cyan-100"><b>Divergence :</b> {historicalAnchor.divergence.summary}</p>}
         </div>}
       </div>
+      {campaignCycle && campaignCycle.status === 'campaign' && <div className="border border-violet-400/35 bg-violet-400/5 p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3"><div><div className="font-mono text-[10px] uppercase tracking-wider text-violet-200">Échéance nationale · décision politique</div><h3 className="mt-1 text-lg font-semibold">Choisir la posture du gouvernement</h3></div><div className="text-right text-xs"><div className="text-muted-foreground">Projection actuelle</div><div className="font-mono text-base text-violet-100">{campaignProjection}</div></div></div>
+        <p className="mt-2 text-sm text-muted-foreground">Ces postures consomment des moyens réels ou modifient la stabilité de la transition. Aucune ne choisit directement le vainqueur.</p>
+        <div className="mt-3 grid gap-3 lg:grid-cols-3">{politicalCampaignOptions.map((option) => {
+          const selectedStrategy = campaignCycle.campaignStrategy === option.id;
+          return <div key={option.id} className={`border p-3 ${selectedStrategy ? 'border-violet-300 bg-violet-300/10' : 'border-border bg-background/25'}`}><div className="font-semibold">{option.title}</div><p className="mt-2 text-xs text-muted-foreground">{option.summary}</p><p className="mt-3 text-xs"><b>Engagement :</b> {option.cost}</p><p className="mt-1 text-xs text-amber-200"><b>Risque :</b> {option.risk}</p><Button className="mt-3 w-full" size="sm" variant={selectedStrategy ? 'default' : 'outline'} disabled={Boolean(campaignCycle.campaignStrategy)} onClick={() => chooseCampaignStrategy(option.id)}>{selectedStrategy ? 'Posture engagée' : 'Choisir cette posture'}</Button></div>;
+        })}</div>
+        <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2 lg:grid-cols-4">{campaignAssessment?.factors.filter((factor) => factor.label !== 'Posture de campagne').map((factor) => <div key={factor.label} className="border border-border/70 bg-background/25 p-2"><span className="text-muted-foreground">{factor.label}</span><div className="mt-1 font-mono">{factor.value.toFixed(1)}</div></div>)}</div>
+      </div>}
       {dossierAIForId === selected.id && dossierAIAnswer && <div className="border border-primary/45 bg-card/80 p-4">
         <div className="font-mono text-[10px] uppercase tracking-wider text-primary">Options IA · consultatives</div>
         <h3 className="mt-1 text-lg font-semibold">{dossierAIAnswer.headline}</h3>
@@ -1410,7 +1440,8 @@ function TurnBriefingPanel({ briefing, onOpenDossier }: { briefing: TurnBriefing
 }
 
 export default function Home() {
-  const [world, setWorld] = useState<WorldState>(() => createFrance2000World());
+  const [world, setWorld] = useState<WorldState>(() => createWorld2000('FRA'));
+  const [startingCountryId, setStartingCountryId] = useState<string>('FRA');
   const [pulseAudit, setPulseAudit] = useState<WorldPulseAIAuditEntry[]>(readWorldPulseAudit);
   const [panel, setPanel] = useState<Panel>('world');
   const [selectedDossierId, setSelectedDossierId] = useState<string | null>(null);
@@ -1419,6 +1450,7 @@ export default function Home() {
   const [lastBriefing, setLastBriefing] = useState<TurnBriefing | null>(null);
   const [isAdvancing, setIsAdvancing] = useState(false);
   const player = world.countries[world.playerCountryId];
+  useEffect(() => { setStartingCountryId(world.playerCountryId); }, [world.playerCountryId]);
   const autonomousCount = useMemo(() => new Set(world.actions.filter((action) => action.origin === 'local_rule').map((action) => action.actorId)).size, [world.actions]);
   const dossierAlerts = useMemo(() => dossiersRequiringAttention(world), [world]);
   const openDossier = (id: string) => { setSelectedDossierId(id); setPanel('dossiers'); };
@@ -1487,14 +1519,19 @@ export default function Home() {
       setNotice('La sauvegarde locale est illisible ou obsolète.');
     }
   };
-  const reset = () => { setWorld(createFrance2000World()); setLastBriefing(null); setNotice('Scénario 2000 réinitialisé.'); };
+  const reset = () => { setWorld(createWorld2000(world.playerCountryId)); setLastBriefing(null); setNotice(`Scénario ${player.name} · 2000 réinitialisé.`); };
+  const startCountryGame = () => {
+    const next = createWorld2000(startingCountryId);
+    setWorld(next); setLastBriefing(null); setSelectedDossierId(null); setSelectedDialogueId(null); setPanel('world');
+    setNotice(`Nouvelle partie ${next.countries[next.playerCountryId].name} · 1er janvier 2000 chargée.`);
+  };
   const clearPulseAudit = () => { localStorage.removeItem(worldPulseAuditStorageKey); setPulseAudit([]); };
 
   return <main className="min-h-screen bg-background text-foreground">
     <header className="sticky top-0 z-20 border-b border-border bg-background/95 backdrop-blur">
       <div className="mx-auto flex max-w-[1600px] flex-wrap items-center gap-3 px-4 py-3 lg:px-6">
         <div className="mr-auto"><div className="font-mono text-xs font-bold tracking-[0.3em] text-primary">ORDO</div><div className="text-xs text-muted-foreground">laboratoire du moteur géopolitique</div></div>
-        <div className="border border-border bg-card px-3 py-2 text-sm"><b>{player.flag} {player.name}</b> · <span className="font-mono text-primary">{world.currentDate}</span></div>
+        <div className="flex items-stretch border border-border bg-card text-sm"><div className="px-3 py-2"><b>{player.flag} {player.name}</b> · <span className="font-mono text-primary">{world.currentDate}</span></div><select aria-label="Pays d’une nouvelle partie" className="max-w-40 border-l border-border bg-background px-2 text-xs" value={startingCountryId} onChange={(event) => setStartingCountryId(event.target.value)}>{Object.values(world.countries).sort((a, b) => a.name.localeCompare(b.name, 'fr')).map((country) => <option key={country.id} value={country.id}>{country.flag} {country.name}</option>)}</select><Button variant="ghost" className="rounded-none border-l border-border" onClick={startCountryGame}>Nouvelle partie</Button></div>
         <div className="flex gap-1"><Button variant="outline" disabled={isAdvancing} onClick={() => advance(1)}>{isAdvancing && <LoaderCircle className="size-3 animate-spin" />}+ 1 mois</Button><Button variant="outline" disabled={isAdvancing} onClick={() => advance(3)}>+ 3 mois</Button><Button disabled={isAdvancing} onClick={() => advance(12)}>+ 1 an</Button></div>
         <div className="flex gap-1"><Button size="icon" variant="ghost" title="Sauvegarder" onClick={save}><Save /></Button><Button size="icon" variant="ghost" title="Charger" onClick={load}><Archive /></Button><Button size="icon" variant="ghost" title="Réinitialiser" onClick={reset}><RotateCcw /></Button></div>
       </div>
