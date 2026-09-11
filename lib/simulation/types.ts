@@ -1191,6 +1191,40 @@ export type ActionProgram = {
   resolution?: string;
   /** Intention vérifiée à l'origine du programme, sans effets exécutables. */
   intentSpec?: import('./action-intents').ActionIntent;
+  /** Commande locale de mouvement militaire, résolue par le programme. */
+  militaryOperation?: MilitaryTheaterOperation;
+};
+
+export type MilitaryTheaterStatus = 'home' | 'active' | 'reserve' | 'withdrawn';
+export type MilitaryTheaterAccess = 'national' | 'host_consent' | 'allied' | 'contested' | 'unknown';
+export type MilitaryTheaterActionKind = 'reinforce' | 'withdraw' | 'redeploy';
+
+export type MilitaryTheaterOperation = {
+  id: string;
+  programId?: string;
+  kind: MilitaryTheaterActionKind;
+  sourceTheaterId: string;
+  targetTheaterId: string;
+  amountThousands: number;
+  startedAt: ISODate;
+  completesAt: ISODate;
+};
+
+/** État dynamique d'un théâtre : la fiche 2000 sert de base, ces valeurs évoluent. */
+export type MilitaryTheater = {
+  id: string;
+  countryId: CountryId;
+  location: string;
+  hostCountryIds: CountryId[];
+  personnelThousands: number;
+  availablePersonnelThousands: number;
+  inTransitPersonnelThousands: number;
+  mission: string;
+  status: MilitaryTheaterStatus;
+  readiness: number;
+  supplyCoverageMonths: number;
+  access: MilitaryTheaterAccess;
+  currentOperation?: MilitaryTheaterOperation;
 };
 
 export type WorldEffect =
@@ -1241,7 +1275,9 @@ export type WorldEffect =
   | { kind: 'ai_job_add'; job: AIJob; reason: string; visibility?: Visibility }
   | { kind: 'ai_job_patch'; jobId: string; patch: AIJobPatch; reason: string; visibility?: Visibility }
   | { kind: 'action_program_add'; program: ActionProgram; reason: string; visibility?: Visibility }
-  | { kind: 'action_program_patch'; programId: string; patch: Partial<ActionProgram>; reason: string; visibility?: Visibility };
+  | { kind: 'action_program_patch'; programId: string; patch: Partial<ActionProgram>; reason: string; visibility?: Visibility }
+  | { kind: 'military_theater_add'; theater: MilitaryTheater; reason: string; visibility?: Visibility }
+  | { kind: 'military_theater_patch'; theaterId: string; patch: Partial<MilitaryTheater>; reason: string; visibility?: Visibility };
 
 export type ActionDraft = {
   kind: ActionKind;
@@ -1398,6 +1434,7 @@ export type WorldState = {
   powerStruggleCampaigns: Record<string, PowerStruggleCampaign>;
   aiJobs: Record<string, AIJob>;
   actionPrograms: Record<string, ActionProgram>;
+  militaryTheaters: Record<string, MilitaryTheater>;
   diplomaticSessions: Record<string, DiplomaticSession>;
   diplomaticDialogues: Record<string, DiplomaticDialogue>;
   sectors: Record<string, StrategicSectorState>;

@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import { answerAdvisorQuestion, assessStrategicPlan, classifyAdvisorQuestion } from './advisor';
 import { createAdvisorAIRequest } from '../ai/contracts';
-import { advanceCommonActionPrograms, launchCommonAction, prepareCommonAction, prepareDossierDelegation } from './action-programs';
+import { advanceCommonActionPrograms, launchCommonAction, prepareCommonAction, prepareDossierDelegation, prepareMilitaryTheaterAction } from './action-programs';
 import { energyBalance, nodeAvailableExport, proposeEnergyContract } from './energy';
 import {
   acceptEnergyOffer, adjustEnergyOffer, createAdministrativeEnergyOffer, sendEnergyOffer,
@@ -44,6 +44,7 @@ import { queueAutonomousProgram } from './ai/autonomous-programs';
 import { authorizeArmamentProspect, createAutomaticArmamentProspects, rankArmamentProspectBuyers, rejectArmamentProspect } from './industry';
 import { advancePoliticalCycles, assessPoliticalSupport, choosePoliticalCampaignStrategy, politicalCampaignDecisionPrompt, politicalCycleStops } from './political-cycles';
 import { nationalReformEffects, reformStateKey } from './reforms';
+import { militaryTheatersForCountry } from './military-theaters';
 
 test('le scénario 2000 charge un monde cohérent et jouable', () => {
   const state = createFrance2000World();
@@ -1933,6 +1934,49 @@ test('les principales puissances disposent d’un déploiement régional total c
     const total = defense!.deployments!.reduce((sum, deployment) => sum + deployment.personnelThousands, 0);
     assert.equal(total, defense!.activePersonnelThousands, `${countryId} : déploiements et effectifs doivent coïncider`);
   }
+});
+
+test('un renforcement de théâtre réserve puis transfère les personnels sans créer de troupes', () => {
+  const initial = createFrance2000World();
+  const theaters = militaryTheatersForCountry(initial, 'FRA');
+  const africa = theaters.find((theater) => theater.location === 'Afrique');
+  const reserve = theaters.find((theater) => theater.status === 'reserve');
+  assert.ok(africa && reserve);
+  if (!africa || !reserve) return;
+  const totalBefore = theaters.reduce((sum, theater) => sum + theater.personnelThousands, 0);
+  const prepared = prepareMilitaryTheaterAction(initial, africa.id, 'reinforce', 5);
+  assert.equal(prepared.ok, true);
+  if (!prepared.ok) return;
+  const launched = launchCommonAction(initial, { ...prepared.action, successProbability: 100 });
+  assert.equal(launched.ok, true);
+  if (!launched.ok) return;
+  assert.equal(launched.state.militaryTheaters[africa.id].inTransitPersonnelThousands, 5);
+  assert.equal(launched.state.militaryTheaters[reserve.id].availablePersonnelThousands, reserve.availablePersonnelThousands - 5);
+  const resolved = advanceCommonActionPrograms(launched.state, 3);
+  const after = militaryTheatersForCountry(resolved, 'FRA');
+  assert.equal(after.find((theater) => theater.id === africa.id)?.currentOperation, undefined);
+  assert.equal(after.reduce((sum, theater) => sum + theater.personnelThousands, 0), totalBefore);
+  assert.equal(after.find((theater) => theater.id === africa.id)?.personnelThousands, africa.personnelThousands + 5);
+});
+
+test('un redéploiement de théâtre conserve les effectifs et bloque les opérations concurrentes', () => {
+  const initial = createFrance2000World();
+  const theaters = militaryTheatersForCountry(initial, 'FRA');
+  const africa = theaters.find((theater) => theater.location === 'Afrique');
+  const balkans = theaters.find((theater) => theater.location === 'Balkans');
+  assert.ok(africa && balkans);
+  if (!africa || !balkans) return;
+  const prepared = prepareMilitaryTheaterAction(initial, africa.id, 'redeploy', 5, balkans.id);
+  assert.equal(prepared.ok, true);
+  if (!prepared.ok) return;
+  const launched = launchCommonAction(initial, { ...prepared.action, successProbability: 100 });
+  assert.equal(launched.ok, true);
+  if (!launched.ok) return;
+  const duplicate = prepareMilitaryTheaterAction(launched.state, africa.id, 'withdraw', 5);
+  assert.equal(duplicate.ok, false);
+  const resolved = advanceCommonActionPrograms(launched.state, 2);
+  assert.equal(resolved.militaryTheaters[africa.id].personnelThousands, africa.personnelThousands - 5);
+  assert.equal(resolved.militaryTheaters[balkans.id].personnelThousands, balkans.personnelThousands + 5);
 });
 
 test('un programme autonome diplomatique ne peut pas cibler son propre État', () => {

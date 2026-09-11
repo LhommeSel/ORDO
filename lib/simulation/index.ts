@@ -18,6 +18,7 @@ export * from './intent';
 export * from './engine';
 export * from './history';
 export * from './industry';
+export * from './military-theaters';
 export * from './ledger';
 export * from './minor-events';
 export * from './macro-data-2000';

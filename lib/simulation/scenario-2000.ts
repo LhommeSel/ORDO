@@ -27,6 +27,7 @@ import { assertValidCountryRegistry } from './data-validator';
 import { defenseReferences2000ForValidation } from './country-sheet';
 import { createHistoricalAnchors2000 } from './historical-anchors-2000';
 import { createNationalReforms2000 } from './reforms';
+import { createMilitaryTheaters2000 } from './military-theaters';
 
 const capacities = (values: Partial<Record<keyof CapacityState, [number, number]>> = {}): CapacityState => ({
   government: { maximum: values.government?.[0] ?? 55, committed: values.government?.[1] ?? 25 },
@@ -593,6 +594,7 @@ export function createWorld2000(requestedPlayerCountryId: CountryId = 'FRA'): Wo
     powerStruggleCampaigns: {},
     aiJobs: {},
     actionPrograms: {},
+    militaryTheaters: createMilitaryTheaters2000(),
     diplomaticSessions: {},
     diplomaticDialogues: {},
     sectors: createStrategicSectors2000(allCountries, structuralProfiles, macroEconomies, sectors),

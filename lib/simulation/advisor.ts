@@ -5,6 +5,7 @@ import { interpretPlayerIntent, rankEnergySuppliers, type PlayerIntent } from '.
 import { relationBetween } from './ledger';
 import type { AdvisorQuestionDimension, AdvisorQuestionKind, AdvisorResponseMode } from '../ai/contracts';
 import { countryIdsMentionedInText, countryMentionedInText, countrySheet } from './country-sheet';
+import { militaryTheatersForCountry } from './military-theaters';
 import type {
   AiBudgetPolicy,
   CapacityDomainId,
@@ -127,13 +128,20 @@ function collectCountryFacts(state: WorldState, countryId: CountryId, prefix: st
       { id: `${prefix}-defense-personnel`, label: `${labelPrefix}Effectifs actifs`, value: `${defense.activePersonnelThousands.toFixed(0)} milliers · ${defense.posture}${defense.modelingLevel === 'aggregate' ? ' · ordre de grandeur ORDO' : ''}`, confidence: 100, sourcePath: defense.modelingLevel === 'aggregate' ? `countries.${countryId}.metrics.security` : `defenseReference2000.${countryId}.activePersonnelThousands` },
     );
     if (defense.deployments?.length) {
-      const deploymentSummary = defense.deployments.map((deployment) => {
-        const countries = deployment.countryBreakdown?.map((item) => `${state.countries[item.countryId]?.name ?? item.countryId} ${item.personnelThousands} k`).join(', ');
-        return `${deployment.location}: ${deployment.personnelThousands} k${countries ? ` [${countries}]` : ''}`;
-      }).join(' ; ');
+      const dynamicTheaters = militaryTheatersForCountry(state, countryId);
+      const deploymentSummary = dynamicTheaters.length
+        ? dynamicTheaters.map((deployment) => {
+          const countries = defense.deployments?.find((item) => item.location === deployment.location)?.countryBreakdown?.map((item) => `${state.countries[item.countryId]?.name ?? item.countryId} ${item.personnelThousands} k`).join(', ');
+          const dynamic = `, disponible ${deployment.availablePersonnelThousands.toFixed(1)} k, préparation ${deployment.readiness}/100, ravitaillement ${deployment.supplyCoverageMonths.toFixed(1)} mois${deployment.currentOperation ? `, mouvement prévu le ${deployment.currentOperation.completesAt}` : ''}`;
+          return `${deployment.location}: ${deployment.personnelThousands} k${dynamic}${countries ? ` [${countries}]` : ''}`;
+        }).join(' ; ')
+        : defense.deployments.map((deployment) => {
+          const countries = deployment.countryBreakdown?.map((item) => `${state.countries[item.countryId]?.name ?? item.countryId} ${item.personnelThousands} k`).join(', ');
+          return `${deployment.location}: ${deployment.personnelThousands} k${countries ? ` [${countries}]` : ''}`;
+        }).join(' ; ');
       facts.push({
         id: `${prefix}-defense-deployments`, label: `${labelPrefix}Déploiement géographique`, value: deploymentSummary,
-        confidence: 100, sourcePath: `defenseReference2000.${countryId}.deployments`,
+        confidence: 100, sourcePath: dynamicTheaters.length ? `militaryTheaters.${countryId}` : `defenseReference2000.${countryId}.deployments`,
       });
     }
   }

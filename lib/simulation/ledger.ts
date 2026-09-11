@@ -544,6 +544,32 @@ function applyEffect(state: WorldState, action: WorldAction, effect: WorldEffect
     return appendChange(next, action, effect, `actionPrograms.${effect.programId}`, program, after);
   }
 
+  if (effect.kind === 'military_theater_add') {
+    const theaters = state.militaryTheaters ?? {};
+    const before = theaters[effect.theater.id] ?? null;
+    const after = before ?? effect.theater;
+    const next = { ...state, militaryTheaters: { ...theaters, [effect.theater.id]: after } };
+    return appendChange(next, action, effect, `militaryTheaters.${effect.theater.id}`, before, after);
+  }
+
+  if (effect.kind === 'military_theater_patch') {
+    const theater = state.militaryTheaters?.[effect.theaterId];
+    if (!theater) return state;
+    const before = Object.fromEntries(Object.keys(effect.patch).map((key) => [key, theater[key as keyof typeof theater]]));
+    const raw = { ...theater, ...effect.patch };
+    const afterTheater = {
+      ...raw,
+      personnelThousands: Number(Math.max(0, raw.personnelThousands).toFixed(2)),
+      availablePersonnelThousands: Number(Math.max(0, raw.availablePersonnelThousands).toFixed(2)),
+      inTransitPersonnelThousands: Number(Math.max(0, raw.inTransitPersonnelThousands).toFixed(2)),
+      readiness: Number(clamp(raw.readiness).toFixed(2)),
+      supplyCoverageMonths: Number(Math.max(0, raw.supplyCoverageMonths).toFixed(2)),
+    };
+    const after = Object.fromEntries(Object.keys(effect.patch).map((key) => [key, afterTheater[key as keyof typeof afterTheater]]));
+    const next = { ...state, militaryTheaters: { ...state.militaryTheaters, [effect.theaterId]: afterTheater } };
+    return appendChange(next, action, effect, `militaryTheaters.${effect.theaterId}`, before, after);
+  }
+
   const product = state.armamentProducts[effect.productId];
   if (!product) return state;
   const after = { ...product, ...effect.patch };

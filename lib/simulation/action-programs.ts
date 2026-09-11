@@ -8,6 +8,7 @@ import { evaluateStrategicAction } from './decision-making';
 import { evaluatePoliticalPathway } from './politics';
 import { stakeholderReactionEffects } from './stakeholders';
 import { nationalReformEffects, nationalReformSupport, reformDomainFromText, reformOptionForText } from './reforms';
+import { militaryTheaterDossier, militaryTheaterReservationEffects, militaryTheaterResolutionEffects, validateMilitaryTheaterCommand } from './military-theaters';
 import type {
   ActionKind,
   ActionProgram,
@@ -16,6 +17,8 @@ import type {
   CountryId,
   HistoricalInterventionDirection,
   ISODate,
+  MilitaryTheaterActionKind,
+  MilitaryTheaterOperation,
   WorldEffect,
   WorldState,
 } from './types';
@@ -509,6 +512,10 @@ export function launchCommonAction(state: WorldState, prepared: PreparedCommonAc
     ...(program.lever === 'national_reform' && reformDomainFromText(program.intent)
       ? [{ kind: 'national_reform_patch' as const, countryId: program.actorId, domain: reformDomainFromText(program.intent)!, patch: { activeProgramId: program.id }, reason: 'La réforme est inscrite comme programme national en cours.', visibility: 'player' as const }]
       : []),
+    ...(program.militaryOperation
+      ? militaryTheaterReservationEffects(state, { ...program.militaryOperation, programId: program.id })
+        .concat(militaryTheaterDossier(state, { ...program.militaryOperation, programId: program.id }) ?? [])
+      : []),
   ];
   return {
     ok: true as const,
@@ -562,12 +569,15 @@ export function advanceCommonActionPrograms(state: WorldState, elapsedMonths: nu
     const failureEffects: WorldEffect[] = outcome === 'failed'
       ? [{ kind: 'metric_delta', countryId: program.actorId, metric: 'stability', delta: -0.5, reason: 'L’échec visible du programme entame légèrement la crédibilité du gouvernement.' }]
       : [];
+    const militaryEffects = program.militaryOperation
+      ? militaryTheaterResolutionEffects(next, program.militaryOperation, outcome)
+      : [];
     next = commitWorldAction(next, {
       kind: categoryKinds[program.category], actorId: program.actorId, targetIds: program.targetIds,
       origin: 'time', intent: `Résoudre : ${program.title}`,
         effects: [
           { kind: 'action_program_patch', programId: program.id, patch: { progressMonths: program.durationMonths, status: outcome, resolution }, reason: resolution },
-        ...releaseEffects, ...resultEffects, ...failureEffects,
+        ...releaseEffects, ...resultEffects, ...failureEffects, ...militaryEffects,
         ...linkedDossierResolutionEffects(next, program, outcome, resolution),
         ...historicalAnchorResolutionEffects(next, program, outcome),
         ...(program.linkedDossierId ? [] : diplomaticResolutionEffects(next, program, outcome, resolution)),
@@ -575,4 +585,66 @@ export function advanceCommonActionPrograms(state: WorldState, elapsedMonths: nu
     });
   }
   return next;
+}
+
+/** Prépare un mouvement concret à partir d'un théâtre existant. */
+export function prepareMilitaryTheaterAction(
+  state: WorldState,
+  theaterId: string,
+  kind: MilitaryTheaterActionKind,
+  amountThousands = 5,
+  destinationTheaterId?: string,
+): CommonActionPreparation {
+  const validation = validateMilitaryTheaterCommand(state, theaterId, kind, amountThousands, destinationTheaterId);
+  if (!validation.ok) return validation;
+  const { operation: command, source, target, warnings: theaterWarnings } = validation;
+  const actionText = kind === 'reinforce'
+    ? `Renforcer le théâtre militaire ${target.location} de ${state.countries[state.playerCountryId]?.name ?? state.playerCountryId}`
+    : kind === 'withdraw'
+      ? `Retirer des forces du théâtre militaire ${source.location} vers ${target.location}`
+      : `Redéployer des forces de ${source.location} vers ${target.location}`;
+  const base = prepareCommonAction(state, actionText, { category: 'defense', source: 'player' });
+  if (!base.ok) return base;
+  const durationMonths = kind === 'withdraw' ? 1 : kind === 'redeploy' ? 2 : 3;
+  const budgetCost = Number((kind === 'reinforce' ? 0.35 + command.amountThousands * 0.12 : kind === 'redeploy' ? 0.25 + command.amountThousands * 0.07 : 0.18 + command.amountThousands * 0.04).toFixed(1));
+  const requiredCapacities = kind === 'reinforce'
+    ? [{ domain: 'defense' as const, commitment: 9 }, { domain: 'diplomacy' as const, commitment: 3 }, { domain: 'government' as const, commitment: 3 }]
+    : kind === 'redeploy'
+      ? [{ domain: 'defense' as const, commitment: 7 }, { domain: 'administration' as const, commitment: 3 }, { domain: 'government' as const, commitment: 2 }]
+      : [{ domain: 'defense' as const, commitment: 4 }, { domain: 'administration' as const, commitment: 2 }, { domain: 'government' as const, commitment: 1 }];
+  const operation: MilitaryTheaterOperation = {
+    id: `theater-op-${state.sequence + 1}-${kind}-${target.id}`,
+    kind,
+    sourceTheaterId: command.sourceTheaterId,
+    targetTheaterId: command.targetTheaterId,
+    amountThousands: command.amountThousands,
+    startedAt: state.currentDate,
+    completesAt: addMonths(state.currentDate, durationMonths),
+  };
+  const successEffects: WorldEffect[] = [
+    { kind: 'metric_delta', countryId: state.playerCountryId, metric: 'security', delta: kind === 'withdraw' ? 0.2 : kind === 'redeploy' ? 0.8 : 1.5, reason: kind === 'withdraw' ? 'Le retrait réduit une exposition extérieure sans désorganiser la défense nationale.' : 'La manœuvre améliore la posture militaire une fois les forces disponibles.' },
+  ];
+  const partialEffects: WorldEffect[] = [
+    { kind: 'metric_delta', countryId: state.playerCountryId, metric: 'security', delta: kind === 'withdraw' ? 0 : 0.35, reason: 'La manœuvre aboutit avec une disponibilité et une coordination incomplètes.' },
+  ];
+  const cleanedBaseWarnings = base.warnings.filter((warning) => !warning.includes('moyens engagés dépassent'));
+  return {
+    ok: true,
+    warnings: [...cleanedBaseWarnings, ...theaterWarnings, `Les ${command.amountThousands.toFixed(1)} k personnels restent engagés jusqu’au ${operation.completesAt}.`],
+    action: {
+      ...base.action,
+      title: `${kind === 'reinforce' ? 'Renforcement' : kind === 'withdraw' ? 'Retrait' : 'Redéploiement'} · ${target.location}`,
+      intent: actionText,
+      targetIds: [...new Set(target.hostCountryIds)],
+      durationMonths,
+      requiredCapacities,
+      budgetCost,
+      successProbability: Math.round(Math.max(25, Math.min(90, base.action.successProbability + (target.access === 'unknown' ? -12 : 4) + (kind === 'withdraw' ? 8 : 0)))),
+      risks: [...new Set([...base.action.risks.filter((risk) => !risk.includes('moyens engagés dépassent')), ...theaterWarnings, 'Un retard logistique ou une réaction du pays hôte peut réduire la disponibilité effective.'])],
+      successEffects,
+      partialEffects,
+      militaryOperation: operation,
+      intentSpec: { ...base.action.intentSpec!, objective: actionText },
+    },
+  };
 }

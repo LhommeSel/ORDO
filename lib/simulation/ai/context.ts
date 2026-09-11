@@ -7,6 +7,7 @@ import type {
   Visibility,
   WorldState,
 } from '../types';
+import { militaryTheatersForCountry } from '../military-theaters';
 
 export type AIContextDomain =
   | 'overview'
@@ -216,6 +217,15 @@ export function collectFacts(state: WorldState): AIContextFact[] {
     if (macro) add({ id: `country:${country.id}:macro`, domain: 'economy', entityIds: [country.id], topicTags: ['pib', 'croissance', 'inflation', 'chomage', 'dette'], importance: 92, confidence: macro.source.confidence, visibility: 'public', sourcePath: `macroEconomies.${country.id}`, observedAt: macro.lastUpdatedAt, statement: `${country.name}: PIB réel ${macro.realGdpBillion2000Usd.toFixed(1)} Md$ 2000; croissance ${macro.realGrowthAnnualPct.toFixed(2)} %; inflation ${macro.inflationAnnualPct.toFixed(2)} %; chômage ${macro.unemploymentPct.toFixed(2)} %; dette publique ${macro.publicDebtPctGdp.toFixed(1)} % du PIB; solde budgétaire ${macro.fiscalBalancePctGdp.toFixed(1)} %.` });
     const energy = state.countryEnergy[country.id];
     if (energy) add({ id: `country:${country.id}:energy`, domain: 'energy', entityIds: [country.id], topicTags: ['petrole', 'gaz', 'stocks', 'dependance'], importance: 84, confidence: country.statisticalReliability, visibility: 'public', sourcePath: `countryEnergy.${country.id}`, statement: `${country.name}: pétrole demande/production/stocks ${energy.annualDemand.oil}/${energy.domesticProduction.oil}/${energy.strategicStocks.oil}; gaz ${energy.annualDemand.gas}/${energy.domesticProduction.gas}/${energy.strategicStocks.gas}.` });
+    const militaryTheaters = militaryTheatersForCountry(state, country.id);
+    if (militaryTheaters.length) add({
+      id: `country:${country.id}:military-theaters`, domain: 'military',
+      entityIds: [country.id, ...militaryTheaters.flatMap((theater) => theater.hostCountryIds)],
+      topicTags: ['militaire', 'deploiement', 'theatre', 'ravitaillement'],
+      importance: 84, confidence: 100, visibility: 'public',
+      sourcePath: `militaryTheaters.${country.id}`,
+      statement: `${country.name}: ${militaryTheaters.map((theater) => `${theater.location} ${theater.personnelThousands.toFixed(1)} k, disponibles ${theater.availablePersonnelThousands.toFixed(1)} k, préparation ${theater.readiness}/100, ravitaillement ${theater.supplyCoverageMonths.toFixed(1)} mois${theater.currentOperation ? `, opération jusqu'au ${theater.currentOperation.completesAt}` : ''}`).join(' ; ')}.`,
+    });
   }
 
   for (const [key, relation] of Object.entries(state.relations)) add({ id: `relation:${key}`, domain: 'diplomacy', entityIds: [relation.from, relation.to], topicTags: ['relation', 'confiance', 'commerce', 'securite'], importance: 82, confidence: 95, visibility: 'public', sourcePath: `relations.${key}`, statement: `${relation.from} → ${relation.to}: relation ${relation.relation.toFixed(0)}, confiance ${relation.trust.toFixed(0)}, commerce ${relation.tradeIntensity.toFixed(0)}, alignement sécuritaire ${relation.securityAlignment.toFixed(0)}.` });

@@ -40,6 +40,8 @@ import {
   buildTurnBriefing,
   assessPoliticalSupport, choosePoliticalCampaignStrategy, politicalCampaignOptions, politicalCycleStops,
   countrySheet,
+  militaryTheatersForCountry,
+  prepareMilitaryTheaterAction,
   nationalReformOptions, reformPositionLabel, reformStateKey,
   type AdvisorAnswer, type AdvisorQuestionKind, type EnergyAdministrativeOffer, type EnergyCounterpartResponse,
   type CommonActionCategory, type CountryId, type EnergyOfferAdjustment, type HistoricalInterventionDirection, type ISODate, type StrategicDossier, type StrategicPlan,
@@ -347,7 +349,11 @@ function MapPanel({ world }: { world: WorldState }) {
   const politicalCycle = world.politicalCycles?.[selectedCountryId];
   const activeMetrics = useMemo(() => Object.fromEntries(Object.keys(world.countries).map((id) => [id, 100])), [world.countries]);
   const activeCountries = Object.values(world.countries).sort((a, b) => b.weight - a.weight);
-  const deployments = useMemo(() => sheet?.defense?.deployments ?? [], [sheet]);
+  const referenceDeployments = useMemo(() => sheet?.defense?.deployments ?? [], [sheet]);
+  const dynamicTheaters = useMemo(() => militaryTheatersForCountry(world, selectedCountryId), [world, selectedCountryId]);
+  const deployments = useMemo(() => dynamicTheaters.length
+    ? dynamicTheaters.map((theater) => ({ ...theater, countryBreakdown: referenceDeployments.find((item) => item.location === theater.location)?.countryBreakdown }))
+    : referenceDeployments, [dynamicTheaters, referenceDeployments]);
   const filteredDeployments = useMemo(() => {
     const query = deploymentQuery.trim().toLocaleLowerCase('fr');
     if (!query) return deployments;
@@ -449,20 +455,28 @@ function StructuralDiagnosisCard({ diagnosis }: { diagnosis: StructuralDiagnosis
   </details>;
 }
 
-function MilitaryPanel({ world, onNotice }: { world: WorldState; onNotice: (message: string) => void }) {
+function MilitaryPanel({ world, onWorldChange, onNotice }: { world: WorldState; onWorldChange: (world: WorldState) => void; onNotice: (message: string) => void }) {
   const countries = useMemo(() => Object.values(world.countries).sort((a, b) => a.name.localeCompare(b.name, 'fr')), [world.countries]);
   const [selectedId, setSelectedId] = useState(world.playerCountryId);
   const [theaterAI, setTheaterAI] = useState<Record<string, string>>({});
   const [theaterAILoading, setTheaterAILoading] = useState<string | null>(null);
   const [selectedTheaterLocation, setSelectedTheaterLocation] = useState<string | null>(null);
+  const [theaterActionLoading, setTheaterActionLoading] = useState<string | null>(null);
+  const [redeployTargets, setRedeployTargets] = useState<Record<string, string>>({});
   useEffect(() => { if (!world.countries[selectedId]) setSelectedId(world.playerCountryId); }, [selectedId, world.countries, world.playerCountryId]);
   useEffect(() => { setSelectedTheaterLocation(null); setTheaterAILoading(null); }, [selectedId]);
   const selected = world.countries[selectedId] ?? world.countries[world.playerCountryId];
-  const sheet = selected ? countrySheet(world, selected.id) : null;
+  const sheet = useMemo(() => selected ? countrySheet(world, selected.id) : null, [selected, world]);
   const defense = sheet?.defense;
   const unitTotal = defense?.unitTypes?.reduce((total, unit) => total + unit.personnelThousands, 0) ?? defense?.activePersonnelThousands ?? 0;
-  const deploymentTotal = defense?.deployments?.reduce((total, deployment) => total + deployment.personnelThousands, 0) ?? 0;
-  const theaterDeployments = defense?.deployments?.filter((deployment) => !/métropole|réserve|rotation/i.test(deployment.location)) ?? [];
+  const dynamicTheaters = useMemo(() => selected ? militaryTheatersForCountry(world, selected.id) : [], [selected, world]);
+  const referenceDeployments = useMemo(() => defense?.deployments ?? [], [defense]);
+  const theaterRows = useMemo(() => dynamicTheaters.length
+    ? dynamicTheaters.map((theater) => ({ ...theater, countryBreakdown: referenceDeployments.find((item) => item.location === theater.location)?.countryBreakdown }))
+    : referenceDeployments.map((deployment, index) => ({
+      id: `reference-${selected?.id ?? 'country'}-${index}`, countryId: selected?.id ?? '', location: deployment.location, hostCountryIds: (deployment.countryBreakdown ?? []).map((item) => item.countryId), personnelThousands: deployment.personnelThousands, availablePersonnelThousands: deployment.personnelThousands, inTransitPersonnelThousands: 0, mission: deployment.mission, status: /métropole/i.test(deployment.location) ? 'home' as const : /réserve|rotation/i.test(deployment.location) ? 'reserve' as const : 'active' as const, readiness: 0, supplyCoverageMonths: 0, access: 'unknown' as const, currentOperation: undefined, countryBreakdown: deployment.countryBreakdown })), [dynamicTheaters, referenceDeployments, selected?.id]);
+  const deploymentTotal = theaterRows.reduce((total, deployment) => total + deployment.personnelThousands, 0);
+  const theaterDeployments = theaterRows.filter((deployment) => !/métropole|réserve|rotation/i.test(deployment.location));
   const theaterTotal = theaterDeployments.reduce((total, deployment) => total + deployment.personnelThousands, 0);
   const combatAvailable = defense ? defense.activePersonnelThousands * (defense.combatAvailabilityPct ?? 35) / 100 : 0;
   const sustainableProjection = defense ? defense.activePersonnelThousands * (defense.sustainableProjectionPct ?? 20) / 100 : 0;
@@ -488,6 +502,18 @@ function MilitaryPanel({ world, onNotice }: { world: WorldState; onNotice: (mess
     } catch { onNotice('Le serveur IA est inaccessible ; aucune recommandation n’a été appliquée.'); }
     finally { setTheaterAILoading(null); }
   };
+  const launchTheaterAction = (theaterId: string, kind: 'reinforce' | 'withdraw' | 'redeploy', destinationTheaterId?: string) => {
+    if (theaterActionLoading || selected?.id !== world.playerCountryId) return;
+    const prepared = prepareMilitaryTheaterAction(world, theaterId, kind, 5, destinationTheaterId);
+    if (!prepared.ok) { onNotice(prepared.error); return; }
+    const key = `${theaterId}:${kind}`;
+    setTheaterActionLoading(key);
+    const launched = launchCommonAction(world, prepared.action);
+    if (!launched.ok) { setTheaterActionLoading(null); onNotice(launched.error); return; }
+    onWorldChange(launched.state);
+    setTheaterActionLoading(null);
+    onNotice(`${prepared.action.title} engagé · résolution prévue dans ${prepared.action.durationMonths} mois.`);
+  };
   return <div className="space-y-4">
     <section className="border border-border bg-card/70 p-4">
       <div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex items-center gap-2 font-semibold"><Shield className="size-4 text-primary" /> Dossier militaire</div><p className="mt-1 text-xs text-muted-foreground">Effectifs par type d’unité, qualité estimée et projection géographique. Les données sont un référentiel jouable de l’année 2000.</p></div><select aria-label="Pays du dossier militaire" value={selected?.id ?? world.playerCountryId} onChange={(event) => setSelectedId(event.target.value)} className="border border-border bg-background px-2 py-1.5 text-sm">{countries.map((country) => <option key={country.id} value={country.id}>{country.flag} {country.name}</option>)}</select></div>
@@ -496,7 +522,7 @@ function MilitaryPanel({ world, onNotice }: { world: WorldState; onNotice: (mess
         <div className="mt-4 grid gap-2 sm:grid-cols-3"><Stat label="Aptes au combat" value={`${combatAvailable.toFixed(0)} k`} detail={`${defense.combatAvailabilityPct ?? 35}% des actifs`} /><Stat label="Projection durable" value={`${sustainableProjection.toFixed(0)} k`} detail={`${defense.sustainableProjectionPct ?? 20}% des actifs`} /><Stat label="Sur théâtres" value={`${theaterTotal.toFixed(0)} k`} detail={`${(theaterTotal / Math.max(1, defense.activePersonnelThousands) * 100).toFixed(0)}% des actifs`} /></div>
         <div className="mt-4 grid gap-px bg-border lg:grid-cols-2">
           <section className="bg-card p-4"><div className="font-mono text-[10px] uppercase tracking-wider text-primary">Effectifs par type d’unité</div><div className="mt-3 space-y-2">{defense.unitTypes?.map((unit) => <div key={unit.id} className="border-b border-border/70 pb-2 last:border-0"><div className="flex items-center justify-between gap-3 text-sm"><span>{unit.label}</span><b>{unit.personnelThousands.toFixed(0)} k</b></div><div className="mt-1 flex items-center justify-between gap-2 text-[11px] text-muted-foreground"><span>Qualité {unit.quality}/100</span><span>{unit.qualityLabel}</span></div><div className="mt-1 h-1 bg-muted"><div className="h-full bg-primary" style={{ width: `${Math.max(0, Math.min(100, unit.quality))}%` }} /></div></div>) ?? <p className="text-xs text-muted-foreground">Inventaire détaillé non documenté.</p>}</div></section>
-          <section className="bg-card p-4"><div className="font-mono text-[10px] uppercase tracking-wider text-primary">Projection et stationnement</div><div className="mt-3 space-y-2">{defense.deployments?.map((deployment) => <div key={deployment.location} className={`border-b border-border/70 pb-2 last:border-0 ${selectedTheaterLocation === deployment.location ? 'bg-primary/5' : ''}`}><div className="flex items-center justify-between gap-3 text-sm"><span>{deployment.location}</span><div className="flex items-center gap-2"><b>{deployment.personnelThousands.toFixed(0)} k</b>{!/métropole|réserve|rotation/i.test(deployment.location) && <Button type="button" size="sm" variant="outline" onClick={() => void askTheaterAI(deployment)} disabled={theaterAILoading !== null}>{theaterAILoading === deployment.location ? 'Analyse…' : 'Appel IA'}</Button>}</div></div><p className="mt-1 text-[11px] text-muted-foreground">{deployment.mission}</p>{deployment.countryBreakdown && <div className="mt-2 ml-3 space-y-1 border-l border-primary/30 pl-3"><div className="font-mono text-[9px] uppercase tracking-wider text-primary">Répartition par pays</div>{deployment.countryBreakdown.map((item) => <div key={`${deployment.location}-${item.countryId}`} className="flex items-center justify-between gap-3 text-[11px] text-muted-foreground"><span>{world.countries[item.countryId]?.flag} {world.countries[item.countryId]?.name ?? item.countryId}{item.mission ? ` · ${item.mission}` : ''}</span><b className="shrink-0 text-foreground">{item.personnelThousands.toFixed(0)} k</b></div>)}</div>}</div>) ?? <p className="text-xs text-muted-foreground">Répartition géographique non documentée.</p>}</div><div className="mt-3 border-t border-border pt-2 text-xs text-muted-foreground">Total recensé : <b className="text-foreground">{deploymentTotal.toFixed(0)} k</b> · théâtres extérieurs : <b className="text-foreground">{theaterTotal.toFixed(0)} k</b>. Les appels IA donnent une lecture stratégique et ne modifient pas la partie.</div></section>
+          <section className="bg-card p-4"><div className="font-mono text-[10px] uppercase tracking-wider text-primary">Projection et stationnement</div><div className="mt-3 space-y-2">{theaterRows.length ? theaterRows.map((deployment) => <div key={deployment.id} className={`border-b border-border/70 pb-2 last:border-0 ${selectedTheaterLocation === deployment.location ? 'bg-primary/5' : ''}`}><div className="flex items-center justify-between gap-3 text-sm"><span>{deployment.location}</span><div className="flex items-center gap-2"><b>{deployment.personnelThousands.toFixed(0)} k</b>{!/métropole|réserve|rotation/i.test(deployment.location) && <Button type="button" size="sm" variant="outline" onClick={() => void askTheaterAI(deployment)} disabled={theaterAILoading !== null}>{theaterAILoading === deployment.location ? 'Analyse…' : 'Appel IA'}</Button>}</div></div><p className="mt-1 text-[11px] text-muted-foreground">{deployment.mission}</p>{'readiness' in deployment && deployment.readiness > 0 && <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[10px] text-muted-foreground"><span>disponibilité {deployment.availablePersonnelThousands.toFixed(1)} k</span><span>préparation {deployment.readiness}/100</span><span>ravitaillement {deployment.supplyCoverageMonths.toFixed(1)} mois</span><span>accès {deployment.access === 'host_consent' ? 'accord hôte' : deployment.access === 'national' ? 'national' : deployment.access === 'unknown' ? 'à clarifier' : deployment.access}</span>{deployment.inTransitPersonnelThousands > 0 && <span className="text-amber-300">en transit {deployment.inTransitPersonnelThousands.toFixed(1)} k</span>}</div>}{deployment.countryBreakdown && <div className="mt-2 ml-3 space-y-1 border-l border-primary/30 pl-3"><div className="font-mono text-[9px] uppercase tracking-wider text-primary">Répartition par pays</div>{deployment.countryBreakdown.map((item) => <div key={`${deployment.location}-${item.countryId}`} className="flex items-center justify-between gap-3 text-[11px] text-muted-foreground"><span>{world.countries[item.countryId]?.flag} {world.countries[item.countryId]?.name ?? item.countryId}{item.mission ? ` · ${item.mission}` : ''}</span><b className="shrink-0 text-foreground">{item.personnelThousands.toFixed(0)} k</b></div>)}</div>}{selected?.id === world.playerCountryId && dynamicTheaters.length > 0 && deployment.status === 'active' && <div className="mt-2 flex flex-wrap items-center gap-1"><Button type="button" size="sm" variant="outline" onClick={() => launchTheaterAction(deployment.id, 'reinforce')} disabled={theaterActionLoading !== null || Boolean(deployment.currentOperation)}>+5 k renforcer</Button><Button type="button" size="sm" variant="outline" onClick={() => launchTheaterAction(deployment.id, 'withdraw')} disabled={theaterActionLoading !== null || Boolean(deployment.currentOperation)}>−5 k retirer</Button><select aria-label={`Destination du redéploiement depuis ${deployment.location}`} value={redeployTargets[deployment.id] ?? ''} onChange={(event) => setRedeployTargets((current) => ({ ...current, [deployment.id]: event.target.value }))} className="h-7 max-w-40 border border-input bg-background px-1 text-[10px]"><option value="">Destination…</option>{dynamicTheaters.filter((candidate) => candidate.id !== deployment.id && candidate.status === 'active').map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.location}</option>)}</select><Button type="button" size="sm" variant="outline" onClick={() => launchTheaterAction(deployment.id, 'redeploy', redeployTargets[deployment.id])} disabled={theaterActionLoading !== null || !redeployTargets[deployment.id] || Boolean(deployment.currentOperation)}>Redéployer 5 k</Button></div>}{deployment.currentOperation && <p className="mt-1 text-[10px] text-amber-300">Mouvement en cours · arrivée prévue le {deployment.currentOperation.completesAt}.</p>}</div>) : <p className="text-xs text-muted-foreground">Répartition géographique non documentée.</p>}</div><div className="mt-3 border-t border-border pt-2 text-xs text-muted-foreground">Total recensé : <b className="text-foreground">{deploymentTotal.toFixed(0)} k</b> · théâtres extérieurs : <b className="text-foreground">{theaterTotal.toFixed(0)} k</b>. {dynamicTheaters.length > 0 ? 'Les mouvements sont locaux, réservés au pays joué et résolus au passage du temps.' : 'Les appels IA donnent une lecture stratégique et ne modifient pas la partie.'}</div></section>
         </div>
         <section className="border border-primary/30 bg-card/70 p-4"><div className="font-mono text-[10px] uppercase tracking-wider text-primary">Appel IA · théâtre d’opération</div>{!selectedTheaterLocation && <p className="mt-2 text-xs text-muted-foreground">Sélectionnez « Appel IA » sur un théâtre extérieur pour obtenir une explication de la présence, des objectifs et des options possibles.</p>}{selectedTheaterLocation && theaterAILoading === selectedTheaterLocation && <p className="mt-2 text-xs text-muted-foreground">Analyse du théâtre « {selectedTheaterLocation} » en cours…</p>}{selectedTheaterLocation && theaterAILoading !== selectedTheaterLocation && theaterAI[selectedTheaterLocation] && <div className="mt-2 whitespace-pre-line border-l-2 border-primary bg-primary/5 p-3 text-[11px] leading-5 text-muted-foreground">{theaterAI[selectedTheaterLocation]}</div>}</section>
         <p className="mt-3 border-l-2 border-primary bg-primary/5 p-3 text-[11px] leading-5 text-muted-foreground"><b className="text-foreground">Pourquoi 353 k ne signifie pas 353 k combattants projetables :</b> les effectifs comprennent le soutien, les états-majors, la maintenance, la formation, la gendarmerie et les relèves. Le taux « aptes au combat » retire les absences et indisponibilités ; la « projection durable » réserve les forces nécessaires à la défense du territoire et aux rotations. Les théâtres extérieurs sont donc comparés à ces deux plafonds, pas au seul total administratif.</p>
@@ -1742,7 +1768,7 @@ export default function Home() {
       {panel === 'energy' && <EnergyPanel world={world} />}
       {panel === 'industry' && <IndustryPanel world={world} onWorldChange={updateWorld} onNotice={setNotice} />}
       {panel === 'reforms' && <ReformsPanel world={world} onWorldChange={updateWorld} onNotice={setNotice} />}
-      {panel === 'military' && <MilitaryPanel world={world} onNotice={setNotice} />}
+      {panel === 'military' && <MilitaryPanel world={world} onWorldChange={updateWorld} onNotice={setNotice} />}
       {panel === 'dossiers' && <DossiersPanel world={world} selectedId={selectedDossierId} onSelect={setSelectedDossierId} onWorldChange={updateWorld} onNotice={setNotice} onOpenDiplomacy={(dialogueId) => { setSelectedDialogueId(dialogueId); setPanel('diplomacy'); }} />}
       {panel === 'diplomacy' && <DiplomacyPanel world={world} onWorldChange={updateWorld} onNotice={setNotice} initialDialogueId={selectedDialogueId} />}
       {panel === 'advisor' && <AdvisorPanel world={world} onWorldChange={updateWorld} onNotice={setNotice} />}
