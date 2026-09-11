@@ -1037,6 +1037,34 @@ export type CommonActionCategory =
   | 'defense'
   | 'intelligence';
 
+/**
+ * Mécanisme concret d'un programme. La catégorie choisit le domaine ; le
+ * levier détermine ce que le moteur modifie réellement. Deux actions
+ * économiques ne deviennent donc plus automatiquement le même bonus.
+ */
+export type CommonActionLever =
+  | 'diplomatic_contact'
+  | 'diplomatic_cooperation'
+  | 'defense_pact'
+  | 'mediation'
+  | 'information_sharing'
+  | 'fiscal_stimulus'
+  | 'fiscal_consolidation'
+  | 'industrial_capacity'
+  | 'strategic_sector'
+  | 'trade_promotion'
+  | 'energy_resilience'
+  | 'economic_general'
+  | 'administrative_reform'
+  | 'government_reorganization'
+  | 'anti_corruption'
+  | 'force_readiness'
+  | 'defense_procurement'
+  | 'force_deployment'
+  | 'defense_industry'
+  | 'intelligence_assessment'
+  | 'intelligence_surveillance';
+
 export type ActionProgramStatus =
   | 'active'
   | 'succeeded'
@@ -1047,6 +1075,8 @@ export type ActionProgramStatus =
 export type ActionProgram = {
   id: string;
   category: CommonActionCategory;
+  /** Optional for migration of older saves; every newly prepared program has one. */
+  lever?: CommonActionLever;
   actorId: CountryId;
   targetIds: EntityId[];
   /** Dossier stratégique à l'origine du programme, lorsqu'il existe. */
@@ -1066,6 +1096,19 @@ export type ActionProgram = {
   budgetCost: number;
   successProbability: number;
   risks: string[];
+  /** Signaux politiques utilisés pour faire réagir les corps organisés. */
+  policySignals?: Array<{ signal: PolicySignal; weight: number }>;
+  /** Photo de faisabilité au moment où le programme a été préparé. */
+  politicalAssessment?: {
+    pathwayStatus: PoliticalPathway['status'];
+    doctrineCompatibility: number;
+    institutionalFeasibility: number;
+    leaderDisposition: number;
+    apparatusSupport: number;
+    finalScore: number;
+    blocked: boolean;
+    reasons: string[];
+  };
   successEffects: WorldEffect[];
   partialEffects: WorldEffect[];
   resolution?: string;

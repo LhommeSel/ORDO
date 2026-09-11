@@ -43,17 +43,39 @@ export function advanceIndustrySystem(state: WorldState, elapsedMonths: number) 
   return createAutomaticArmamentProspects(next);
 }
 
-const potentialBuyers: CountryId[] = ['POL', 'SAU', 'ITA', 'NOR', 'DZA'];
+export function rankArmamentProspectBuyers(state: WorldState, product: ArmamentProduct) {
+  return Object.values(state.countries)
+    .filter((country) => country.id !== product.countryId)
+    .map((country) => {
+      const relation = relationBetween(state, product.countryId, country.id)?.relation ?? 45;
+      const economy = state.macroEconomies[country.id];
+      const securityNeed = clamp(72 - country.metrics.security);
+      const affordability = economy
+        ? clamp(Math.log10(Math.max(1, economy.realGdpBillion2000Usd)) * 22 - economy.financialStress * 0.18)
+        : clamp(country.weight * 0.55);
+      const existingClient = product.clients.some((client) => client.countryId === country.id);
+      const unresolvedProspect = product.prospects.some((prospect) => prospect.countryId === country.id && ['prospecting', 'negotiating', 'approval_required', 'won'].includes(prospect.status));
+      const score = relation * 0.34 + securityNeed * 0.24 + affordability * 0.22 + country.weight * 0.2
+        + (existingClient ? 14 : 0) - (unresolvedProspect ? 100 : 0);
+      return { countryId: country.id, score, relation, securityNeed, affordability };
+    })
+    .filter((candidate) => candidate.score > 30)
+    .sort((a, b) => b.score - a.score || a.countryId.localeCompare(b.countryId));
+}
 
 export function createAutomaticArmamentProspects(state: WorldState) {
   let next = state;
   for (const product of Object.values(state.armamentProducts)) {
     if (!['exportable', 'production'].includes(product.status) || product.backlogMonths >= 30) continue;
     if (product.prospects.some((prospect) => ['prospecting', 'negotiating', 'approval_required'].includes(prospect.status))) continue;
-    const buyerId = pickSeeded(potentialBuyers, state.seed, `${product.id}:${state.currentDate}:${product.prospects.length}`);
+    const shortlist = rankArmamentProspectBuyers(state, product).slice(0, 8);
+    if (!shortlist.length) continue;
+    const buyerId = pickSeeded(shortlist, state.seed, `${product.id}:${state.currentDate}:${product.prospects.length}`).countryId;
     const relation = relationBetween(state, product.countryId, buyerId)?.relation ?? 48;
-    const sensitivity = clamp(70 - relation * 0.45 + (buyerId === 'SAU' ? 20 : 0));
-    const quantity = Math.max(2, Math.round(product.annualCapacity * (0.6 + product.reputation / 100)));
+    const buyer = state.countries[buyerId];
+    const regimeSensitivity = /autoritaire|junte|monarchie absolue|parti unique/i.test(buyer.politics.regime) ? 12 : 0;
+    const sensitivity = clamp(72 - relation * 0.5 + regimeSensitivity);
+    const quantity = Math.max(2, Math.round(product.annualCapacity * (0.35 + product.reputation / 140) * (0.55 + buyer.weight / 160)));
     const prospect = {
       id: `${product.id}-${buyerId}-${state.currentDate}`,
       countryId: buyerId,
@@ -91,10 +113,28 @@ export function authorizeArmamentProspect(state: WorldState, productId: string, 
     effects: [
       { kind: 'armament_patch', productId, patch: { prospects: updatedProspects, clients: updatedClients, backlogMonths: Number((product.backlogMonths + addedBacklog).toFixed(2)), industrialHealth: clamp(product.industrialHealth + 3) }, reason: 'La commande est inscrite au carnet et soutient la filière.' },
       { kind: 'relation_delta', from: product.countryId, to: prospect.countryId, relation: 3, trust: 2, reason: 'Le programme d’armement crée une relation stratégique durable.' },
-      { kind: 'capacity_commitment', countryId: actorId, domain: 'diplomacy', delta: 2, reason: 'Le suivi politique de l’exportation mobilise la diplomatie.' },
     ],
   });
   return { ok: true as const, state: next };
+}
+
+export function rejectArmamentProspect(state: WorldState, productId: string, prospectId: string, actorId = state.playerCountryId) {
+  const product = state.armamentProducts[productId];
+  const prospect = product?.prospects.find((item) => item.id === prospectId);
+  if (!product || !prospect) return { ok: false as const, state, error: 'Prospect industriel inconnu.' };
+  if (!['approval_required', 'negotiating'].includes(prospect.status)) return { ok: false as const, state, error: 'Ce dossier n’est plus ouvert.' };
+  const updatedProspects = product.prospects.map((item) => item.id === prospectId ? { ...item, status: 'lost' as const } : item);
+  return {
+    ok: true as const,
+    state: commitWorldAction(state, {
+      kind: 'defense', actorId, targetIds: [prospect.countryId], origin: 'player',
+      intent: `Refuser l’exportation de ${product.name} vers ${prospect.countryId}`,
+      effects: [
+        { kind: 'armament_patch', productId, patch: { prospects: updatedProspects }, reason: 'L’exécutif ferme ce débouché sans modifier le carnet de commandes.' },
+        { kind: 'relation_delta', from: product.countryId, to: prospect.countryId, relation: -1, trust: -1, reason: 'Le refus déçoit légèrement l’acheteur potentiel.' },
+      ],
+    }),
+  };
 }
 
 export function productEvidenceSummary(product: ArmamentProduct) {

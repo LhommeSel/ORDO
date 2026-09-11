@@ -374,10 +374,21 @@ function applyEffect(state: WorldState, action: WorldAction, effect: WorldEffect
     const economy = state.macroEconomies[effect.countryId];
     if (!economy) return state;
     const before = economy.policy;
+    const bounds: Record<keyof typeof before, [number, number]> = {
+      fiscalStance: [-100, 100],
+      publicInvestmentPctGdp: [0, 20],
+      socialProtection: [0, 100],
+      industrialSupport: [0, 100],
+      tradeOpenness: [0, 100],
+      capitalControls: [0, 100],
+      laborFlexibility: [0, 100],
+    };
     const policy = Object.fromEntries(Object.entries(effect.patch).map(([key, delta]) => {
-      const current = before[key as keyof typeof before];
+      const typedKey = key as keyof typeof before;
+      const current = before[typedKey];
       const numericDelta = typeof delta === 'number' ? delta : 0;
-      return [key, typeof current === 'number' ? clamp(current + numericDelta) : current];
+      const [minimum, maximum] = bounds[typedKey];
+      return [key, typeof current === 'number' ? clamp(current + numericDelta, minimum, maximum) : current];
     })) as Partial<typeof before>;
     const afterPolicy = { ...before, ...policy };
     const afterEconomy = { ...economy, policy: afterPolicy };

@@ -40,6 +40,8 @@ import { commitWorldAction } from './ledger';
 import { applyDiplomaticDialogueAIAnswer, openDiplomaticDialogue, openDiplomaticDialogueForDossier, requestDiplomaticDialogueAI, resolveDiplomaticDialogueResponse, sendDiplomaticDialogueMessage } from './diplomacy-dialogue';
 import { validateCountryRegistry } from './data-validator';
 import { buildTurnBriefing } from './turn-briefing';
+import { queueAutonomousProgram } from './ai/autonomous-programs';
+import { authorizeArmamentProspect, createAutomaticArmamentProspects, rankArmamentProspectBuyers, rejectArmamentProspect } from './industry';
 
 test('le scénario 2000 charge un monde cohérent et jouable', () => {
   const state = createFrance2000World();
@@ -281,7 +283,7 @@ test('une délégation historique est moins chère, plus lente et moins influent
   const launched = launchCommonAction(signalled, { ...delegation.action, successProbability: 100 });
   assert.ok(launched.ok);
   if (!launched.ok) return;
-  const resolved = advanceWorld(launched.state, '2001-11-01').state;
+  const resolved = advanceWorld(launched.state, '2002-05-01').state;
   const anchor = resolved.historicalAnchors['mass-casualty-terrorism'];
   assert.ok((anchor.lastIntervention?.pressureDelta ?? 0) < 0);
   assert.ok(Math.abs(anchor.lastIntervention?.pressureDelta ?? 0) < 5);
@@ -578,7 +580,7 @@ test('une intention diplomatique devient un programme puis libère ses moyens à
   if (!launched.ok) return;
   assert.equal(launched.state.actionPrograms[launched.programId].status, 'active');
   assert.ok(launched.state.countries.FRA.capacities.diplomacy.committed > initial.countries.FRA.capacities.diplomacy.committed);
-  const advanced = advanceWorld(launched.state, '2000-04-01').state;
+  const advanced = advanceWorld(launched.state, '2000-06-01').state;
   assert.notEqual(advanced.actionPrograms[launched.programId].status, 'active');
   assert.equal(advanced.countries.FRA.capacities.diplomacy.committed, initial.countries.FRA.capacities.diplomacy.committed);
 });
@@ -591,7 +593,7 @@ test('une initiative diplomatique réussie crée un engagement et un dossier per
   const launched = launchCommonAction(initial, { ...prepared.action, successProbability: 100 });
   assert.equal(launched.ok, true);
   if (!launched.ok) return;
-  const advanced = advanceWorld(launched.state, '2000-04-01').state;
+  const advanced = advanceWorld(launched.state, '2000-08-01').state;
   assert.ok(Object.values(advanced.treaties).some((treaty) => treaty.parties.includes('DEU') && treaty.status === 'active'));
   assert.ok(Object.values(advanced.strategicDossiers).some((dossier) => dossier.actorIds.includes('DEU') && dossier.kind === 'security'));
   assert.equal(advanced.actionPrograms[launched.programId].status, 'succeeded');
@@ -612,7 +614,7 @@ test('une option IA reste consultative, ouvre un dossier puis reçoit le résult
   const activeDossier = Object.values(launched.state.strategicDossiers).find((dossier) => dossier.actorIds.includes('JPN'));
   assert.ok(activeDossier);
   assert.equal(activeDossier?.status, 'active');
-  const advanced = advanceWorld(launched.state, '2000-04-01').state;
+  const advanced = advanceWorld(launched.state, '2000-06-01').state;
   const resolvedDossier = activeDossier ? advanced.strategicDossiers[activeDossier.id] : undefined;
   assert.ok(resolvedDossier?.entries.some((entry) => entry.id === `${launched.programId}-resolution`));
   assert.equal(resolvedDossier?.phase, 'Première mise en œuvre achevée');
@@ -802,6 +804,94 @@ test('une intention inconnue ne devient pas arbitrairement un programme économi
   const result = prepareCommonAction(createFrance2000World(), 'Faire quelque chose de surprenant.');
   assert.equal(result.ok, false);
   if (!result.ok) assert.match(result.error, /ne reconnaît pas encore le domaine/);
+});
+
+test('les actions économiques utilisent des leviers distincts plutôt qu’un bonus générique', () => {
+  const initial = createFrance2000World();
+  const stimulus = prepareCommonAction(initial, 'Lancer un plan de relance par la commande publique.');
+  const consolidation = prepareCommonAction(initial, 'Réduire fortement le déficit et maîtriser les dépenses publiques.');
+  const semiconductors = prepareCommonAction(initial, 'Créer une filière stratégique française de semi-conducteurs.');
+  assert.equal(stimulus.ok, true);
+  assert.equal(consolidation.ok, true);
+  assert.equal(semiconductors.ok, true);
+  if (!stimulus.ok || !consolidation.ok || !semiconductors.ok) return;
+  assert.equal(stimulus.action.lever, 'fiscal_stimulus');
+  assert.equal(consolidation.action.lever, 'fiscal_consolidation');
+  assert.equal(semiconductors.action.lever, 'strategic_sector');
+  assert.notEqual(stimulus.action.durationMonths, semiconductors.action.durationMonths);
+  assert.ok(semiconductors.action.successEffects.some((effect) => effect.kind === 'sector_delta' && effect.sectorId === 'FRA-semiconductors'));
+});
+
+test('une consolidation réussie peut réellement rendre la posture budgétaire négative', () => {
+  const initial = createFrance2000World();
+  const prepared = prepareCommonAction(initial, 'Réduire fortement le déficit par une consolidation budgétaire.');
+  assert.equal(prepared.ok, true);
+  if (!prepared.ok) return;
+  const launched = launchCommonAction(initial, { ...prepared.action, successProbability: 100 });
+  assert.equal(launched.ok, true);
+  if (!launched.ok) return;
+  const resolved = advanceCommonActionPrograms(launched.state, prepared.action.durationMonths);
+  assert.ok(resolved.macroEconomies.FRA.policy.fiscalStance < initial.macroEconomies.FRA.policy.fiscalStance);
+});
+
+test('un programme de réserves énergétiques ne crée pas gratuitement de pétrole ou de gaz', () => {
+  const initial = createFrance2000World();
+  const prepared = prepareCommonAction(initial, 'Développer les réserves stratégiques de pétrole et la résilience énergétique.');
+  assert.equal(prepared.ok, true);
+  if (!prepared.ok) return;
+  assert.equal(prepared.action.lever, 'energy_resilience');
+  assert.ok(prepared.warnings.some((warning) => warning.includes('contrat d’approvisionnement')));
+  assert.equal(prepared.action.successEffects.some((effect) => effect.kind === 'energy_stock_delta'), false);
+});
+
+test('un prospect d’armement peut être autorisé ou refusé sans engagement de capacité permanent', () => {
+  const initial = createFrance2000World();
+  assert.ok(rankArmamentProspectBuyers(initial, initial.armamentProducts.exocet).length > 8);
+  const proposed = createAutomaticArmamentProspects(initial);
+  const product = Object.values(proposed.armamentProducts).find((item) => item.prospects.some((prospect) => ['approval_required', 'negotiating'].includes(prospect.status)));
+  assert.ok(product);
+  if (!product) return;
+  const prospect = product.prospects.find((item) => ['approval_required', 'negotiating'].includes(item.status))!;
+  const diplomacyBefore = proposed.countries.FRA.capacities.diplomacy.committed;
+  const authorized = authorizeArmamentProspect(proposed, product.id, prospect.id);
+  assert.equal(authorized.ok, true);
+  if (!authorized.ok) return;
+  assert.equal(authorized.state.armamentProducts[product.id].prospects.find((item) => item.id === prospect.id)?.status, 'won');
+  assert.ok(authorized.state.armamentProducts[product.id].backlogMonths > product.backlogMonths);
+  assert.equal(authorized.state.countries.FRA.capacities.diplomacy.committed, diplomacyBefore);
+  const rejected = rejectArmamentProspect(proposed, product.id, prospect.id);
+  assert.equal(rejected.ok, true);
+  if (!rejected.ok) return;
+  assert.equal(rejected.state.armamentProducts[product.id].prospects.find((item) => item.id === prospect.id)?.status, 'lost');
+  assert.equal(rejected.state.armamentProducts[product.id].backlogMonths, product.backlogMonths);
+});
+
+test('la direction et l’appareil politique modulent une action du joueur et ses oppositions', () => {
+  const initial = createFrance2000World();
+  const prepared = prepareCommonAction(initial, 'Réduire fortement le déficit par une consolidation budgétaire.');
+  assert.equal(prepared.ok, true);
+  if (!prepared.ok) return;
+  assert.ok(prepared.action.politicalAssessment);
+  assert.ok((prepared.action.politicalAssessment?.leaderDisposition ?? 100) < 70);
+  const launched = launchCommonAction(initial, prepared.action);
+  assert.equal(launched.ok, true);
+  if (!launched.ok) return;
+  assert.ok(Object.values(launched.state.stakeholderReactions).some((reaction) => reaction.causes.includes(prepared.action.title)));
+});
+
+test('une action étrangère proposée par l’IA reste soumise à la doctrine nationale', () => {
+  const initial = createFrance2000World();
+  const stimulus = queueAutonomousProgram(initial, {
+    actorId: 'DEU', targetIds: [], category: 'economic', objective: 'Lancer une relance massive financée par le déficit public.',
+  }, 'test-deu-stimulus');
+  const trade = queueAutonomousProgram(initial, {
+    actorId: 'DEU', targetIds: ['FRA'], category: 'economic', objective: 'Développer les exportations allemandes vers la France.',
+  }, 'test-deu-trade');
+  assert.ok(trade);
+  if (stimulus) {
+    assert.equal(stimulus.program.lever, 'fiscal_stimulus');
+    assert.ok(stimulus.program.successProbability < trade!.program.successProbability);
+  }
 });
 
 test('la signature énergétique est idempotente', () => {

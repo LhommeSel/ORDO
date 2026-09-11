@@ -3,11 +3,15 @@ import { makeDossierDecision } from './dossiers';
 import { seededUnit } from './random';
 import { actionIntentFromProgram } from './action-intents';
 import { historicalAnchorResolutionEffects } from './history';
+import { actionLeverPolitics, actionLeverProfile } from './action-levers';
+import { evaluateStrategicAction } from './decision-making';
+import { evaluatePoliticalPathway } from './politics';
+import { stakeholderReactionEffects } from './stakeholders';
 import type {
   ActionKind,
   ActionProgram,
-  CapacityDomainId,
   CommonActionCategory,
+  CommonActionLever,
   CountryId,
   HistoricalInterventionDirection,
   ISODate,
@@ -60,36 +64,13 @@ function inferCategory(text: string): CommonActionCategory | undefined {
   if (/\b(militaire|defense|armee|arme|troupe|deploi|dissuasion)\b/.test(value)) return 'defense';
   if (/\b(ministere|sous ministere|administration|institution|reforme de l etat|service public)\b/.test(value)) return 'institutional';
   if (/\b(n egocier|negocier|negociation|alliance|cooperation|cooperer|dialogue|accord|partenariat|sommet|mediation)\b/.test(value)) return 'diplomacy';
-  if (/\b(programme|plan|industrie|industriel|budget|investir|investissement|production|commerce|croissance|dette|emploi|energie|energetique|gaz|petrole|semiconducteur|nucleaire|relance|filiere)\b/.test(value)) return 'economic';
+  if (/\b(programme|plan|industrie|industriel|budget|budgetaire|fiscal|deficit|depense|austerite|consolidation|assainir|investir|investissement|production|commerce|croissance|dette|emploi|energie|energetique|gaz|petrole|semiconducteur|nucleaire|relance|filiere)\b/.test(value)) return 'economic';
   return undefined;
 }
-
-const categoryLabels: Record<CommonActionCategory, string> = {
-  diplomacy: 'Initiative diplomatique', economic: 'Programme économique', institutional: 'Réorganisation institutionnelle',
-  defense: 'Programme de défense', intelligence: 'Opération de renseignement',
-};
 
 const categoryKinds: Record<CommonActionCategory, ActionKind> = {
   diplomacy: 'diplomatic', economic: 'economic', institutional: 'institutional', defense: 'defense', intelligence: 'intelligence',
 };
-
-function defaultCommitments(category: CommonActionCategory): Array<{ domain: CapacityDomainId; commitment: number }> {
-  switch (category) {
-    case 'diplomacy': return [{ domain: 'diplomacy', commitment: 5 }, { domain: 'government', commitment: 2 }];
-    case 'economic': return [{ domain: 'economy', commitment: 7 }, { domain: 'administration', commitment: 4 }, { domain: 'government', commitment: 2 }];
-    case 'institutional': return [{ domain: 'administration', commitment: 8 }, { domain: 'government', commitment: 5 }, { domain: 'economy', commitment: 2 }];
-    case 'defense': return [{ domain: 'defense', commitment: 8 }, { domain: 'administration', commitment: 3 }, { domain: 'government', commitment: 2 }];
-    case 'intelligence': return [{ domain: 'intelligence', commitment: 6 }, { domain: 'diplomacy', commitment: 2 }];
-  }
-}
-
-function durationFor(category: CommonActionCategory) {
-  return category === 'institutional' ? 6 : category === 'economic' ? 4 : category === 'defense' ? 3 : category === 'diplomacy' ? 2 : 2;
-}
-
-function budgetFor(category: CommonActionCategory) {
-  return category === 'institutional' ? 4.5 : category === 'economic' ? 3.5 : category === 'defense' ? 4 : category === 'diplomacy' ? 0.7 : 1.2;
-}
 
 type DiplomaticOperation = NonNullable<Extract<ActionIntent, { kind: 'common_program' }>['operation']>;
 
@@ -238,7 +219,23 @@ function linkedDossierResolutionEffects(
   ];
 }
 
-function effectsFor(state: WorldState, category: CommonActionCategory, targetId?: CountryId, intent = '') {
+function strategicSectorInText(state: WorldState, countryId: CountryId, intent: string) {
+  const normalized = normalize(intent);
+  const sectorKeyword = /semi.?conduct|puce|electron/.test(normalized) ? 'semiconductors'
+    : /nucleaire/.test(normalized) ? 'nuclear'
+      : /engrais/.test(normalized) ? 'fertilizers'
+        : /acier/.test(normalized) ? 'specialty_steel'
+          : /pharma/.test(normalized) ? 'pharmaceuticals'
+            : /chantier naval|naval/.test(normalized) ? 'shipbuilding'
+              : /telecom/.test(normalized) ? 'telecoms'
+                : /machine outil/.test(normalized) ? 'machine_tools'
+                  : /armement|defense/.test(normalized) ? 'defense' : undefined;
+  return sectorKeyword
+    ? Object.values(state.sectors).find((item) => item.countryId === countryId && item.sector === sectorKeyword)
+    : undefined;
+}
+
+function effectsFor(state: WorldState, category: CommonActionCategory, lever: CommonActionLever, targetId?: CountryId, intent = '') {
   const player = state.countries[state.playerCountryId];
   const economy = state.macroEconomies[player.id];
   const success: WorldEffect[] = [];
@@ -258,31 +255,72 @@ function effectsFor(state: WorldState, category: CommonActionCategory, targetId?
     if (treaty) success.push(treaty);
   }
   if (category === 'economic' && economy) {
-    success.push(
-      { kind: 'metric_delta', countryId: player.id, metric: 'industry', delta: 2.5, reason: 'Le programme économique soutient l’activité industrielle.' },
-      { kind: 'macro_policy_delta', countryId: player.id, patch: { industrialSupport: 4, publicInvestmentPctGdp: 0.25 }, reason: 'La priorité budgétaire et industrielle est réorientée.' },
-    );
-    partial.push({ kind: 'metric_delta', countryId: player.id, metric: 'industry', delta: 0.8, reason: 'Le programme produit un effet industriel limité.' });
-    const normalized = normalize(intent);
-    const sectorKeyword = /semi.?conduct|puce|electron/.test(normalized) ? 'semiconductors'
-      : /nucleaire/.test(normalized) ? 'nuclear'
-        : /armement|defense/.test(normalized) ? 'defense' : undefined;
-    const sector = sectorKeyword && Object.values(state.sectors).find((item) => item.countryId === player.id && item.sector === sectorKeyword);
-    if (sector) {
-      success.push({ kind: 'sector_delta', sectorId: sector.id, delta: { capacity: 5, health: 4, workloadMonths: 12 }, reason: `Le programme cible explicitement la filière ${sector.sector}.` });
-      partial.push({ kind: 'sector_delta', sectorId: sector.id, delta: { health: 1, workloadMonths: 4 }, reason: `La filière ${sector.sector} reçoit un soutien partiel.` });
+    if (lever === 'fiscal_stimulus') {
+      success.push({ kind: 'macro_policy_delta', countryId: player.id, patch: { fiscalStance: 18, publicInvestmentPctGdp: 0.4 }, reason: 'La relance augmente durablement l’impulsion budgétaire et l’investissement public.' });
+      partial.push({ kind: 'macro_policy_delta', countryId: player.id, patch: { fiscalStance: 7, publicInvestmentPctGdp: 0.15 }, reason: 'La relance n’est mise en œuvre que partiellement.' });
+    } else if (lever === 'fiscal_consolidation') {
+      success.push({ kind: 'macro_policy_delta', countryId: player.id, patch: { fiscalStance: -16, publicInvestmentPctGdp: -0.15 }, reason: 'La consolidation réduit l’impulsion budgétaire et, avec délai, le besoin de financement.' });
+      partial.push({ kind: 'macro_policy_delta', countryId: player.id, patch: { fiscalStance: -6 }, reason: 'L’effort budgétaire reste limité par les résistances politiques.' });
+    } else if (lever === 'trade_promotion') {
+      success.push({ kind: 'macro_policy_delta', countryId: player.id, patch: { tradeOpenness: 3 }, reason: 'Le dispositif facilite durablement la prospection et les débouchés extérieurs.' });
+      partial.push({ kind: 'macro_policy_delta', countryId: player.id, patch: { tradeOpenness: 1 }, reason: 'Quelques nouveaux débouchés sont ouverts.' });
+      if (targetId) success.push({ kind: 'relation_delta', from: player.id, to: targetId, relation: 3, trust: 2, reason: 'La coopération commerciale améliore modestement le canal bilatéral.' });
+    } else if (lever === 'energy_resilience') {
+      success.push({ kind: 'macro_policy_delta', countryId: player.id, patch: { publicInvestmentPctGdp: 0.2, industrialSupport: 2 }, reason: 'Le programme finance des capacités énergétiques et logistiques ; les approvisionnements restent à contractualiser.' });
+      partial.push({ kind: 'macro_policy_delta', countryId: player.id, patch: { publicInvestmentPctGdp: 0.08 }, reason: 'Seule une partie des infrastructures énergétiques est engagée.' });
+    } else if (lever === 'strategic_sector') {
+      const sector = strategicSectorInText(state, player.id, intent);
+      success.push({ kind: 'macro_policy_delta', countryId: player.id, patch: { industrialSupport: 3, publicInvestmentPctGdp: 0.2 }, reason: 'L’État concentre une part de sa politique industrielle sur une filière stratégique.' });
+      partial.push({ kind: 'macro_policy_delta', countryId: player.id, patch: { industrialSupport: 1 }, reason: 'Le soutien transversal à la filière reste incomplet.' });
+      if (sector) {
+        success.push({ kind: 'sector_delta', sectorId: sector.id, delta: { capacity: 6, health: 5, technology: 2 }, reason: `La capacité et la maturité de la filière ${sector.sector} progressent.` });
+        partial.push({ kind: 'sector_delta', sectorId: sector.id, delta: { health: 2, technology: 0.5 }, reason: `La filière ${sector.sector} consolide surtout sa santé industrielle.` });
+      }
+    } else if (lever === 'industrial_capacity') {
+      success.push(
+        { kind: 'metric_delta', countryId: player.id, metric: 'industry', delta: 2, reason: 'De nouvelles capacités productives renforcent le tissu industriel.' },
+        { kind: 'macro_policy_delta', countryId: player.id, patch: { industrialSupport: 4, publicInvestmentPctGdp: 0.25 }, reason: 'La politique industrielle et l’investissement public sont renforcés.' },
+      );
+      partial.push({ kind: 'metric_delta', countryId: player.id, metric: 'industry', delta: 0.7, reason: 'Quelques capacités productives sont consolidées.' });
+    } else {
+      success.push({ kind: 'macro_policy_delta', countryId: player.id, patch: { fiscalStance: 4, publicInvestmentPctGdp: 0.1 }, reason: 'Le programme général produit une impulsion économique modérée.' });
+      partial.push({ kind: 'macro_policy_delta', countryId: player.id, patch: { fiscalStance: 1.5 }, reason: 'L’impulsion économique reste limitée.' });
     }
   }
   if (category === 'institutional') {
-    success.push(
-      { kind: 'capacity_maximum', countryId: player.id, domain: 'administration', delta: 4, reason: 'La réorganisation laisse une capacité administrative durable.' },
-      { kind: 'capacity_maximum', countryId: player.id, domain: 'economy', delta: 2, reason: 'Les nouveaux services renforcent la conduite économique.' },
-    );
-    partial.push({ kind: 'capacity_maximum', countryId: player.id, domain: 'administration', delta: 1, reason: 'La réorganisation reste incomplète mais améliore un service.' });
+    if (lever === 'government_reorganization') {
+      success.push({ kind: 'capacity_maximum', countryId: player.id, domain: 'government', delta: 3, reason: 'La nouvelle organisation augmente la capacité de coordination gouvernementale.' });
+      partial.push({ kind: 'capacity_maximum', countryId: player.id, domain: 'government', delta: 1, reason: 'La coordination gouvernementale progresse modestement.' });
+    } else if (lever === 'anti_corruption') {
+      success.push(
+        { kind: 'capacity_maximum', countryId: player.id, domain: 'administration', delta: 2, reason: 'Les contrôles internes réduisent les pertes d’efficacité administrative.' },
+        { kind: 'politics_patch', countryId: player.id, patch: { administrativeCompliance: clamp(player.politics.administrativeCompliance + 3) }, reason: 'La mise en conformité renforce l’exécution des décisions.' },
+      );
+      partial.push({ kind: 'politics_patch', countryId: player.id, patch: { administrativeCompliance: clamp(player.politics.administrativeCompliance + 1) }, reason: 'Les contrôles améliorent ponctuellement la conformité.' });
+    } else {
+      success.push(
+        { kind: 'capacity_maximum', countryId: player.id, domain: 'administration', delta: 4, reason: 'La modernisation laisse une capacité administrative durable.' },
+        { kind: 'capacity_maximum', countryId: player.id, domain: 'economy', delta: 1, reason: 'Les nouveaux outils renforcent aussi la conduite économique.' },
+      );
+      partial.push({ kind: 'capacity_maximum', countryId: player.id, domain: 'administration', delta: 1, reason: 'La modernisation reste incomplète mais améliore un service.' });
+    }
   }
   if (category === 'defense') {
-    success.push({ kind: 'metric_delta', countryId: player.id, metric: 'security', delta: 4, reason: 'Le programme de défense améliore la préparation nationale.' });
-    partial.push({ kind: 'metric_delta', countryId: player.id, metric: 'security', delta: 1.5, reason: 'Le programme de défense améliore partiellement la préparation nationale.' });
+    const defenseSector = Object.values(state.sectors).find((item) => item.countryId === player.id && item.sector === 'defense');
+    if (lever === 'defense_industry' && defenseSector) {
+      success.push({ kind: 'sector_delta', sectorId: defenseSector.id, delta: { capacity: 6, health: 5, technology: 1 }, reason: 'La base industrielle de défense gagne en capacité et en robustesse.' });
+      partial.push({ kind: 'sector_delta', sectorId: defenseSector.id, delta: { health: 2 }, reason: 'La base industrielle de défense est seulement consolidée.' });
+    } else if (lever === 'defense_procurement') {
+      success.push({ kind: 'metric_delta', countryId: player.id, metric: 'security', delta: 2.5, reason: 'Les nouveaux équipements améliorent la préparation militaire avec un délai industriel.' });
+      partial.push({ kind: 'metric_delta', countryId: player.id, metric: 'security', delta: 0.8, reason: 'Une partie seulement des équipements est disponible.' });
+      if (defenseSector) success.push({ kind: 'sector_delta', sectorId: defenseSector.id, delta: { workloadMonths: 12, health: 1 }, reason: 'La commande alimente le carnet de l’industrie de défense.' });
+    } else if (lever === 'force_deployment') {
+      success.push({ kind: 'metric_delta', countryId: player.id, metric: 'security', delta: 1.5, reason: 'Le déploiement améliore temporairement la posture stratégique.' });
+      partial.push({ kind: 'metric_delta', countryId: player.id, metric: 'security', delta: 0.4, reason: 'Le déploiement reste incomplet.' });
+    } else {
+      success.push({ kind: 'metric_delta', countryId: player.id, metric: 'security', delta: 4, reason: 'L’entraînement et la préparation améliorent la disponibilité des forces.' });
+      partial.push({ kind: 'metric_delta', countryId: player.id, metric: 'security', delta: 1.5, reason: 'La préparation des forces progresse partiellement.' });
+    }
   }
   if (category === 'intelligence' && targetId) {
     success.push({ kind: 'intelligence_delta', observerId: player.id, targetId, delta: 18, reason: 'Le recueil ciblé améliore la connaissance de cet État.' });
@@ -307,22 +345,56 @@ export function prepareCommonAction(
     return { ok: false, error: 'Cette action doit nommer un pays modélisé : le moteur refuse de simuler un interlocuteur indéterminé.' };
   }
   const player = state.countries[state.playerCountryId];
+  const leverProfile = actionLeverProfile(category, intent);
   const linkedHistoricalAnchorId = options.linkedDossierId
     ? state.strategicDossiers[options.linkedDossierId]?.relatedAnchorId
     : undefined;
-  const requiredCapacities = defaultCommitments(category);
+  const requiredCapacities = leverProfile.requiredCapacities;
   const overloaded = requiredCapacities.some(({ domain, commitment }) => player.capacities[domain].committed + commitment > player.capacities[domain].maximum);
   const relation = targetId ? relationBetween(state, player.id, targetId) : undefined;
+  const politicalProfile = actionLeverPolitics[leverProfile.lever];
+  const politicalPathway = evaluatePoliticalPathway(state, player.id, {
+    requiredAuthority: politicalProfile.requiredAuthority,
+    doctrine: politicalProfile.doctrine,
+    publicSalience: politicalProfile.publicSalience,
+    administrativeComplexity: politicalProfile.administrativeComplexity,
+  });
+  const politicalEvaluation = evaluateStrategicAction(state, {
+    id: `prepared-${leverProfile.lever}`,
+    actorId: player.id,
+    label: leverProfile.label,
+    kind: categoryKinds[category],
+    outcomes: politicalProfile.outcomes,
+    signals: politicalProfile.decisionSignals,
+    doctrine: politicalProfile.doctrine,
+    requiredAuthority: politicalProfile.requiredAuthority,
+    publicSalience: politicalProfile.publicSalience,
+    administrativeComplexity: politicalProfile.administrativeComplexity,
+    urgency: politicalProfile.urgency,
+    risk: politicalProfile.risk,
+    resourceCost: clamp(leverProfile.budgetCost * 5),
+    metadata: { timeHorizonYears: leverProfile.durationMonths / 12 },
+  });
   const base = 78 + (player.politics.administrativeCompliance - 50) * 0.22;
   const relationFactor = category === 'diplomacy' && relation ? (relation.relation - 50) * 0.18 : 0;
-  const successProbability = Math.round(clamp(base + relationFactor - (overloaded ? 20 : 0), 25, 92));
+  const politicalModifier = (politicalEvaluation.leaderDisposition - 50) * 0.1
+    + (politicalEvaluation.apparatusSupport - 50) * 0.12
+    + (politicalEvaluation.institutionalFeasibility - 50) * 0.16
+    + clamp(politicalEvaluation.finalScore, -40, 40) * 0.12
+    - (politicalEvaluation.blocked ? 22 : 0);
+  const successProbability = Math.round(clamp(base + relationFactor + leverProfile.difficultyModifier + politicalModifier - (overloaded ? 20 : 0), 12, 92));
   const warnings: string[] = [];
   if (overloaded) warnings.push('Les moyens engagés dépassent une capacité opérationnelle : le risque d’échec augmente fortement.');
   if (targetId && relation && relation.relation < 35) warnings.push(`La relation avec ${state.countries[targetId]?.name} rend l’initiative politiquement difficile.`);
-  const effects = effectsFor(state, category, targetId, intent);
+  if (politicalEvaluation.blocked) warnings.push('La majorité, l’appareil ou une ligne rouge bloque actuellement la mise en œuvre normale : l’initiative a une probabilité très faible sans travail politique préalable.');
+  else if (politicalEvaluation.apparatusSupport < 42) warnings.push('L’appareil politique soutient peu cette orientation et peut ralentir son exécution.');
+  if (politicalEvaluation.leaderDisposition < 42) warnings.push('La direction effective est personnellement réticente à ce levier.');
+  if (leverProfile.lever === 'energy_resilience') warnings.push('Ce programme développe la résilience et les infrastructures ; constituer un stock physique exige encore un contrat d’approvisionnement distinct.');
+  if (leverProfile.lever === 'strategic_sector' && !strategicSectorInText(state, player.id, intent)) warnings.push('La filière demandée n’a pas encore de registre sectoriel détaillé : seuls les effets transversaux seront appliqués.');
+  const effects = effectsFor(state, category, leverProfile.lever, targetId, intent);
   const operation = category === 'diplomacy' ? diplomaticOperation(intent) : undefined;
   const intentSpec = actionIntentFromProgram(
-    { actorId: player.id, targetIds: targetId ? [targetId] : [], category, intent },
+    { actorId: player.id, targetIds: targetId ? [targetId] : [], category, lever: leverProfile.lever, intent },
     options.source ?? 'player', operation,
   );
   if (options.requestId) intentSpec.requestId = options.requestId;
@@ -331,17 +403,33 @@ export function prepareCommonAction(
     warnings,
     action: {
       category,
+      lever: leverProfile.lever,
       actorId: player.id,
       targetIds: targetId ? [targetId] : [],
       ...(options.linkedDossierId ? { linkedDossierId: options.linkedDossierId } : {}),
       ...(linkedHistoricalAnchorId ? { historicalIntent: options.historicalIntent ?? 'contain' } : {}),
-      title: `${categoryLabels[category]}${targetId ? ` avec ${state.countries[targetId]?.name}` : ''}`,
+      title: `${leverProfile.label}${targetId ? ` avec ${state.countries[targetId]?.name}` : ''}`,
       intent,
-      durationMonths: durationFor(category),
+      durationMonths: leverProfile.durationMonths,
       requiredCapacities,
-      budgetCost: budgetFor(category),
+      budgetCost: leverProfile.budgetCost,
       successProbability,
       risks: warnings.length ? warnings : ['Les oppositions, délais d’exécution ou aléas extérieurs peuvent réduire l’effet attendu.'],
+      policySignals: [
+        ...politicalProfile.policySignals,
+        ...(leverProfile.lever === 'energy_resilience' && /\b(gaz|petrole|fossile)\b/.test(normalize(intent))
+          ? [{ signal: 'fossil_expansion' as const, weight: 0.65 }] : []),
+      ],
+      politicalAssessment: {
+        pathwayStatus: politicalPathway.status,
+        doctrineCompatibility: politicalEvaluation.doctrineCompatibility,
+        institutionalFeasibility: politicalEvaluation.institutionalFeasibility,
+        leaderDisposition: politicalEvaluation.leaderDisposition,
+        apparatusSupport: politicalEvaluation.apparatusSupport,
+        finalScore: politicalEvaluation.finalScore,
+        blocked: politicalEvaluation.blocked,
+        reasons: politicalEvaluation.reasons.slice(0, 6),
+      },
       successEffects: effects.success,
       partialEffects: effects.partial,
       intentSpec,
@@ -401,6 +489,15 @@ export function launchCommonAction(state: WorldState, prepared: PreparedCommonAc
     ...program.requiredCapacities.map(({ domain, commitment }) => ({ kind: 'capacity_commitment' as const, countryId: program.actorId, domain, delta: commitment, reason: `Moyens mobilisés pour « ${program.title} » jusqu’à sa résolution.` })),
     ...(program.intentSpec?.kind === 'common_program' && program.category === 'diplomacy' && program.targetIds[0]
       ? [diplomaticDossier(state, program.targetIds[0], program.intentSpec.operation ?? 'contact', program.intent)] : []),
+    ...(program.policySignals?.length ? stakeholderReactionEffects(state, {
+      id: `measure-${program.id}`,
+      countryId: program.actorId,
+      title: program.title,
+      subjectId: program.linkedDossierId ?? `program:${program.lever ?? program.category}`,
+      intensity: clamp(42 + program.budgetCost * 2, 35, 88),
+      signals: program.policySignals,
+      effects: [],
+    }) : []),
   ];
   return {
     ok: true as const,

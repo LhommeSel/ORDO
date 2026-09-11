@@ -15,11 +15,13 @@ import { TerritoryExplorer } from '@/components/territory-explorer';
 import { DiplomacySheet } from '@/components/diplomacy-sheet';
 import {
   advanceWorld, answerAdvisorQuestion, armamentAdvisorFacts,
+  actionLeverProfiles,
   acceptEnergyOffer, adjustEnergyOffer, assessStrategicPlan,
   continueEnergyNegotiationAI, createAdministrativeEnergyOffer, createFrance2000World,
   dossierUnreadCount, dossiersRequiringAttention, dossierUpdatesSinceView, assessDossierResolution, energyBalance,
   energyCounterpartResponseFromSession, evaluatePoliticalPathway, executeAIJob, markDossierViewed, productEvidenceSummary,
   enactPrototypeGovernmentMeasure, reactionLevelLabels, reactionTrendLabels,
+  authorizeArmamentProspect, rejectArmamentProspect,
   launchCommonAction, prepareCommonAction, prepareDossierDelegation,
   nodeAvailableExport, nodeBookedVolume, nodeExpansionPotential,
   reactivateDossier, resolveDossierDecision, resolveDiplomaticDialogueResponse, sendEnergyOffer, startEnergyNegotiationAI, visibleLedger, visibleStakeholderReactions,
@@ -507,8 +509,16 @@ function EnergyPanel({ world }: { world: WorldState }) {
   </div>;
 }
 
-function IndustryPanel({ world }: { world: WorldState }) {
+function IndustryPanel({ world, onWorldChange, onNotice }: { world: WorldState; onWorldChange: (world: WorldState) => void; onNotice: (message: string) => void }) {
   const evidence = Object.fromEntries(armamentAdvisorFacts(world).map((item) => [item.productId, item]));
+  const resolveProspect = (productId: string, prospectId: string, decision: 'authorize' | 'reject') => {
+    const result = decision === 'authorize'
+      ? authorizeArmamentProspect(world, productId, prospectId)
+      : rejectArmamentProspect(world, productId, prospectId);
+    if (!result.ok) return onNotice(result.error);
+    onWorldChange(result.state);
+    onNotice(decision === 'authorize' ? 'Exportation autorisée et commande inscrite au carnet.' : 'Exportation refusée ; le prospect est clos.');
+  };
   return <div className="space-y-4">
     <div className="grid gap-3 lg:grid-cols-3">{Object.values(world.sectors).map((sector) => <div key={sector.id} className="border border-border bg-card/70 p-4">
       <div className="font-medium capitalize">{sector.countryId} · {sector.sector.replaceAll('_', ' ')}</div>
@@ -524,6 +534,11 @@ function IndustryPanel({ world }: { world: WorldState }) {
           <div className="flex justify-between gap-3"><div><div className="font-semibold">{product.name}</div><div className="text-xs text-muted-foreground">{product.manufacturer} · {product.family}</div></div><span className="font-mono text-[10px] text-primary">{product.status}</span></div>
           <div className="mt-4 grid grid-cols-2 gap-2 text-xs"><div>Capacité/an <b>{product.annualCapacity}</b></div><div>Carnet <b>{product.backlogMonths.toFixed(1)} mois</b></div><div>Technique <b>{proof.maturity}</b></div><div>Terrain <b>{proof.operationalExperience}</b></div></div>
           <div className="mt-3 text-xs text-muted-foreground">Retours {proof.feedback} · confiance documentaire {proof.confidence}% · {product.prospects.length} prospect(s)</div>
+          {product.prospects.length > 0 && <div className="mt-3 space-y-2 border-t border-border pt-3">{product.prospects.slice(-3).map((prospect) => {
+            const buyer = world.countries[prospect.countryId];
+            const pending = prospect.status === 'approval_required' || prospect.status === 'negotiating';
+            return <div key={prospect.id} className="border border-border bg-background/30 p-2 text-xs"><div className="flex items-start justify-between gap-2"><span>{buyer?.flag} {buyer?.name ?? prospect.countryId} · {prospect.quantity} unités</span><span className="font-mono text-[10px] text-primary">{prospect.status}</span></div><div className="mt-1 text-muted-foreground">Sensibilité politique : {prospect.politicalSensitivity}/100</div>{pending && <div className="mt-2 flex gap-2"><Button size="sm" onClick={() => resolveProspect(product.id, prospect.id, 'authorize')}>Autoriser</Button><Button size="sm" variant="outline" onClick={() => resolveProspect(product.id, prospect.id, 'reject')}>Refuser</Button></div>}</div>;
+          })}</div>}
         </div>;
       })}</div>
     </div>
@@ -945,7 +960,10 @@ function AdvisorPanel({ world, onWorldChange, onNotice }: { world: WorldState; o
           <h2 className="mt-1 text-xl font-semibold">{preparedAction.title}</h2>
           <p className="mt-2 text-sm text-muted-foreground">{preparedAction.intent}</p>
           <div className="mt-4 grid gap-2 sm:grid-cols-4"><Stat label="Origine" value={preparedAction.intentSpec?.source === 'ai' ? 'IA consultative' : 'Joueur'} /><Stat label="Durée" value={`${preparedAction.durationMonths} mois`} /><Stat label="Issue estimée" value={`${preparedAction.successProbability}%`} /><Stat label="Coût initial" value={preparedAction.budgetCost.toFixed(1)} detail="budget du prototype" /></div>
+          {preparedAction.lever && <div className="mt-3 border-l-2 border-sky-400 bg-sky-400/5 p-3 text-xs"><b>Levier réellement simulé :</b> {actionLeverProfiles[preparedAction.lever].label}</div>}
+          {preparedAction.politicalAssessment && <div className="mt-3 border border-border bg-background/30 p-3"><div className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Faisabilité politique au lancement</div><div className="mt-2 grid gap-2 sm:grid-cols-4"><Stat label="Voie" value={preparedAction.politicalAssessment.pathwayStatus} /><Stat label="Dirigeant" value={`${preparedAction.politicalAssessment.leaderDisposition.toFixed(0)}/100`} /><Stat label="Appareil" value={`${preparedAction.politicalAssessment.apparatusSupport.toFixed(0)}/100`} /><Stat label="Institutions" value={`${preparedAction.politicalAssessment.institutionalFeasibility.toFixed(0)}/100`} /></div>{preparedAction.politicalAssessment.reasons.length > 0 && <details className="mt-2 text-xs text-muted-foreground"><summary className="cursor-pointer">Pourquoi cette faisabilité ?</summary><ul className="mt-2 space-y-1">{preparedAction.politicalAssessment.reasons.map((reason) => <li key={reason}>— {reason}</li>)}</ul></details>}</div>}
           <div className="mt-4 text-xs"><b>Moyens engagés :</b><div className="mt-2 flex flex-wrap gap-2">{preparedAction.requiredCapacities.map((item) => <span key={item.domain} className="border border-border bg-muted/30 px-2 py-1">{item.domain} +{item.commitment}</span>)}</div></div>
+          <div className="mt-4 text-xs"><b>Si le programme réussit :</b><ul className="mt-1 space-y-1 text-muted-foreground">{preparedAction.successEffects.slice(0, 5).map((effect, index) => <li key={`${effect.kind}-${index}`}>— {effect.reason}</li>)}</ul></div>
           <div className="mt-4 text-xs"><b>Risques :</b><ul className="mt-1 space-y-1 text-muted-foreground">{preparedAction.risks.map((risk) => <li key={risk}>— {risk}</li>)}</ul></div>
           {actionWarnings.length > 0 && <div className="mt-3 text-xs text-amber-300">{actionWarnings.map((warning) => <div key={warning}>⚠ {warning}</div>)}</div>}
           <Button className="mt-4" onClick={launchPreparedAction}><CheckCircle2 className="size-4" />Engager le programme</Button>
@@ -1485,7 +1503,7 @@ export default function Home() {
       {panel === 'map' && <MapPanel world={world} />}
       {panel === 'economy' && <EconomyPanel world={world} />}
       {panel === 'energy' && <EnergyPanel world={world} />}
-      {panel === 'industry' && <IndustryPanel world={world} />}
+      {panel === 'industry' && <IndustryPanel world={world} onWorldChange={setWorld} onNotice={setNotice} />}
       {panel === 'dossiers' && <DossiersPanel world={world} selectedId={selectedDossierId} onSelect={setSelectedDossierId} onWorldChange={setWorld} onNotice={setNotice} onOpenDiplomacy={(dialogueId) => { setSelectedDialogueId(dialogueId); setPanel('diplomacy'); }} />}
       {panel === 'diplomacy' && <DiplomacyPanel world={world} onWorldChange={setWorld} onNotice={setNotice} initialDialogueId={selectedDialogueId} />}
       {panel === 'advisor' && <AdvisorPanel world={world} onWorldChange={setWorld} onNotice={setNotice} />}

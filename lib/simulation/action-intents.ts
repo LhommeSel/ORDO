@@ -1,4 +1,4 @@
-import type { ActionProgram, CommonActionCategory, CountryId, EnergyResource } from './types';
+import type { ActionProgram, CommonActionCategory, CommonActionLever, CountryId, EnergyResource } from './types';
 
 /**
  * Objet intermédiaire entre une formulation humaine et une action du moteur.
@@ -11,6 +11,7 @@ export type ActionIntent =
       actorId: CountryId;
       targetIds: CountryId[];
       category: CommonActionCategory;
+      lever?: CommonActionLever;
       objective: string;
       operation?: 'contact' | 'cooperation' | 'defense_pact' | 'mediation' | 'information_sharing';
       source: 'player' | 'local_rule' | 'ai';
@@ -26,11 +27,12 @@ export type ActionIntent =
       requestId?: string;
     };
 
-export const actionIntentFromProgram = (program: Pick<ActionProgram, 'actorId' | 'targetIds' | 'category' | 'intent'>, source: ActionIntent['source'] = 'player', operation?: ActionIntentExtractOperation): ActionIntent => ({
+export const actionIntentFromProgram = (program: Pick<ActionProgram, 'actorId' | 'targetIds' | 'category' | 'intent' | 'lever'>, source: ActionIntent['source'] = 'player', operation?: ActionIntentExtractOperation): ActionIntent => ({
   kind: 'common_program',
   actorId: program.actorId,
   targetIds: program.targetIds.filter((id): id is CountryId => typeof id === 'string'),
   category: program.category,
+  ...(program.lever ? { lever: program.lever } : {}),
   objective: program.intent,
   source,
   ...(operation ? { operation } : {}),
