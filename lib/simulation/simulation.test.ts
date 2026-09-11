@@ -285,6 +285,35 @@ test('un rejet du pouls IA est isolé et conserve le tour local en secours', asy
   assert.equal(result.state.currentDate, launched.state.currentDate);
 });
 
+test('un rejet de l autonomie mondiale matérialise au plus un ancrage actif déjà visible', async () => {
+  const active = advanceWorld(createFrance2000World(), '2001-01-01').state;
+  const request = createWorldPulseRequest(active, active.actions.length, 1, 'test-historical-fallback');
+  const autonomy = request.pulses.find((item) => item.kind === 'world_autonomy');
+  assert.ok(autonomy);
+  if (!autonomy) return;
+  const activeVisible = autonomy.context.facts
+    .filter((fact) => fact.id.startsWith('history-anchor:'))
+    .map((fact) => fact.id.slice('history-anchor:'.length))
+    .filter((id) => active.historicalAnchors[id]?.status === 'active');
+  assert.ok(activeVisible.length >= 2);
+  const fakeFetcher = async () => new Response(JSON.stringify({
+    ok: true,
+    results: [{ id: autonomy.id, kind: autonomy.kind, ok: false, message: 'Réponse autonomie rejetée.' }],
+    usage: { model: 'gpt-5.6-luna', inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, estimatedCostUsd: 0, latencyMs: 1, remainingSessionRequestsToday: 1 },
+  }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  const result = await executeWorldPulse(active, request, fakeFetcher as typeof fetch);
+  assert.equal(result.ok, false);
+  assert.equal(result.fallbackApplied, 1);
+  assert.equal(result.manifestedAnchorIds.length, 1);
+  const manifestedId = result.manifestedAnchorIds[0];
+  assert.ok(activeVisible.includes(manifestedId));
+  const anchor = result.state.historicalAnchors[manifestedId];
+  assert.equal(anchor.status, 'manifested');
+  assert.ok(anchor.manifestation && anchor.possibleManifestations.includes(anchor.manifestation));
+  const dossier = result.state.strategicDossiers[anchor.dossierId ?? `historical-${anchor.id}`];
+  assert.ok(dossier.entries.some((entry) => entry.id === `historical-fallback-${anchor.id}-${result.state.currentDate}`));
+});
+
 test('la rotation d’attention mondiale remonte des régions négligées sans forcer un événement', () => {
   const state = createFrance2000World();
   const focus = rankWorldAttention(state, []);

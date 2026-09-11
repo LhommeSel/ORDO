@@ -20,6 +20,7 @@ import {
 } from './dossier-scheduler';
 import { rankWorldAttention, type WorldAttentionTarget } from './world-attention';
 import { queueAutonomousProgram, type AutonomousProgramInput } from './autonomous-programs';
+import { pickSeeded } from '../random';
 
 const importanceRank: Record<DossierImportance, number> = { minor: 0, moderate: 1, major: 2, critical: 3 };
 const MAX_ACTIVE_MAJOR_DOSSIERS = 12;
@@ -194,6 +195,126 @@ export type AppliedWorldPulse = {
   queuedAutonomousPrograms: number;
   manifestedAnchorIds: string[];
 };
+
+const emptyAppliedWorldPulse = (state: WorldState): AppliedWorldPulse => ({
+  state,
+  createdDossierIds: [],
+  updatedDossierIds: [],
+  playerDecisions: 0,
+  relationChanges: 0,
+  queuedAutonomousPrograms: 0,
+  manifestedAnchorIds: [],
+});
+
+/**
+ * Relais local très volontairement étroit lorsque la voie « autonomie du
+ * monde » n'a pas produit de réponse utilisable. Ce n'est pas un second
+ * générateur d'événements : il ne peut matérialiser qu'un ancrage déjà actif,
+ * déjà visible dans le contexte du pouls et déjà rattaché à son dossier.
+ *
+ * L'IA reste donc nécessaire pour les suites riches, les nouveaux dossiers et
+ * les initiatives autonomes. Le relais évite seulement qu'une panne réseau ou
+ * une réponse rejetée mette indéfiniment en attente une pression historique
+ * qui a déjà franchi son seuil.
+ */
+export function applyHistoricalAnchorFallback(
+  state: WorldState,
+  item: Pick<WorldPulseRequestItem, 'id' | 'kind' | 'context'>,
+): AppliedWorldPulse {
+  if (item.kind !== 'world_autonomy') return emptyAppliedWorldPulse(state);
+
+  const visibleAnchorIds = new Set(item.context.facts
+    .filter((fact) => fact.id.startsWith('history-anchor:'))
+    .map((fact) => fact.id.slice('history-anchor:'.length)));
+  const anchor = Object.values(state.historicalAnchors ?? {})
+    .filter((candidate) => candidate.status === 'active' && visibleAnchorIds.has(candidate.id))
+    .filter((candidate) => Boolean(state.strategicDossiers[candidate.dossierId ?? `historical-${candidate.id}`]))
+    .sort((left, right) => right.pressure - left.pressure
+      || right.historicalWeight - left.historicalWeight
+      || left.id.localeCompare(right.id))[0];
+  if (!anchor || anchor.possibleManifestations.length === 0) return emptyAppliedWorldPulse(state);
+
+  const dossierId = anchor.dossierId ?? `historical-${anchor.id}`;
+  const dossier = state.strategicDossiers[dossierId];
+  if (!dossier) return emptyAppliedWorldPulse(state);
+
+  // Le choix reste reproductible pour une même partie et ne dépend pas d'un
+  // identifiant de requête aléatoire : rejouer une sauvegarde donne la même
+  // branche locale tant que le joueur n'a pas modifié ce dossier.
+  const manifestation = pickSeeded(
+    anchor.possibleManifestations,
+    state.seed,
+    `historical-fallback:${anchor.id}:${state.currentDate}:${anchor.interventionBalance ?? 0}`,
+  );
+  const divergence = anchor.divergence?.kind === 'redirected'
+    ? 'La forme retenue suit la bifurcation déjà provoquée dans cette partie.'
+    : anchor.divergence?.kind === 'accelerated'
+      ? 'Les interventions précédentes ont durci ou accéléré cette trajectoire.'
+      : 'La pression cumulée franchit une forme observable sans reproduire mécaniquement le fait réel.';
+  const phase = anchor.divergence?.kind === 'redirected'
+    ? 'Manifestation divergente'
+    : anchor.divergence?.kind === 'accelerated'
+      ? 'Manifestation accélérée'
+      : 'Manifestation historique';
+  const summary = `${anchor.trendSummary} La tendance se concrétise sous la forme : ${manifestation}. ${divergence}`;
+  const effects: WorldEffect[] = [
+    {
+      kind: 'historical_anchor_patch',
+      anchorId: anchor.id,
+      patch: { status: 'manifested', manifestedAt: state.currentDate, manifestation, dossierId },
+      reason: `Le relais local concrétise une forme admissible de l’ancrage « ${anchor.trendTitle} » après indisponibilité de la voie IA.`,
+      visibility: 'player',
+    },
+    {
+      kind: 'dossier_patch',
+      dossierId,
+      patch: {
+        importance: dossierImportanceValue(anchor.importance) >= dossierImportanceValue(dossier.importance) ? anchor.importance : dossier.importance,
+        status: 'active',
+        phase,
+        trend: anchor.divergence?.kind === 'accelerated' ? 'escalating' : 'stable',
+        publicSummary: summary,
+      },
+      reason: 'Le dossier historique conserve la manifestation locale et reste disponible pour les décisions du joueur.',
+      visibility: 'player',
+    },
+    {
+      kind: 'dossier_entry_add',
+      dossierId,
+      entry: {
+        id: `historical-fallback-${anchor.id}-${state.currentDate}`,
+        date: state.currentDate,
+        title: manifestation,
+        summary,
+        importance: anchor.importance,
+        actorIds: anchor.affectedActors,
+        requiresDecision: false,
+        visibility: 'player',
+      },
+      reason: 'La continuité historique est inscrite au dossier sans consommer de crédit IA.',
+      visibility: 'player',
+    },
+  ];
+  const next = commitWorldAction(state, {
+    kind: 'historical',
+    actorId: state.playerCountryId,
+    origin: 'historical',
+    visibility: 'player',
+    intent: `Relais local : manifestation de « ${anchor.trendTitle} »`,
+    assumptions: ['Aucune réponse IA utilisable pour la mission d’autonomie mondiale.', 'Une seule manifestation historique active peut être résolue par relais local à cette avancée.'],
+    metadata: { worldPulseFallback: true, pulseItemId: item.id, historicalAnchorId: anchor.id },
+    effects,
+  });
+  return {
+    state: next,
+    createdDossierIds: [],
+    updatedDossierIds: [dossierId],
+    playerDecisions: 0,
+    relationChanges: 0,
+    queuedAutonomousPrograms: 0,
+    manifestedAnchorIds: [anchor.id],
+  };
+}
 
 /**
  * Adaptateur métier obligatoire entre le LLM et la sauvegarde. Il ne laisse
@@ -433,10 +554,31 @@ export type WorldPulseExecutionResult = {
   response?: WorldPulseResponse;
 };
 
-function failedPulse(state: WorldState, message: string, fallbackApplied: number, response?: WorldPulseResponse): WorldPulseExecutionResult {
+function applyLocalAutonomyFallback(
+  state: WorldState,
+  request: WorldPulseRequest,
+): AppliedWorldPulse {
+  const autonomy = request.pulses.find((item) => item.kind === 'world_autonomy');
+  return autonomy ? applyHistoricalAnchorFallback(state, autonomy) : emptyAppliedWorldPulse(state);
+}
+
+function failedPulse(
+  state: WorldState,
+  request: WorldPulseRequest,
+  message: string,
+  fallbackApplied: number,
+  response?: WorldPulseResponse,
+): WorldPulseExecutionResult {
+  const fallback = applyLocalAutonomyFallback(state, request);
   return {
-    state, ok: false, createdDossierIds: [], updatedDossierIds: [], playerDecisions: 0,
-    relationChanges: 0, queuedAutonomousPrograms: 0, manifestedAnchorIds: [], errors: [message], fallbackApplied, response,
+    state: fallback.state, ok: false,
+    createdDossierIds: fallback.createdDossierIds,
+    updatedDossierIds: fallback.updatedDossierIds,
+    playerDecisions: fallback.playerDecisions,
+    relationChanges: fallback.relationChanges,
+    queuedAutonomousPrograms: fallback.queuedAutonomousPrograms,
+    manifestedAnchorIds: fallback.manifestedAnchorIds,
+    errors: [message], fallbackApplied, response,
   };
 }
 
@@ -452,16 +594,16 @@ export async function executeWorldPulse(
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request),
     });
   } catch {
-    return failedPulse(state, 'Le pouls IA est momentanément inaccessible.', request.pulses.length);
+    return failedPulse(state, request, 'Le pouls IA est momentanément inaccessible.', request.pulses.length);
   }
   let payload: WorldPulseResponse;
   try { payload = await response.json() as WorldPulseResponse; } catch {
-    return failedPulse(state, 'Le pouls IA a renvoyé une réponse illisible.', request.pulses.length);
+    return failedPulse(state, request, 'Le pouls IA a renvoyé une réponse illisible.', request.pulses.length);
   }
   if (!payload || typeof payload !== 'object' || typeof (payload as { ok?: unknown }).ok !== 'boolean') {
-    return failedPulse(state, 'Le pouls IA a renvoyé un format inattendu.', request.pulses.length);
+    return failedPulse(state, request, 'Le pouls IA a renvoyé un format inattendu.', request.pulses.length);
   }
-  if (!payload.ok) return failedPulse(state, payload.message, request.pulses.length, payload);
+  if (!payload.ok) return failedPulse(state, request, payload.message, request.pulses.length, payload);
   let next = state;
   const createdDossierIds: string[] = [];
   const updatedDossierIds: string[] = [];
@@ -473,8 +615,24 @@ export async function executeWorldPulse(
   let fallbackApplied = 0;
   for (const item of request.pulses) {
     const result = payload.results.find((candidate) => candidate.id === item.id);
-    if (!result) { errors.push(`La mission ${item.kind} n’a pas répondu.`); fallbackApplied += 1; continue; }
-    if (!result.ok) { errors.push(`${item.kind} : ${result.message}`); fallbackApplied += 1; continue; }
+    if (!result) {
+      errors.push(`La mission ${item.kind} n’a pas répondu.`);
+      fallbackApplied += 1;
+      const fallback = applyHistoricalAnchorFallback(next, item);
+      next = fallback.state;
+      updatedDossierIds.push(...fallback.updatedDossierIds);
+      manifestedAnchorIds.push(...fallback.manifestedAnchorIds);
+      continue;
+    }
+    if (!result.ok) {
+      errors.push(`${item.kind} : ${result.message}`);
+      fallbackApplied += 1;
+      const fallback = applyHistoricalAnchorFallback(next, item);
+      next = fallback.state;
+      updatedDossierIds.push(...fallback.updatedDossierIds);
+      manifestedAnchorIds.push(...fallback.manifestedAnchorIds);
+      continue;
+    }
     const applied = applyWorldPulseAnswer(next, item, result.answer);
     next = applied.state;
     createdDossierIds.push(...applied.createdDossierIds);

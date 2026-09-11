@@ -1389,10 +1389,11 @@ export default function Home() {
       const touched = pulse.createdDossierIds.length + pulse.updatedDossierIds.length;
       if (pulse.createdDossierIds.length) setSelectedDossierId(pulse.createdDossierIds[0]);
       if (pulse.ok) {
-        setNotice(`${baseNotice} · pouls IA : ${touched} dossier(s), ${pulse.relationChanges} relation(s) actualisée(s)${pulse.queuedAutonomousPrograms ? ` · ${pulse.queuedAutonomousPrograms} programme(s) autonome(s) en file` : ''}${pulse.playerDecisions ? ` · ${pulse.playerDecisions} décision(s) attendue(s)` : ''}.`);
+        setNotice(`${baseNotice} · pouls IA : ${touched} dossier(s), ${pulse.relationChanges} relation(s) actualisée(s)${pulse.manifestedAnchorIds.length ? ` · ${pulse.manifestedAnchorIds.length} manifestation(s) historique(s)` : ''}${pulse.queuedAutonomousPrograms ? ` · ${pulse.queuedAutonomousPrograms} programme(s) autonome(s) en file` : ''}${pulse.playerDecisions ? ` · ${pulse.playerDecisions} décision(s) attendue(s)` : ''}.`);
       } else {
         const fallback = pulse.fallbackApplied ? ` · simulation locale conservée pour ${pulse.fallbackApplied} mission(s)` : '';
-        setNotice(`${baseNotice} · pouls IA partiel : ${touched} dossier(s) appliqué(s)${pulse.queuedAutonomousPrograms ? ` · ${pulse.queuedAutonomousPrograms} programme(s) autonome(s) en file` : ''}${fallback}${pulse.errors.length ? ` · ${pulse.errors[0]}` : ''}.`);
+        const historicalFallback = pulse.manifestedAnchorIds.length ? ` · ${pulse.manifestedAnchorIds.length} manifestation(s) historique(s) assurée(s) localement` : '';
+        setNotice(`${baseNotice} · pouls IA partiel : ${touched} dossier(s) appliqué(s)${pulse.queuedAutonomousPrograms ? ` · ${pulse.queuedAutonomousPrograms} programme(s) autonome(s) en file` : ''}${historicalFallback}${fallback}${pulse.errors.length ? ` · ${pulse.errors[0]}` : ''}.`);
       }
     } catch {
       // Le tour local reste valable même si le navigateur ne peut pas lancer le pouls.
