@@ -37,7 +37,7 @@ import { runMinorEventCycle } from './minor-events';
 import { rankWorldAttention } from './ai/world-attention';
 import { activeMajorDossierCount, rankDossierReviews, rankStrategicDossierReviews } from './ai/dossier-scheduler';
 import { commitWorldAction } from './ledger';
-import { applyDiplomaticDialogueAIAnswer, openDiplomaticDialogue, openDiplomaticDialogueForDossier, requestDiplomaticDialogueAI, resolveDiplomaticDialogueResponse, sendDiplomaticDialogueMessage } from './diplomacy-dialogue';
+import { addDiplomaticDialogueParticipant, applyDiplomaticDialogueAIAnswer, openDiplomaticDialogue, openDiplomaticDialogueForDossier, requestDiplomaticDialogueAI, resolveDiplomaticDialogueResponse, sendDiplomaticDialogueMessage } from './diplomacy-dialogue';
 import { validateCountryRegistry } from './data-validator';
 import { buildTurnBriefing } from './turn-briefing';
 import { queueAutonomousProgram } from './ai/autonomous-programs';
@@ -1796,6 +1796,49 @@ test('un dialogue libre attend une première réponse IA puis réserve Luna aux 
   assert.ok((acceptedTreaty?.endDate ?? '') > accepted.state.currentDate);
   const afterExpiry = advanceWorld(accepted.state, '2002-01-01').state;
   assert.equal(afterExpiry.treaties[acceptedTreaty!.id]?.status, 'expired');
+});
+
+test('un groupe diplomatique peut accueillir un pays et faire tourner la parole sans appel implicite', () => {
+  const initial = createFrance2000World();
+  const opened = openDiplomaticDialogue(initial, ['DEU'], 'Nous proposons une consultation trilatérale sur la sécurité énergétique.');
+  assert.equal(opened.ok, true);
+  if (!opened.ok) return;
+  const added = addDiplomaticDialogueParticipant(opened.state, opened.dialogueId, 'ITA');
+  assert.equal(added.ok, true);
+  if (!added.ok) return;
+  const grouped = added.state.diplomaticDialogues[opened.dialogueId];
+  assert.equal(grouped.kind, 'multilateral_dialogue');
+  assert.deepEqual(grouped.participantIds, ['FRA', 'DEU', 'ITA']);
+
+  const firstSpeaker = grouped.activeSpeakerId;
+  const firstRequest = requestDiplomaticDialogueAI(added.state, opened.dialogueId);
+  assert.equal(firstRequest.ok, true);
+  if (!firstRequest.ok) return;
+  const firstAnswer = applyDiplomaticDialogueAIAnswer(firstRequest.state, firstRequest.jobId, {
+    headline: 'Consultation prudente', assessment: 'Le groupe peut avancer sur des garanties communes.',
+    publicMessage: 'Nous sommes prêts à examiner cette proposition avec les autres participants.', proposals: [], requestedFacts: [], contextFactIds: [], approximateInputTokens: 120,
+  }, {
+    scope: 'general_dialogue', kind: 'counter', agreementType: 'security_cooperation',
+    position: 'Nous demandons des garanties communes et une consultation préalable.', concessions: ['Partager les informations de risque énergétique'],
+    guaranteesRequested: ['Consultation préalable'], conditions: ['Validation gouvernementale'], redLines: ['Aucune obligation automatique de soutien'], timeline: 'Revue sous trois mois.',
+  });
+  assert.equal(firstAnswer.ok, true);
+  if (!firstAnswer.ok) return;
+  const afterFirst = firstAnswer.state.diplomaticDialogues[opened.dialogueId];
+  assert.notEqual(afterFirst.activeSpeakerId, firstSpeaker);
+  assert.ok(afterFirst.participantIds.includes(afterFirst.activeSpeakerId));
+  assert.equal(afterFirst.status, 'awaiting_player');
+
+  const sent = sendDiplomaticDialogueMessage(firstAnswer.state, opened.dialogueId, 'Nous acceptons de préciser les garanties et souhaitons entendre le troisième participant.');
+  assert.equal(sent.ok, true);
+  if (!sent.ok) return;
+  assert.equal(sent.state.diplomaticDialogues[opened.dialogueId].status, 'awaiting_ai');
+  assert.equal(sent.state.diplomaticDialogues[opened.dialogueId].aiMode, 'local');
+  const secondRequest = requestDiplomaticDialogueAI(sent.state, opened.dialogueId);
+  assert.equal(secondRequest.ok, true);
+  if (!secondRequest.ok) return;
+  assert.equal(secondRequest.state.diplomaticDialogues[opened.dialogueId].aiMode, 'ai');
+  assert.equal(secondRequest.state.aiJobs[secondRequest.jobId].context.recentTurns.length, 3);
 });
 
 test('un message d’un dialogue lié est visible dans la chronologie du dossier', () => {
