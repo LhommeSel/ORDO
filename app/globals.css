@@ -241,6 +241,11 @@
 .map-country.medium { fill: color-mix(in oklch, var(--signal-gold) 36%, var(--card)); }
 .map-country.low { fill: color-mix(in oklch, var(--signal-red) 36%, var(--card)); }
 .map-country.selected { fill: color-mix(in oklch, var(--signal-blue) 75%, var(--card)); stroke: var(--foreground); stroke-width: 1.2; filter: drop-shadow(0 0 5px color-mix(in oklch, var(--signal-blue) 55%, transparent)); }
+.map-deployment-layer { pointer-events: none; }
+.map-deployment-marker { pointer-events: auto; cursor: pointer; outline: none; }
+.map-deployment-halo { fill: color-mix(in oklch, var(--signal-blue) 18%, transparent); stroke: color-mix(in oklch, var(--signal-blue) 70%, transparent); stroke-width: 0.8; }
+.map-deployment-dot { fill: var(--signal-blue); stroke: var(--foreground); stroke-width: 0.8; }
+.map-deployment-marker:hover .map-deployment-halo, .map-deployment-marker:focus-visible .map-deployment-halo { fill: color-mix(in oklch, var(--signal-blue) 42%, transparent); stroke: var(--foreground); stroke-width: 1.5; }
 .map-controls { position: absolute; z-index: 2; top: 0.75rem; left: 0.75rem; display: grid; border: 1px solid var(--border); background: color-mix(in oklch, var(--card) 92%, transparent); }
 .map-controls button { display: grid; width: 2rem; height: 2rem; place-items: center; border-bottom: 1px solid var(--border); color: var(--foreground); }
 .map-controls button:last-child { border-bottom: 0; }
@@ -255,6 +260,7 @@
 .map-legend i.high { background: var(--signal-green); }
 .map-legend i.medium { background: var(--signal-gold); }
 .map-legend i.low { background: var(--signal-red); }
+.map-legend i.deployment { width: 0.55rem; height: 0.55rem; border: 1px solid var(--foreground); border-radius: 999px; background: var(--signal-blue); box-shadow: 0 0 0 3px color-mix(in oklch, var(--signal-blue) 18%, transparent); }
 
 #diplomacy-center { display: none; }
 .event-diplomacy-button { display: flex; align-items: center; gap: 0.3rem; margin-top: 0.7rem; color: var(--primary); font-family: var(--font-geist-mono); font-size: 0.52rem; letter-spacing: 0.08em; }

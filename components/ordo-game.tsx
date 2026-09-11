@@ -341,11 +341,25 @@ function ReformsPanel({ world, onWorldChange, onNotice }: { world: WorldState; o
 
 function MapPanel({ world }: { world: WorldState }) {
   const [selectedCountryId, setSelectedCountryId] = useState(world.playerCountryId);
+  const [deploymentQuery, setDeploymentQuery] = useState('');
   const selected = world.countries[selectedCountryId];
-  const sheet = countrySheet(world, selectedCountryId);
+  const sheet = useMemo(() => countrySheet(world, selectedCountryId), [world, selectedCountryId]);
   const politicalCycle = world.politicalCycles?.[selectedCountryId];
   const activeMetrics = useMemo(() => Object.fromEntries(Object.keys(world.countries).map((id) => [id, 100])), [world.countries]);
   const activeCountries = Object.values(world.countries).sort((a, b) => b.weight - a.weight);
+  const deployments = useMemo(() => sheet?.defense?.deployments ?? [], [sheet]);
+  const filteredDeployments = useMemo(() => {
+    const query = deploymentQuery.trim().toLocaleLowerCase('fr');
+    if (!query) return deployments;
+    return deployments.filter((deployment) => `${deployment.location} ${deployment.mission} ${(deployment.countryBreakdown ?? []).map((item) => world.countries[item.countryId]?.name ?? item.countryId).join(' ')}`.toLocaleLowerCase('fr').includes(query));
+  }, [deploymentQuery, deployments, world.countries]);
+  const deploymentMarkers = useMemo(() => deployments.flatMap((deployment) => (deployment.countryBreakdown ?? []).map((item, index) => ({
+    id: `${deployment.location}-${item.countryId}-${index}`,
+    countryId: item.countryId,
+    label: `${world.countries[item.countryId]?.name ?? item.countryId} · ${deployment.location}`,
+    personnelThousands: item.personnelThousands,
+    mission: item.mission ?? deployment.mission,
+  }))), [deployments, world.countries]);
 
   return <section className="strategic-map-shell border border-border bg-card/70">
     <div className="map-header">
@@ -354,7 +368,7 @@ function MapPanel({ world }: { world: WorldState }) {
       <div className="ml-auto font-mono text-[10px] text-muted-foreground">{activeCountries.length} / 195 États modélisés</div>
     </div>
     <div className="map-command-layout">
-      <DeferredPanel fallback={<div className="map-load-status">Chargement de la carte…</div>}><WorldMap mode="military" metrics={activeMetrics} playerCountryId={world.playerCountryId} selectedId={selectedCountryId} onSelect={(id) => setSelectedCountryId(id)} /></DeferredPanel>
+      <DeferredPanel fallback={<div className="map-load-status">Chargement de la carte…</div>}><WorldMap mode="military" metrics={activeMetrics} playerCountryId={world.playerCountryId} selectedId={selectedCountryId} deploymentMarkers={deploymentMarkers} onSelect={(id) => setSelectedCountryId(id)} /></DeferredPanel>
       <aside className="map-dossier">
         {selected ? <>
           <div className="font-mono text-[10px] uppercase tracking-wider text-emerald-300">État modélisé</div>
@@ -372,6 +386,11 @@ function MapPanel({ world }: { world: WorldState }) {
             <Stat label="Stocks gaz" value={sheet?.energy ? `${sheet.energy.gasStocksMonths.toFixed(1)} mois` : '—'} />
           </div>
           {sheet?.defense && <div className="text-xs"><b>Posture militaire</b><p className="mt-1 text-muted-foreground">{sheet.defense.posture} · {sheet.defense.capabilities.join(' · ')}{sheet.defense.modelingLevel === 'aggregate' ? ' · ordre de grandeur ORDO à affiner' : ''}</p></div>}
+          {sheet?.defense && <div className="mt-4 border-t border-border pt-3 text-xs">
+            <div className="flex items-start justify-between gap-2"><div><b>Déploiements &amp; théâtres</b><p className="mt-1 text-[11px] text-muted-foreground">Les points bleus indiquent uniquement les pays d’accueil ventilés dans le référentiel.</p></div><span className="font-mono text-[10px] text-primary">{deployments.reduce((sum, item) => sum + item.personnelThousands, 0)} k</span></div>
+            <Input value={deploymentQuery} onChange={(event) => setDeploymentQuery(event.target.value)} placeholder="Filtrer un théâtre…" aria-label="Filtrer les déploiements militaires" className="mt-2 h-8 text-xs" />
+            <div className="mt-2 max-h-56 space-y-2 overflow-y-auto pr-1">{filteredDeployments.length === 0 ? <p className="text-muted-foreground">Aucun théâtre ne correspond à ce filtre.</p> : filteredDeployments.map((deployment) => <div key={deployment.location} className="border border-border/70 bg-background/30 p-2"><div className="flex items-start justify-between gap-2"><b>{deployment.location}</b><span className="font-mono text-[10px] text-primary">{deployment.personnelThousands} k</span></div><p className="mt-1 text-[11px] text-muted-foreground">{deployment.mission}</p>{deployment.countryBreakdown && <div className="mt-2 flex flex-wrap gap-1">{deployment.countryBreakdown.map((item) => <button key={item.countryId} type="button" onClick={() => setSelectedCountryId(item.countryId)} className="border border-sky-400/35 px-1.5 py-1 text-[10px] text-sky-200 hover:border-sky-300">{world.countries[item.countryId]?.flag ?? '•'} {world.countries[item.countryId]?.name ?? item.countryId} · {item.personnelThousands} k</button>)}</div>}</div>)}</div>
+          </div>}
           {sheet?.securityActors?.length ? <div className="mt-4 border-t border-border pt-3"><div className="font-mono text-[10px] uppercase tracking-wider text-amber-300">Acteurs non étatiques · référentiel 2000</div><div className="mt-2 space-y-2">{sheet.securityActors.map((actor) => <div key={actor.id} className="border border-border/70 bg-background/30 p-2 text-xs"><div className="flex items-start justify-between gap-2"><b>{actor.name}</b><span className={actor.threatLevel === 'high' || actor.threatLevel === 'critical' ? 'text-red-300' : 'text-amber-300'}>{actor.category === 'organized_crime' ? 'crime organisé' : actor.category === 'terrorist' ? 'terroriste' : 'paramilitaire'}</span></div><p className="mt-1 text-muted-foreground">{actor.activity} · zones : {actor.zones.join(', ')}</p><p className="mt-1 text-muted-foreground">Effectif estimé : {actor.estimatedStrength}. {actor.notes}</p></div>)}</div></div> : null}
           <div className="text-xs"><b>Priorité immédiate</b><p className="mt-1 text-muted-foreground">{selected.strategy.goals[0]?.label ?? 'Aucune priorité encore formalisée.'}</p></div>
           <div className="mt-4 text-xs"><b>Vulnérabilités connues</b><ul className="mt-1 space-y-1 text-muted-foreground">{selected.strategy.vulnerabilities.length ? selected.strategy.vulnerabilities.map((item) => <li key={item}>— {item}</li>) : <li>— Aucune vulnérabilité formalisée.</li>}</ul></div>
@@ -380,7 +399,7 @@ function MapPanel({ world }: { world: WorldState }) {
           <h3 className="mt-1 text-xl font-semibold">État non modélisé</h3>
           <p className="mt-2 text-sm text-muted-foreground">Cette frontière est affichée pour l’orientation du joueur. Son référentiel sera ajouté lorsque le pays entrera dans le périmètre de simulation.</p>
         </>}
-        <div className="map-legend"><span><i className="player" /> Pays joué</span><span><i className="high" /> État modélisé</span><span><i /> Référence sans données</span></div>
+        <div className="map-legend"><span><i className="player" /> Pays joué</span><span><i className="high" /> État modélisé</span><span><i /> Référence sans données</span>{deploymentMarkers.length > 0 && <span><i className="deployment" /> Déploiement ventilé</span>}</div>
       </aside>
     </div>
     <div className="border-t border-border p-3">

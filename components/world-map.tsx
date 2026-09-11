@@ -12,6 +12,14 @@ type WorldMapProps = {
   metrics: Record<string, number>;
   selectedId: string;
   onSelect: (id: string, name: string) => void;
+  /** Repères optionnels des pays d'accueil d'un déploiement militaire. */
+  deploymentMarkers?: Array<{
+    id: string;
+    countryId: string;
+    label: string;
+    personnelThousands: number;
+    mission: string;
+  }>;
 };
 
 type MapEntity = {
@@ -19,6 +27,15 @@ type MapEntity = {
   name: string;
   path?: string;
   point?: [number, number];
+};
+
+type DeploymentPoint = {
+  id: string;
+  countryId: string;
+  label: string;
+  personnelThousands: number;
+  mission: string;
+  point: [number, number];
 };
 
 type AtlasProperties = { id?: string; name?: string; name_long?: string };
@@ -49,11 +66,12 @@ const fallbackCoordinates: Record<string, [number, number]> = {
   CYN: [33.0, 35.2], SOL: [46.0, 5.0],
 };
 
-export function WorldMap({ mode, metrics, selectedId, onSelect, playerCountryId }: WorldMapProps) {
+export function WorldMap({ mode, metrics, selectedId, onSelect, playerCountryId, deploymentMarkers = [] }: WorldMapProps) {
   const [transform, setTransform] = useState({ x: 0, y: 0, k: 1 });
   const [entities, setEntities] = useState<MapEntity[]>([]);
   const [spherePath, setSpherePath] = useState<string>();
   const [graticulePath, setGraticulePath] = useState<string>();
+  const [deploymentPoints, setDeploymentPoints] = useState<DeploymentPoint[]>([]);
   const [loadError, setLoadError] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const moved = useRef(false);
@@ -90,6 +108,12 @@ export function WorldMap({ mode, metrics, selectedId, onSelect, playerCountryId 
       const path = d3.geoPath(projection);
       const represented = new Set(ordinary.map((entity) => entity.id));
       const mapped = ordinary.map((entity) => ({ id: entity.id, name: entity.name, path: path({ type: 'Feature', properties: { id: entity.id }, geometry: entity.geometry } as GeoJSON.Feature) ?? '' }));
+      const countryPoints = new Map<string, [number, number]>();
+      ordinary.forEach((entity) => {
+        const centroid = d3.geoCentroid({ type: 'Feature', properties: { id: entity.id }, geometry: entity.geometry } as GeoJSON.Feature);
+        const point = projection(centroid);
+        if (point) countryPoints.set(entity.id, point as [number, number]);
+      });
       const points = Object.entries(fallbackCoordinates)
         .filter(([id]) => !represented.has(id))
         .flatMap(([id, coordinates]) => {
@@ -97,11 +121,19 @@ export function WorldMap({ mode, metrics, selectedId, onSelect, playerCountryId 
           return point ? [{ id, name: countries.getName(id, 'fr') ?? id, point: point as [number, number] }] : [];
         });
       setEntities([...mapped, ...points]);
+      setDeploymentPoints(deploymentMarkers.flatMap((marker) => {
+        const point = countryPoints.get(marker.countryId) ?? (() => {
+          const coordinates = fallbackCoordinates[marker.countryId];
+          const projected = coordinates ? projection(coordinates) : null;
+          return projected ? projected as [number, number] : undefined;
+        })();
+        return point ? [{ ...marker, point }] : [];
+      }));
       setSpherePath(path({ type: 'Sphere' }) ?? undefined);
       setGraticulePath(path(d3.geoGraticule10()) ?? undefined);
     }).catch(() => { if (!cancelled) setLoadError(true); });
     return () => { cancelled = true; };
-  }, [attempt]);
+  }, [attempt, deploymentMarkers]);
 
   const bound = (x: number, size: number, k: number) => Math.max(size * (1 - k), Math.min(0, x));
   const zoom = (factor: number) => setTransform((current) => {
@@ -174,6 +206,21 @@ export function WorldMap({ mode, metrics, selectedId, onSelect, playerCountryId 
               ? <circle key={entity.id} {...common} cx={entity.point[0]} cy={entity.point[1]} r={entity.id === selectedId ? 4 : 2.5}><title>{entity.name} · repère ponctuel</title></circle>
               : <path key={entity.id} {...common} d={entity.path ?? ''} vectorEffect="non-scaling-stroke"><title>{entity.name}</title></path>;
           })}
+          {deploymentPoints.length > 0 && <g className="map-deployment-layer" aria-label="Déploiements militaires ventilés par pays">
+            {deploymentPoints.map((marker) => <g
+              key={marker.id}
+              className="map-deployment-marker"
+              role="button"
+              tabIndex={0}
+              aria-label={`${marker.label} · ${marker.personnelThousands} milliers de personnels`}
+              onClick={(event) => { event.stopPropagation(); if (!moved.current) onSelect(marker.countryId, marker.label); }}
+              onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onSelect(marker.countryId, marker.label); } }}
+            >
+              <circle className="map-deployment-halo" cx={marker.point[0]} cy={marker.point[1]} r={Math.max(5, Math.min(12, 4 + marker.personnelThousands / 12))} />
+              <circle className="map-deployment-dot" cx={marker.point[0]} cy={marker.point[1]} r={3.2} />
+              <title>{marker.label} · {marker.personnelThousands} k · {marker.mission}</title>
+            </g>)}
+          </g>}
         </g>
       </svg>
       <p className="map-historical-note">REPÈRES SIMPLIFIÉS · Soudan et Yougoslavie regroupés pour 2000 · points ponctuels pour les petits États sans polygone · contours issus d’un fond contemporain, non exhaustivement historicisé · Zoom par boutons, déplacement après zoom</p>
