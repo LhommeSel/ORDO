@@ -144,6 +144,9 @@ export async function POST(request: Request) {
       parsed.job.kind === 'diplomacy'
         ? 'Réponds directement en tant que pays interlocuteur : ne répète pas, ne cite pas et ne reformule pas le premier message du joueur. Commence par la position, la réaction ou la demande de l’interlocuteur, puis avance une réponse concrète.'
         : '',
+      parsed.job.kind === 'diplomacy'
+        ? 'Pour un dialogue, reste exploitable en jeu : publicMessage doit faire moins de 900 caractères et se terminer par une phrase complète ; assessment doit faire moins de 700 caractères ; diplomaticMove doit rester précis ; limite les proposals à une ou deux options réellement distinctes. Ne remplis pas les champs avec des répétitions.'
+        : '',
       isFreeDialogue
         ? 'Pour ce dialogue politique libre, diplomaticMove.scope doit être general_dialogue. Décris la position, les concessions possibles, les garanties demandées, les conditions, les lignes rouges et un calendrier en langage naturel. N’utilise jamais les champs de volume, durée, prix ou clauses énergétiques.'
         : 'Pour une négociation énergétique, diplomaticMove.scope doit être energy_contract. Une contre-proposition doit renseigner volume, durée et posture de prix ; les autres mouvements peuvent mettre ces champs à null. N’utilise que les clauses du catalogue énergétique.',
@@ -166,7 +169,12 @@ export async function POST(request: Request) {
       service_tier: 'default',
       store: false,
       ...(supportsReasoning(policy.model) ? { reasoning: { effort: reasoningByTier[parsed.job.budgetTier] } } : {}),
-      max_output_tokens: policy.maxOutputTokens,
+      // Les dialogues structurés contiennent une position publique, une
+      // décision privée et des garde-fous métier. Le plafond général peut
+      // tronquer les réponses riches avant leur validation JSON ; on réserve
+      // donc une marge dédiée, tout en conservant la limite globale de la
+      // politique (4 000 tokens maximum).
+      max_output_tokens: parsed.job.kind === 'diplomacy' ? Math.min(4_000, Math.max(policy.maxOutputTokens, 2_400)) : policy.maxOutputTokens,
       safety_identifier: sessionKey,
       prompt_cache_key: jobCacheKey,
       instructions,

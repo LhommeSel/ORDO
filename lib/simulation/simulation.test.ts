@@ -1838,7 +1838,8 @@ test('un groupe diplomatique peut accueillir un pays et faire tourner la parole 
   assert.equal(secondRequest.ok, true);
   if (!secondRequest.ok) return;
   assert.equal(secondRequest.state.diplomaticDialogues[opened.dialogueId].aiMode, 'ai');
-  assert.equal(secondRequest.state.aiJobs[secondRequest.jobId].context.recentTurns.length, 3);
+  const recentTurns = (secondRequest.state.aiJobs[secondRequest.jobId].context as Record<string, unknown>).recentTurns as unknown[];
+  assert.equal(recentTurns.length, 3);
 });
 
 test('un message d’un dialogue lié est visible dans la chronologie du dossier', () => {
