@@ -20,7 +20,7 @@ import {
   dossierUnreadCount, dossiersRequiringAttention, dossierUpdatesSinceView, energyBalance,
   energyCounterpartResponseFromSession, evaluatePoliticalPathway, executeAIJob, markDossierViewed, productEvidenceSummary,
   enactPrototypeGovernmentMeasure, reactionLevelLabels, reactionTrendLabels,
-  launchCommonAction, prepareCommonAction,
+  launchCommonAction, prepareCommonAction, prepareDossierDelegation,
   nodeAvailableExport, nodeBookedVolume, nodeExpansionPotential,
   reactivateDossier, resolveDossierDecision, resolveDiplomaticDialogueResponse, sendEnergyOffer, startEnergyNegotiationAI, visibleLedger, visibleStakeholderReactions,
   loadWorldFromBrowser, saveWorldToBrowser,
@@ -1141,11 +1141,7 @@ function DossiersPanel({ world, selectedId, onSelect, onWorldChange, onNotice, o
       return;
     }
     if (channel === 'delegation') {
-      const prepared = prepareCommonAction(
-        world,
-        `Déléguer à l’administration le traitement du dossier « ${selected.title} » : ${decision}`,
-        { source: 'player', linkedDossierId: selected.id },
-      );
+      const prepared = prepareDossierDelegation(world, selected.id, decision);
       if (!prepared.ok) { onNotice(`Délégation impossible : ${prepared.error}`); return; }
       const launched = launchCommonAction(world, prepared.action);
       if (!launched.ok) { onNotice(`Délégation impossible : ${launched.error}`); return; }

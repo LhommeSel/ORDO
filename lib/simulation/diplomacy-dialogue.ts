@@ -2,6 +2,7 @@ import { enqueueAIJob } from './ai/orchestrator';
 import { commitWorldAction } from './ledger';
 import { relationBetween } from './ledger';
 import { resolveDossierDecision } from './dossiers';
+import { historicalAnchorChannelEffects } from './history';
 import type { DiplomaticDialogue, DiplomaticTurn, GeneralAIJob, CountryId, WorldState, AIJobOutcome } from './types';
 import type { AIDiplomaticMove } from '../ai/job-contracts';
 
@@ -220,6 +221,10 @@ export function resolveDiplomaticDialogueResponse(
       { kind: 'dossier_patch', dossierId: dossier.id, patch: { commitments: decision === 'accept' && (response.kind === 'accept' || response.kind === 'counter') ? [...dossier.commitments, `Engagement diplomatique : ${response.position}`] : dossier.commitments, playerStance: messages[decision] }, reason: 'La décision du joueur actualise les engagements du dossier.', visibility: 'player' },
       { kind: 'dossier_entry_add', dossierId: dossier.id, entry: { id: `dialogue-resolution-${dialogue.id}-${state.sequence + 1}`, date: state.currentDate, title: labels[decision], summary: messages[decision], importance: dossier.importance, actorIds: dialogue.participantIds, requiresDecision: false, visibility: 'player' }, reason: 'La résolution du dialogue est conservée dans la chronologie du dossier.', visibility: 'player' },
     );
+    const historicalResolution = decision === 'accept' && (response.kind === 'accept' || response.kind === 'counter')
+      ? 'diplomatic_agreement' as const
+      : decision === 'refuse' ? 'diplomatic_refusal' as const : undefined;
+    if (historicalResolution) effects.push(...historicalAnchorChannelEffects(state, dossier.id, { sourceId: dialogue.id, resolution: historicalResolution }));
   }
   return { ok: true as const, state: commitWorldAction(state, { kind: 'diplomatic', actorId: state.playerCountryId, targetIds: dialogue.participantIds.filter((id) => id !== state.playerCountryId), origin: 'player', visibility: 'player', intent: labels[decision], effects }), decision };
 }

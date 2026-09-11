@@ -1,6 +1,8 @@
 import { commitWorldAction } from './ledger';
+import { historicalAnchorChannelEffects } from './history';
+import { dossierDecisionChannels, makeDossierDecision } from './dossier-decisions';
 import type {
-  ActionOrigin, CountryId, DossierDecision, DossierDecisionChannel, DossierEntry, DossierDecisionSourceKind, StrategicDossier, Visibility, WorldState,
+  ActionOrigin, CountryId, DossierDecision, DossierDecisionChannel, DossierEntry, StrategicDossier, Visibility, WorldState,
 } from './types';
 
 const importanceRank = { minor: 0, moderate: 1, major: 2, critical: 3 } as const;
@@ -71,30 +73,7 @@ export function markDossierViewed(state: WorldState, dossierId: string) {
 
 export type { DossierDecisionChannel } from './types';
 
-export const dossierDecisionChannels: DossierDecisionChannel[] = ['local_action', 'dialogue', 'delegation', 'explicit_silence'];
-
-function decisionUrgency(importance: StrategicDossier['importance']): DossierDecision['urgency'] {
-  return importance === 'critical' ? 'critical' : importance === 'major' ? 'high' : importance === 'moderate' ? 'medium' : 'low';
-}
-
-export function makeDossierDecision(input: {
-  id: string;
-  prompt: string;
-  createdAt: `${number}-${number}-${number}`;
-  importance: StrategicDossier['importance'];
-  actorIds: string[];
-  sourceKind: DossierDecisionSourceKind;
-  sourceId?: string;
-  sourceLabel?: string;
-}): DossierDecision {
-  return {
-    id: input.id, prompt: input.prompt, createdAt: input.createdAt,
-    urgency: decisionUrgency(input.importance), sourceKind: input.sourceKind,
-    ...(input.sourceId ? { sourceId: input.sourceId } : {}),
-    ...(input.sourceLabel ? { sourceLabel: input.sourceLabel } : {}),
-    actorIds: [...new Set(input.actorIds)], availableChannels: [...dossierDecisionChannels], status: 'pending',
-  };
-}
+export { dossierDecisionChannels, makeDossierDecision } from './dossier-decisions';
 
 /** Convertit à la volée les anciennes chaînes en décisions enrichies. */
 export function dossierDecisionRecords(dossier: StrategicDossier): DossierDecision[] {
@@ -339,6 +318,9 @@ export function resolveDossierDecision(
         relation: penalty, trust: Math.round(penalty * 0.7),
         reason: 'Le silence explicite est perçu comme un désengagement par les autres acteurs du dossier.', visibility: 'player' as const,
       })) : []),
+      ...(channel === 'explicit_silence' && selectedRecord?.sourceKind === 'historical'
+        ? historicalAnchorChannelEffects(state, dossierId, { sourceId: selectedRecord.id, resolution: 'explicit_silence' })
+        : []),
     ],
   });
 }

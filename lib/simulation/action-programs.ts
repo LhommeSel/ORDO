@@ -339,6 +339,34 @@ export function prepareCommonAction(
   };
 }
 
+/**
+ * Une délégation est une vraie action, mais elle engage moins directement le
+ * gouvernement. Elle coûte moins, consomme moins de moyens et agit plus
+ * lentement ; son influence sur un ancrage historique est donc réduite.
+ */
+export function prepareDossierDelegation(state: WorldState, dossierId: string, decision: string): CommonActionPreparation {
+  const dossier = state.strategicDossiers[dossierId];
+  if (!dossier) return { ok: false, error: 'Dossier introuvable.' };
+  const prepared = prepareCommonAction(
+    state,
+    `Déléguer à l’administration le traitement du dossier « ${dossier.title} » : ${decision}`,
+    { source: 'player', linkedDossierId: dossierId, category: 'institutional', historicalIntent: 'contain' },
+  );
+  if (!prepared.ok) return prepared;
+  const historical = Boolean(dossier.relatedAnchorId);
+  const action: PreparedCommonAction = {
+    ...prepared.action,
+    title: `Délégation administrative · ${dossier.title}`,
+    durationMonths: prepared.action.durationMonths + 1,
+    budgetCost: Number((prepared.action.budgetCost * 0.6).toFixed(1)),
+    successProbability: Math.round(clamp(prepared.action.successProbability - 14, 20, 86)),
+    requiredCapacities: prepared.action.requiredCapacities.map(({ domain, commitment }) => ({ domain, commitment: Math.max(1, Math.round(commitment * 0.6)) })),
+    ...(historical ? { historicalContributionScale: 0.55 } : {}),
+    risks: [...prepared.action.risks, 'La délégation réduit le coût politique immédiat, mais laisse moins de prise sur la trajectoire historique.'],
+  };
+  return { ok: true, action, warnings: [...prepared.warnings, 'Délégation : moyens et coût réduits, résultat plus lent et moins certain.'] };
+}
+
 /** Engage le programme préparé. Les effets ne sont appliqués qu'à sa résolution. */
 export function launchCommonAction(state: WorldState, prepared: PreparedCommonAction) {
   const player = state.countries[prepared.actorId];

@@ -182,12 +182,13 @@ export type HistoricalCurrent = {
  * et la rattacher au dossier correspondant.
  */
 export type HistoricalInterventionDirection = 'contain' | 'redirect' | 'accelerate';
+export type HistoricalInterventionOutcome = Extract<ActionProgramStatus, 'succeeded' | 'partially_succeeded' | 'failed'> | 'agreed' | 'refused' | 'silent';
 
 export type HistoricalIntervention = {
   programId: string;
   date: ISODate;
   direction: HistoricalInterventionDirection;
-  outcome: Extract<ActionProgramStatus, 'succeeded' | 'partially_succeeded' | 'failed'>;
+  outcome: HistoricalInterventionOutcome;
   pressureDelta: number;
   summary: string;
 };
@@ -1029,6 +1030,8 @@ export type ActionProgram = {
   linkedDossierId?: string;
   /** Posture choisie par le joueur quand le dossier est un ancrage historique. */
   historicalIntent?: HistoricalInterventionDirection;
+  /** Une délégation agit sur le même dossier, mais avec un effet volontairement réduit. */
+  historicalContributionScale?: number;
   title: string;
   intent: string;
   startedAt: ISODate;

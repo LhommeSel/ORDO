@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import { answerAdvisorQuestion, assessStrategicPlan, classifyAdvisorQuestion } from './advisor';
 import { createAdvisorAIRequest } from '../ai/contracts';
-import { launchCommonAction, prepareCommonAction } from './action-programs';
+import { launchCommonAction, prepareCommonAction, prepareDossierDelegation } from './action-programs';
 import { energyBalance, nodeAvailableExport, proposeEnergyContract } from './energy';
 import {
   acceptEnergyOffer, adjustEnergyOffer, createAdministrativeEnergyOffer, sendEnergyOffer,
@@ -36,7 +36,7 @@ import { runMinorEventCycle } from './minor-events';
 import { rankWorldAttention } from './ai/world-attention';
 import { activeMajorDossierCount, rankStrategicDossierReviews } from './ai/dossier-scheduler';
 import { commitWorldAction } from './ledger';
-import { applyDiplomaticDialogueAIAnswer, openDiplomaticDialogue, requestDiplomaticDialogueAI, resolveDiplomaticDialogueResponse, sendDiplomaticDialogueMessage } from './diplomacy-dialogue';
+import { applyDiplomaticDialogueAIAnswer, openDiplomaticDialogue, openDiplomaticDialogueForDossier, requestDiplomaticDialogueAI, resolveDiplomaticDialogueResponse, sendDiplomaticDialogueMessage } from './diplomacy-dialogue';
 import { validateCountryRegistry } from './data-validator';
 
 test('le scénario 2000 charge un monde cohérent et jouable', () => {
@@ -158,6 +158,65 @@ test('un programme lié à un dossier historique modifie sa pression et laisse u
   assert.ok((anchor?.lastIntervention?.pressureDelta ?? 0) < 0);
   assert.ok((anchor?.interventionBalance ?? 0) < 0);
   assert.ok(after.strategicDossiers[dossierId]?.entries.some((entry) => entry.id.endsWith('-historical-impact')));
+});
+
+test('le silence sur un dossier historique augmente sa pression et laisse une causalité lisible', () => {
+  const signalled = advanceWorld(createFrance2000World(), '2001-03-01').state;
+  const dossierId = 'historical-mass-casualty-terrorism';
+  const dossier = signalled.strategicDossiers[dossierId];
+  const before = signalled.historicalAnchors['mass-casualty-terrorism']?.pressure ?? 0;
+  const silenced = resolveDossierDecision(signalled, dossierId, dossier.pendingDecisions[0], 'explicit_silence');
+  const anchor = silenced.historicalAnchors['mass-casualty-terrorism'];
+  assert.ok(anchor.pressure > before);
+  assert.equal(anchor.lastIntervention?.outcome, 'silent');
+  assert.ok(silenced.strategicDossiers[dossierId].entries.some((entry) => entry.title === 'Silence sur le dossier historique'));
+});
+
+test('une délégation historique est moins chère, plus lente et moins influente qu’une action directe', () => {
+  const signalled = advanceWorld(createFrance2000World(), '2001-03-01').state;
+  const dossierId = 'historical-mass-casualty-terrorism';
+  const delegation = prepareDossierDelegation(signalled, dossierId, signalled.strategicDossiers[dossierId].pendingDecisions[0]);
+  assert.ok(delegation.ok);
+  if (!delegation.ok) return;
+  assert.equal(delegation.action.historicalContributionScale, 0.55);
+  assert.ok(delegation.action.budgetCost < 4.5);
+  assert.ok(delegation.action.durationMonths > 6);
+  assert.ok(delegation.action.successProbability < 90);
+  const launched = launchCommonAction(signalled, { ...delegation.action, successProbability: 100 });
+  assert.ok(launched.ok);
+  if (!launched.ok) return;
+  const resolved = advanceWorld(launched.state, '2001-11-01').state;
+  const anchor = resolved.historicalAnchors['mass-casualty-terrorism'];
+  assert.ok((anchor.lastIntervention?.pressureDelta ?? 0) < 0);
+  assert.ok(Math.abs(anchor.lastIntervention?.pressureDelta ?? 0) < 5);
+});
+
+test('un accord issu d’un dialogue historique réduit la pression uniquement lorsqu’il est formalisé', () => {
+  const signalled = advanceWorld(createFrance2000World(), '2001-03-01').state;
+  const dossierId = 'historical-mass-casualty-terrorism';
+  const before = signalled.historicalAnchors['mass-casualty-terrorism']?.pressure ?? 0;
+  const opened = openDiplomaticDialogueForDossier(signalled, dossierId, 'Nous proposons une coordination de sécurité durable.');
+  assert.ok(opened.ok);
+  if (!opened.ok) return;
+  const sent = sendDiplomaticDialogueMessage(opened.state, opened.dialogueId, 'Nous acceptons une coopération de renseignement avec garanties réciproques.');
+  assert.ok(sent.ok);
+  if (!sent.ok) return;
+  const queued = requestDiplomaticDialogueAI(sent.state, opened.dialogueId);
+  assert.ok(queued.ok);
+  if (!queued.ok) return;
+  const answered = applyDiplomaticDialogueAIAnswer(queued.state, queued.jobId, {
+    headline: 'Accord de sécurité', assessment: 'Une coordination formelle est possible.', publicMessage: 'Nous acceptons une coordination de renseignement encadrée.', proposals: [], requestedFacts: [], contextFactIds: [], approximateInputTokens: 120,
+  }, {
+    scope: 'general_dialogue', kind: 'counter', agreementType: 'information_sharing', position: 'Coordination de renseignement encadrée.', concessions: [], guaranteesRequested: ['Consultation régulière'], conditions: ['Cadre écrit'], redLines: [], timeline: 'Immédiat.',
+  });
+  assert.ok(answered.ok);
+  if (!answered.ok) return;
+  const accepted = resolveDiplomaticDialogueResponse(answered.state, opened.dialogueId, 'accept');
+  assert.ok(accepted.ok);
+  if (!accepted.ok) return;
+  const anchor = accepted.state.historicalAnchors['mass-casualty-terrorism'];
+  assert.ok(anchor.pressure < before);
+  assert.equal(anchor.lastIntervention?.outcome, 'agreed');
 });
 
 test('le pouls mondial IA ne peut créer que des mises à jour de dossiers citées et relationnelles bornées', () => {

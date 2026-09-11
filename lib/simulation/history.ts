@@ -1,5 +1,5 @@
 import { commitWorldAction } from './ledger';
-import { makeDossierDecision } from './dossiers';
+import { makeDossierDecision } from './dossier-decisions';
 import { pickSeeded } from './random';
 import type {
   ActionDraft, ActionProgram, DossierImportance, HistoricalAnchor, HistoricalInterventionDirection, ISODate, StrategicDossier, WorldEffect, WorldState,
@@ -50,10 +50,10 @@ const interventionLabels: Record<HistoricalInterventionDirection, string> = {
   accelerate: 'accélération de la trajectoire',
 };
 
-function interventionMagnitude(anchor: HistoricalAnchor, outcome: ActionProgram['status']) {
+function interventionMagnitude(anchor: HistoricalAnchor, outcome: ActionProgram['status'], contributionScale = 1) {
   const base = { none: 0, low: 3, medium: 5, high: 8 }[anchor.playerInfluence];
   const outcomeFactor = outcome === 'succeeded' ? 1 : outcome === 'partially_succeeded' ? 0.45 : -0.25;
-  return Number((base * outcomeFactor).toFixed(2));
+  return Number((base * outcomeFactor * contributionScale).toFixed(2));
 }
 
 /**
@@ -65,7 +65,7 @@ function interventionMagnitude(anchor: HistoricalAnchor, outcome: ActionProgram[
  */
 export function historicalAnchorResolutionEffects(
   state: WorldState,
-  program: Pick<ActionProgram, 'id' | 'title' | 'linkedDossierId' | 'historicalIntent' | 'status'>,
+  program: Pick<ActionProgram, 'id' | 'title' | 'linkedDossierId' | 'historicalIntent' | 'historicalContributionScale' | 'status'>,
   outcome: Extract<ActionProgram['status'], 'succeeded' | 'partially_succeeded' | 'failed'>,
 ): WorldEffect[] {
   const dossier = program.linkedDossierId ? state.strategicDossiers[program.linkedDossierId] : undefined;
@@ -74,7 +74,7 @@ export function historicalAnchorResolutionEffects(
   if (!dossier || !anchor || ['manifested', 'disrupted', 'expired'].includes(anchor.status)) return [];
 
   const direction = program.historicalIntent ?? 'contain';
-  const magnitude = interventionMagnitude(anchor, outcome);
+  const magnitude = interventionMagnitude(anchor, outcome, program.historicalContributionScale ?? 1);
   if (magnitude === 0) return [];
   const directionFactor = direction === 'redirect' ? 0.75 : 1;
   const pressureDelta = Number(((direction === 'accelerate' ? 1 : -1) * magnitude * directionFactor).toFixed(2));
@@ -138,6 +138,75 @@ export function historicalAnchorResolutionEffects(
         requiresDecision: false, visibility: 'player',
       },
       reason: 'Le programme laisse une trace causale de son effet sur la trajectoire historique.', visibility: 'player',
+    },
+  ];
+}
+
+export type HistoricalChannelResolution = 'diplomatic_agreement' | 'diplomatic_refusal' | 'explicit_silence';
+
+/**
+ * Les canaux sans programme (accord diplomatique conclu, refus, silence)
+ * doivent laisser une trace causale au même titre qu'une action locale. Leur
+ * poids est inférieur à celui d'un programme, afin qu'une unique conversation
+ * ne réécrive jamais une trajectoire historique à elle seule.
+ */
+export function historicalAnchorChannelEffects(
+  state: WorldState,
+  dossierId: string,
+  input: { sourceId: string; resolution: HistoricalChannelResolution },
+): WorldEffect[] {
+  const dossier = state.strategicDossiers[dossierId];
+  const anchor = dossier?.relatedAnchorId ? state.historicalAnchors[dossier.relatedAnchorId] : undefined;
+  if (!dossier || !anchor || ['manifested', 'disrupted', 'expired'].includes(anchor.status)) return [];
+
+  const profile = input.resolution === 'diplomatic_agreement'
+    ? { direction: 'contain' as const, scale: 0.7, outcome: 'agreed' as const, label: 'Accord diplomatique consolidé', phase: 'Coordination diplomatique engagée' }
+    : input.resolution === 'diplomatic_refusal'
+      ? { direction: 'accelerate' as const, scale: 0.3, outcome: 'refused' as const, label: 'Canal diplomatique refermé', phase: 'Marge diplomatique réduite' }
+      : { direction: 'accelerate' as const, scale: 0.55, outcome: 'silent' as const, label: 'Silence sur le dossier historique', phase: 'Absence de posture publique' };
+  const base = { none: 0, low: 3, medium: 5, high: 8 }[anchor.playerInfluence];
+  if (base === 0) return [];
+  const pressureDelta = Number(((profile.direction === 'contain' ? -1 : 1) * base * profile.scale).toFixed(2));
+  const nextPressure = Number(clamp(anchor.pressure + pressureDelta).toFixed(2));
+  const nextBalance = Number(clamp((anchor.interventionBalance ?? 0) + pressureDelta, -100, 100).toFixed(2));
+  const divergenceThreshold = Math.max(8, Math.round(anchor.historicalWeight / 7));
+  const contained = profile.direction === 'contain' && nextBalance <= -divergenceThreshold;
+  const accelerated = profile.direction === 'accelerate' && nextBalance >= divergenceThreshold * 0.75;
+  const divergence = contained
+    ? { kind: 'contained' as const, date: state.currentDate, programId: input.sourceId, summary: 'Des initiatives diplomatiques cumulées ont suffisamment réduit la pression pour rendre la manifestation initiale improbable.' }
+    : accelerated
+      ? { kind: 'accelerated' as const, date: state.currentDate, programId: input.sourceId, summary: 'Les renoncements et refus cumulés durcissent la trajectoire plausible du dossier.' }
+      : anchor.divergence;
+  const summary = `${profile.label}. Pression ${anchor.pressure.toFixed(0)} → ${nextPressure.toFixed(0)}/100 ; bilan cumulé ${nextBalance.toFixed(1)}. ${divergence?.summary ?? 'La trajectoire reste ouverte.'}`;
+
+  return [
+    {
+      kind: 'historical_anchor_patch', anchorId: anchor.id,
+      patch: {
+        pressure: nextPressure,
+        status: contained ? 'disrupted' : profile.direction === 'accelerate' && nextPressure >= anchor.activationThreshold ? 'active' : anchor.status,
+        interventionBalance: nextBalance,
+        lastIntervention: { programId: input.sourceId, date: state.currentDate, direction: profile.direction, outcome: profile.outcome, pressureDelta, summary },
+        ...(divergence ? { divergence } : {}),
+      },
+      reason: `Le canal « ${profile.label.toLocaleLowerCase('fr')} » modifie la pression de l’ancrage.`, visibility: 'player',
+    },
+    {
+      kind: 'dossier_patch', dossierId,
+      patch: {
+        phase: contained ? 'Divergence historique consolidée' : profile.phase,
+        trend: pressureDelta > 0 ? 'escalating' : 'deescalating',
+        ...(contained ? { status: 'resolved' as const, autoTracked: false } : {}),
+      },
+      reason: 'Le choix de canal est relié à la trajectoire historique suivie.', visibility: 'player',
+    },
+    {
+      kind: 'dossier_entry_add', dossierId,
+      entry: {
+        id: `historical-channel-${input.sourceId}`, date: state.currentDate, title: profile.label,
+        summary, importance: anchor.importance, actorIds: dossier.actorIds, requiresDecision: false, visibility: 'player',
+      },
+      reason: 'La conséquence historique du canal choisi reste consultable dans le dossier.', visibility: 'player',
     },
   ];
 }
