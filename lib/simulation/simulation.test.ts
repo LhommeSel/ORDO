@@ -1271,6 +1271,8 @@ test('la fiche pays et le conseiller exposent des chiffres opérationnels sans j
   const answer = answerAdvisorQuestion(state, 'Quel est l’état des forces militaires françaises ?');
   assert.ok(answer.facts.some((fact) => fact.id === 'player-defense-budget'));
   assert.ok(answer.facts.some((fact) => fact.id === 'player-defense-personnel'));
+  assert.ok(answer.facts.some((fact) => fact.id === 'player-defense-deployments'));
+  assert.ok(answer.facts.find((fact) => fact.id === 'player-defense-deployments')?.value.includes('Côte d’Ivoire'));
   assert.ok(answer.facts.some((fact) => fact.value.includes('353 milliers')));
 });
 

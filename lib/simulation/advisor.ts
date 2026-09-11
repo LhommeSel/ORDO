@@ -121,10 +121,22 @@ function collectCountryFacts(state: WorldState, countryId: CountryId, prefix: st
     { id: `${prefix}-gas`, label: `${labelPrefix}Gaz`, value: `${sheet.energy.gasImports.toFixed(1)} unités/an importées · ${monthLabel(sheet.energy.gasStocksMonths)} de stocks`, confidence: 100, sourcePath: `countryEnergy.${countryId}.gas` },
   );
   const defense = sheet.defense;
-  if (defense) facts.push(
-    { id: `${prefix}-defense-budget`, label: `${labelPrefix}Budget de défense`, value: `${defense.budgetBillionUsd.toFixed(1)} Md$${defense.modelingLevel === 'aggregate' ? ' · ordre de grandeur ORDO' : ''}`, confidence: 100, sourcePath: defense.modelingLevel === 'aggregate' ? `macroEconomies.${countryId}.realGdpBillion2000Usd` : `defenseReference2000.${countryId}.budgetBillionUsd` },
-    { id: `${prefix}-defense-personnel`, label: `${labelPrefix}Effectifs actifs`, value: `${defense.activePersonnelThousands.toFixed(0)} milliers · ${defense.posture}${defense.modelingLevel === 'aggregate' ? ' · ordre de grandeur ORDO' : ''}`, confidence: 100, sourcePath: defense.modelingLevel === 'aggregate' ? `countries.${countryId}.metrics.security` : `defenseReference2000.${countryId}.activePersonnelThousands` },
-  );
+  if (defense) {
+    facts.push(
+      { id: `${prefix}-defense-budget`, label: `${labelPrefix}Budget de défense`, value: `${defense.budgetBillionUsd.toFixed(1)} Md$${defense.modelingLevel === 'aggregate' ? ' · ordre de grandeur ORDO' : ''}`, confidence: 100, sourcePath: defense.modelingLevel === 'aggregate' ? `macroEconomies.${countryId}.realGdpBillion2000Usd` : `defenseReference2000.${countryId}.budgetBillionUsd` },
+      { id: `${prefix}-defense-personnel`, label: `${labelPrefix}Effectifs actifs`, value: `${defense.activePersonnelThousands.toFixed(0)} milliers · ${defense.posture}${defense.modelingLevel === 'aggregate' ? ' · ordre de grandeur ORDO' : ''}`, confidence: 100, sourcePath: defense.modelingLevel === 'aggregate' ? `countries.${countryId}.metrics.security` : `defenseReference2000.${countryId}.activePersonnelThousands` },
+    );
+    if (defense.deployments?.length) {
+      const deploymentSummary = defense.deployments.map((deployment) => {
+        const countries = deployment.countryBreakdown?.map((item) => `${state.countries[item.countryId]?.name ?? item.countryId} ${item.personnelThousands} k`).join(', ');
+        return `${deployment.location}: ${deployment.personnelThousands} k${countries ? ` [${countries}]` : ''}`;
+      }).join(' ; ');
+      facts.push({
+        id: `${prefix}-defense-deployments`, label: `${labelPrefix}Déploiement géographique`, value: deploymentSummary,
+        confidence: 100, sourcePath: `defenseReference2000.${countryId}.deployments`,
+      });
+    }
+  }
   return facts;
 }
 
@@ -181,9 +193,11 @@ function relevantFacts(facts: AdvisorFact[], question: string, questionKind: Adv
   }
   for (const prefix of prefixes) {
     const essentials = facts.filter((fact) => fact.id === `${prefix}-relation` || fact.id === `${prefix}-strategy`
-      || fact.id === `${prefix}-gdp` || fact.id === `${prefix}-growth` || fact.id === `${prefix}-gas` || fact.id === `${prefix}-oil`);
+      || fact.id === `${prefix}-gdp` || fact.id === `${prefix}-growth` || fact.id === `${prefix}-gas` || fact.id === `${prefix}-oil`
+      || fact.id === `${prefix}-defense-personnel` || fact.id === `${prefix}-defense-deployments`);
     const preferred = energy ? essentials.filter((fact) => fact.id.endsWith('-gas') || fact.id.endsWith('-oil'))
-      : economy ? essentials.filter((fact) => fact.id.endsWith('-gdp') || fact.id.endsWith('-growth')) : essentials;
+      : economy ? essentials.filter((fact) => fact.id.endsWith('-gdp') || fact.id.endsWith('-growth'))
+        : military ? essentials.filter((fact) => fact.id.endsWith('-defense-personnel') || fact.id.endsWith('-defense-deployments')) : essentials;
     // Relation/priorité restent utiles dans tous les domaines ; on ajoute
     // ensuite les deux mesures directement demandées pour cet acteur.
     for (const fact of [...essentials.filter((item) => item.id.endsWith('-relation') || item.id.endsWith('-strategy')), ...preferred, ...essentials]) {
