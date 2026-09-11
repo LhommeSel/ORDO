@@ -7,6 +7,7 @@ export * from './ai';
 export * from './autonomy';
 export * from './core';
 export * from './dossiers';
+export * from './dossier-effects';
 export * from './decision-data-2000';
 export * from './decision-making';
 export * from './energy';

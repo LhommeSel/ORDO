@@ -454,6 +454,29 @@ export type EconomicShock = {
   source: 'historical' | 'player' | 'local_rule' | 'ai';
 };
 
+/**
+ * Lecture synthétique des conséquences qu'un dossier actif transmet au monde.
+ * Le moteur conserve les valeurs continues ; cette couche expose seulement une
+ * intensité lisible et bornée pour le joueur et le journal causal.
+ */
+export type DossierPressureChannel = EconomicShockChannel | 'security' | 'stability' | 'diplomacy';
+
+export type DossierPressureSnapshot = {
+  channel: DossierPressureChannel;
+  /** Échelle de lecture 0–100, indépendante de l'unité interne du moteur. */
+  level: number;
+  label: string;
+  summary: string;
+  direction: 'pressure' | 'support';
+};
+
+export type DossierImpactState = {
+  lastAppliedAt: ISODate;
+  lastNotifiedAt?: ISODate;
+  mitigationPct: number;
+  pressures: DossierPressureSnapshot[];
+};
+
 export type SovereignDebtStatus =
   | 'stable'
   | 'watch'
@@ -1203,6 +1226,8 @@ export type StrategicDossier = {
   sleepingAt?: ISODate;
   /** Date du dernier réveil automatique après un signal externe significatif. */
   reactivatedAt?: ISODate;
+  /** Effets systémiques calculés lors de la dernière frontière mensuelle. */
+  impactState?: DossierImpactState;
   relatedCurrentIds: string[];
   /** Ancrage historique à l’origine du dossier, s’il y en a un. */
   relatedAnchorId?: string;

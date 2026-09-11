@@ -30,6 +30,7 @@ import {
   createWorldPulseRequest, executeWorldPulse, rankStrategicDossierReviews,
   setDossierFollowed,
   dossierDecisionRecords,
+  dossierPressureProfile,
   countrySheet,
   type AdvisorAnswer, type AdvisorQuestionKind, type EnergyAdministrativeOffer, type EnergyCounterpartResponse,
   type CommonActionCategory, type EnergyOfferAdjustment, type HistoricalInterventionDirection, type ISODate, type StrategicDossier, type StrategicPlan,
@@ -1040,6 +1041,7 @@ function DossiersPanel({ world, selectedId, onSelect, onWorldChange, onNotice, o
   const decisionRecords = selected ? dossierDecisionRecords(selected) : [];
   const diplomaticSession = selected ? Object.values(world.diplomaticSessions).find((session) => session.linkedDossierId === selected.id) : undefined;
   const historicalAnchor = selected?.relatedAnchorId ? world.historicalAnchors?.[selected.relatedAnchorId] : undefined;
+  const dossierImpact = selected ? dossierPressureProfile(world, selected) : null;
   const askDossierAI = async () => {
     if (!selected || dossierAIStatus === 'loading') return;
     const actors = selected.actorIds.map((id) => world.countries[id]?.name ?? id).join(', ');
@@ -1176,6 +1178,12 @@ function DossiersPanel({ world, selectedId, onSelect, onWorldChange, onNotice, o
         <p className="mt-3 text-sm text-muted-foreground">{selected.publicSummary}</p>
         <div className="mt-4 grid gap-2 sm:grid-cols-4"><Stat label="Phase" value={selected.phase} /><Stat label="Tendance" value={selected.trend} /><Stat label="Acteurs" value={selected.actorIds.map((id) => world.countries[id]?.flag ?? id).join(' ')} /><Stat label="Relances" value={String(selected.escalationCount ?? 0)} detail={selected.lastEscalatedAt ? `dernière : ${selected.lastEscalatedAt}` : 'aucune'} /></div>
         {selected.playerStance && <div className="mt-3 border-l-2 border-primary pl-3 text-sm"><b>Position du joueur :</b> {selected.playerStance}</div>}
+        {dossierImpact?.active && <div className="mt-4 border border-amber-400/30 bg-amber-300/5 p-3 text-xs">
+          <div className="flex flex-wrap items-center justify-between gap-2"><div className="font-mono text-[10px] uppercase tracking-wider text-amber-200">Pressions systémiques</div><span className="font-mono text-[10px] text-emerald-300">Amortissement vérifiable : −{dossierImpact.mitigationPct}%</span></div>
+          <p className="mt-2 text-muted-foreground">Effets bornés, appliqués à la frontière mensuelle puis transmis par le moteur économique et relationnel. Ils disparaissent progressivement lorsque le dossier se résorbe.</p>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">{dossierImpact.pressures.map((pressure) => <div key={`${pressure.channel}-${pressure.direction}`} className={`border p-2 ${pressure.direction === 'support' ? 'border-emerald-400/30 bg-emerald-400/5' : 'border-amber-400/25 bg-background/25'}`}><div className="flex items-center justify-between gap-2"><b>{pressure.label}</b><span className={pressure.direction === 'support' ? 'text-emerald-300' : 'text-amber-200'}>{pressure.direction === 'support' ? 'Soutien' : 'Pression'} {pressure.level}/100</span></div><p className="mt-1 text-[11px] text-muted-foreground">{pressure.summary}</p></div>)}</div>
+          {selected.impactState && <div className="mt-2 font-mono text-[10px] text-muted-foreground">Dernier calcul enregistré : {selected.impactState.lastAppliedAt}</div>}
+        </div>}
         {historicalAnchor && <div className="mt-4 border border-cyan-400/25 bg-cyan-400/5 p-3 text-xs">
           <div className="font-mono text-[10px] uppercase tracking-wider text-cyan-200">Ancrage historique · {historicalAnchor.status}</div>
           <p className="mt-2"><b>Tendance de fond :</b> {historicalAnchor.trendSummary}</p>

@@ -30,6 +30,7 @@ import { interpretPlayerIntent, rankEnergySuppliers } from './intent';
 import {
   advanceDossierEscalation, advanceDossierLifecycle, dossierUnreadCount, dossiersRequiringAttention, markDossierViewed, reactivateDossier, resolveDossierDecision, setDossierFollowed,
 } from './dossiers';
+import { advanceDossierEffects, dossierPressureProfile, selectDossiersForEffects } from './dossier-effects';
 import { applyWorldPulseAnswer, createWorldPulseRequest, executeWorldPulse } from './ai/world-pulse';
 import { parseWorldPulseRequest } from '../ai/world-pulse-contracts';
 import { runMinorEventCycle } from './minor-events';
@@ -49,6 +50,42 @@ test('le scénario 2000 charge un monde cohérent et jouable', () => {
   assert.ok(Object.keys(state.armamentProducts).length >= 6);
   assert.ok(Object.keys(state.strategicDossiers).length >= 2);
   assert.ok(Object.keys(state.historicalAnchors).length >= 20);
+});
+
+test('un dossier actif transmet une pression bornée au macro-modèle et les engagements l’amortissent', () => {
+  const initial = createFrance2000World();
+  const dossier = initial.strategicDossiers['current-dotcom-exuberance'];
+  const baseline = dossierPressureProfile(initial, dossier);
+  assert.equal(baseline.active, true);
+  assert.ok(baseline.pressures.some((item) => item.channel === 'financial'));
+
+  const committed = structuredClone(initial);
+  committed.strategicDossiers[dossier.id].commitments = ['Coordination prudentielle avec les partenaires européens'];
+  const reduced = dossierPressureProfile(committed, committed.strategicDossiers[dossier.id]);
+  assert.ok(reduced.mitigationPct > baseline.mitigationPct);
+  assert.ok((reduced.pressures.find((item) => item.channel === 'financial')?.level ?? 0) < (baseline.pressures.find((item) => item.channel === 'financial')?.level ?? 0));
+
+  const applied = advanceDossierEffects(initial);
+  const shock = applied.worldEconomy.activeShocks.find((item) => item.id === 'dossier-effect:current-dotcom-exuberance:financial');
+  assert.ok(shock && shock.intensity > 0);
+  assert.equal(applied.strategicDossiers[dossier.id].impactState?.lastAppliedAt, initial.currentDate);
+  assert.ok(applied.strategicDossiers[dossier.id].entries.some((entry) => entry.id === `dossier-impact-${dossier.id}-${initial.currentDate}`));
+});
+
+test('le moteur limite les conséquences systémiques simultanées à quatre dossiers', () => {
+  const state = structuredClone(createFrance2000World());
+  const template = state.strategicDossiers['current-dotcom-exuberance'];
+  for (let index = 0; index < 5; index += 1) {
+    const id = `systemic-test-${index}`;
+    state.strategicDossiers[id] = {
+      ...template, id, title: `Stress systémique ${index}`, importance: 'major', followed: true,
+      actorIds: ['FRA', 'USA'], commitments: [], pendingDecisions: [], entries: [], impactState: undefined,
+    };
+  }
+  assert.equal(selectDossiersForEffects(state).length, 4);
+  const applied = advanceDossierEffects(state);
+  const affected = Object.values(applied.strategicDossiers).filter((dossier) => dossier.impactState?.lastAppliedAt === state.currentDate);
+  assert.equal(affected.length, 4);
 });
 
 test('les ancrages historiques ouvrent un dossier sur signal sans imposer immédiatement une manifestation', () => {

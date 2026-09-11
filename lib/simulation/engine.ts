@@ -11,6 +11,7 @@ import { advanceStakeholderReactions } from './stakeholders';
 import { runMinorEventCycle } from './minor-events';
 import { advanceDossierEscalation, advanceDossierLifecycle } from './dossiers';
 import { reactivateDossiersOnWorldSignals } from './dossiers';
+import { advanceDossierEffects } from './dossier-effects';
 import { compactWorldForSave } from './persistence';
 import type { ISODate, SimulationStop, WorldEffect, WorldState } from './types';
 
@@ -143,6 +144,9 @@ function simulationPhases(
         return historical.state;
       },
     },
+    // Les dossiers actifs alimentent d'abord les canaux de transmission ; le
+    // macro-modèle les absorbe ensuite pendant la même frontière mensuelle.
+    { id: 'dossier-effects', advance: (state, context) => context.reachedMonthBoundary ? advanceDossierEffects(state) : state },
     { id: 'macroeconomy', advance: (state, context) => advanceMacroeconomy(state, context.elapsedMonths) },
     {
       id: 'country-autonomy',
