@@ -2,7 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 
 import { createFrance2000World } from '../lib/simulation/scenario-2000';
 import { executeAIJob } from '../lib/simulation/ai/executor';
-import { openDiplomaticDialogue, requestDiplomaticDialogueAI } from '../lib/simulation/diplomacy-dialogue';
+import { openDiplomaticDialogue, requestDiplomaticDialogueAI, sendDiplomaticDialogueMessage } from '../lib/simulation/diplomacy-dialogue';
 
 const origin = process.env.ORDO_TEST_ORIGIN ?? 'http://localhost:3000';
 const sessionId = `ai-diplomacy-${Date.now()}`;
@@ -64,7 +64,7 @@ for (const scenario of selectedScenarios) {
   const executed = await executeAIJob(queued.state, queued.jobId, sessionId, requestToOrigin);
   state = executed.state;
   const dialogue = state.diplomaticDialogues[opened.dialogueId];
-  results.push({
+  const result: Record<string, unknown> = {
     id: scenario.id,
     ok: executed.ok,
     elapsedMs: Math.round(performance.now() - started),
@@ -74,7 +74,23 @@ for (const scenario of selectedScenarios) {
     status: dialogue?.status,
     response: executed.response,
     dialogue,
-  });
+  };
+  if (executed.ok && process.argv.includes('--second-turn') && scenario.id === 'bilateral-industrial' && dialogue?.status === 'awaiting_player') {
+    const sent = sendDiplomaticDialogueMessage(state, opened.dialogueId, 'Nous acceptons le principe, mais demandons une clause de financement public plafonné et une ouverture progressive aux autres États membres.');
+    if (sent.ok) {
+      const nextRequest = requestDiplomaticDialogueAI(sent.state, opened.dialogueId);
+      if (nextRequest.ok) {
+        const second = await executeAIJob(nextRequest.state, nextRequest.jobId, sessionId, requestToOrigin);
+        state = second.state;
+        result.secondTurn = {
+          ok: second.ok,
+          response: second.response,
+          dialogue: state.diplomaticDialogues[opened.dialogueId],
+        };
+      } else result.secondTurn = { ok: false, stage: 'queue', error: nextRequest.error };
+    } else result.secondTurn = { ok: false, stage: 'send', error: sent.error };
+  }
+  results.push(result);
   console.log(`${scenario.id}: ok=${executed.ok} elapsedMs=${Math.round(performance.now() - started)} status=${dialogue?.status ?? 'unknown'}`);
 }
 
