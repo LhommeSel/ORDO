@@ -17,7 +17,7 @@ import {
   advanceWorld, answerAdvisorQuestion, armamentAdvisorFacts,
   acceptEnergyOffer, adjustEnergyOffer, assessStrategicPlan,
   continueEnergyNegotiationAI, createAdministrativeEnergyOffer, createFrance2000World,
-  dossierUnreadCount, dossiersRequiringAttention, dossierUpdatesSinceView, energyBalance,
+  dossierUnreadCount, dossiersRequiringAttention, dossierUpdatesSinceView, assessDossierResolution, energyBalance,
   energyCounterpartResponseFromSession, evaluatePoliticalPathway, executeAIJob, markDossierViewed, productEvidenceSummary,
   enactPrototypeGovernmentMeasure, reactionLevelLabels, reactionTrendLabels,
   launchCommonAction, prepareCommonAction, prepareDossierDelegation,
@@ -31,10 +31,11 @@ import {
   setDossierFollowed,
   dossierDecisionRecords,
   dossierPressureProfile,
+  buildTurnBriefing,
   countrySheet,
   type AdvisorAnswer, type AdvisorQuestionKind, type EnergyAdministrativeOffer, type EnergyCounterpartResponse,
   type CommonActionCategory, type EnergyOfferAdjustment, type HistoricalInterventionDirection, type ISODate, type StrategicDossier, type StrategicPlan,
-  type PreparedCommonAction, type PrototypeMeasureId, type StructuralDiagnosis, type WorldState,
+  type PreparedCommonAction, type PrototypeMeasureId, type StructuralDiagnosis, type TurnBriefing, type WorldState,
 } from '@/lib/simulation';
 import {
   createAdvisorAIRequest,
@@ -1042,6 +1043,7 @@ function DossiersPanel({ world, selectedId, onSelect, onWorldChange, onNotice, o
   const diplomaticSession = selected ? Object.values(world.diplomaticSessions).find((session) => session.linkedDossierId === selected.id) : undefined;
   const historicalAnchor = selected?.relatedAnchorId ? world.historicalAnchors?.[selected.relatedAnchorId] : undefined;
   const dossierImpact = selected ? dossierPressureProfile(world, selected) : null;
+  const resolutionAssessment = selected ? assessDossierResolution(world, selected) : null;
   const askDossierAI = async () => {
     if (!selected || dossierAIStatus === 'loading') return;
     const actors = selected.actorIds.map((id) => world.countries[id]?.name ?? id).join(', ');
@@ -1155,7 +1157,7 @@ function DossiersPanel({ world, selectedId, onSelect, onWorldChange, onNotice, o
     const next = resolveDossierDecision(world, selected.id, decision, channel);
     if (next === world) return;
     onWorldChange(next);
-    onNotice(`Décision enregistrée dans « ${selected.title} » : ${channel === 'explicit_silence' ? 'silence explicite' : channel === 'dialogue' ? 'dialogue' : channel === 'delegation' ? 'délégation' : 'action gouvernementale'}.`);
+    onNotice(`Décision enregistrée dans « ${selected.title} » : ${channel === 'explicit_silence' ? 'silence explicite' : 'action gouvernementale'}.`);
   };
   if (!selected) return <div className="border border-border bg-card/70 p-8 text-center text-sm text-muted-foreground">Aucun dossier stratégique connu.</div>;
   return <div className="grid gap-4 xl:grid-cols-[.72fr_1.28fr]">
@@ -1182,7 +1184,14 @@ function DossiersPanel({ world, selectedId, onSelect, onWorldChange, onNotice, o
           <div className="flex flex-wrap items-center justify-between gap-2"><div className="font-mono text-[10px] uppercase tracking-wider text-amber-200">Pressions systémiques</div><span className="font-mono text-[10px] text-emerald-300">Amortissement vérifiable : −{dossierImpact.mitigationPct}%</span></div>
           <p className="mt-2 text-muted-foreground">Effets bornés, appliqués à la frontière mensuelle puis transmis par le moteur économique et relationnel. Ils disparaissent progressivement lorsque le dossier se résorbe.</p>
           <div className="mt-3 grid gap-2 sm:grid-cols-2">{dossierImpact.pressures.map((pressure) => <div key={`${pressure.channel}-${pressure.direction}`} className={`border p-2 ${pressure.direction === 'support' ? 'border-emerald-400/30 bg-emerald-400/5' : 'border-amber-400/25 bg-background/25'}`}><div className="flex items-center justify-between gap-2"><b>{pressure.label}</b><span className={pressure.direction === 'support' ? 'text-emerald-300' : 'text-amber-200'}>{pressure.direction === 'support' ? 'Soutien' : 'Pression'} {pressure.level}/100</span></div><p className="mt-1 text-[11px] text-muted-foreground">{pressure.summary}</p></div>)}</div>
+          {dossierImpact.mitigationSources.length > 0 && <div className="mt-3 border-t border-amber-400/20 pt-2"><b>Origine de l’amortissement</b><ul className="mt-1 space-y-1 text-muted-foreground">{dossierImpact.mitigationSources.map((source, index) => <li key={`${source.label}-${index}`}>— {source.label} : <span className={source.value >= 0 ? 'text-emerald-300' : 'text-red-300'}>{source.value >= 0 ? '+' : ''}{source.value} points</span></li>)}</ul></div>}
           {selected.impactState && <div className="mt-2 font-mono text-[10px] text-muted-foreground">Dernier calcul enregistré : {selected.impactState.lastAppliedAt}</div>}
+        </div>}
+        {resolutionAssessment && <div className="mt-4 border border-border bg-background/25 p-3 text-xs">
+          <div className="flex flex-wrap items-center justify-between gap-2"><div className="font-mono text-[10px] uppercase tracking-wider text-primary">Trajectoire de sortie</div><span className={resolutionAssessment.stage === 'resolved' || resolutionAssessment.stage === 'stabilising' ? 'text-emerald-300' : 'text-amber-200'}>{resolutionAssessment.stage === 'resolved' ? 'Clos' : resolutionAssessment.stage === 'stabilising' ? 'Stabilisation acquise' : resolutionAssessment.stage === 'blocked' ? 'Conditions non réunies' : 'Situation active'}</span></div>
+          <p className="mt-2"><b>Prochaine étape :</b> {resolutionAssessment.nextMilestone}</p>
+          {resolutionAssessment.positiveSignals.length > 0 && <div className="mt-2 text-emerald-200"><b>Signaux favorables :</b> {resolutionAssessment.positiveSignals.join(' · ')}</div>}
+          {resolutionAssessment.blockers.length > 0 && <div className="mt-2 text-muted-foreground"><b>Obstacles :</b> {resolutionAssessment.blockers.join(' · ')}</div>}
         </div>}
         {historicalAnchor && <div className="mt-4 border border-cyan-400/25 bg-cyan-400/5 p-3 text-xs">
           <div className="font-mono text-[10px] uppercase tracking-wider text-cyan-200">Ancrage historique · {historicalAnchor.status}</div>
@@ -1356,6 +1365,29 @@ function LedgerPanel({ world }: { world: WorldState }) {
   </div>;
 }
 
+function TurnBriefingPanel({ briefing, onOpenDossier }: { briefing: TurnBriefing; onOpenDossier: (id: string) => void }) {
+  const tone = { major: 'text-red-300', moderate: 'text-amber-300', positive: 'text-emerald-300', neutral: 'text-muted-foreground' } as const;
+  const signed = (value: number, digits: number, unit: string) => `${value > 0 ? '+' : ''}${value.toFixed(digits)}${unit}`;
+  const calm = briefing.highlights.length === 0 && briefing.completedPrograms.length === 0;
+  return <details open className="group border-b border-border bg-card/55">
+    <summary className="mx-auto flex max-w-[1600px] cursor-pointer list-none items-center gap-3 px-4 py-2 text-sm lg:px-6">
+      <ChevronRight className="size-4 text-primary transition-transform group-open:rotate-90" />
+      <b>Bilan du passage du temps</b>
+      <span className="text-xs text-muted-foreground">{briefing.from} → {briefing.to} · {briefing.actionCount} évolution(s) · {briefing.autonomousActorCount} acteur(s) étranger(s)</span>
+    </summary>
+    <div className="mx-auto grid max-w-[1600px] gap-3 px-4 pb-4 lg:grid-cols-[1.1fr_1fr] lg:px-6">
+      <section className="border border-border bg-background/35 p-3">
+        <div className="font-mono text-[10px] uppercase tracking-wider text-primary">Indicateurs du pays joué</div>
+        <div className="mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">{briefing.metrics.map((item) => <div key={item.id} className="border border-border/70 p-2 text-xs"><div className="text-muted-foreground">{item.label}</div><div className="mt-1 flex items-baseline justify-between gap-2"><b>{item.after.toFixed(item.digits)}{item.unit}</b><span className={item.delta === 0 ? 'text-muted-foreground' : item.delta > 0 ? 'text-sky-300' : 'text-amber-300'}>{signed(item.delta, item.digits, item.unit)}</span></div></div>)}</div>
+      </section>
+      <section className="border border-border bg-background/35 p-3">
+        <div className="font-mono text-[10px] uppercase tracking-wider text-primary">Faits à retenir</div>
+        <div className="mt-2 space-y-2">{calm && <p className="text-xs text-muted-foreground">Aucun basculement majeur : les systèmes ont évolué sans ouvrir de nouvelle décision.</p>}{briefing.highlights.map((item) => <button key={item.id} type="button" onClick={() => item.dossierId && onOpenDossier(item.dossierId)} disabled={!item.dossierId} className="block w-full border-b border-border/60 pb-2 text-left disabled:cursor-default"><div className={`text-xs font-medium ${tone[item.tone]}`}>{item.title}</div><p className="mt-1 line-clamp-2 text-[11px] text-muted-foreground">{item.detail}</p></button>)}{briefing.completedPrograms.map((program) => <div key={program.id} className="border-b border-border/60 pb-2"><div className={program.status === 'succeeded' ? 'text-xs font-medium text-emerald-300' : program.status === 'failed' ? 'text-xs font-medium text-red-300' : 'text-xs font-medium text-amber-300'}>{program.title} · {program.status}</div><p className="mt-1 text-[11px] text-muted-foreground">{program.resolution}</p></div>)}</div>
+      </section>
+    </div>
+  </details>;
+}
+
 export default function Home() {
   const [world, setWorld] = useState<WorldState>(() => createFrance2000World());
   const [pulseAudit, setPulseAudit] = useState<WorldPulseAIAuditEntry[]>(readWorldPulseAudit);
@@ -1363,6 +1395,7 @@ export default function Home() {
   const [selectedDossierId, setSelectedDossierId] = useState<string | null>(null);
   const [selectedDialogueId, setSelectedDialogueId] = useState<string | null>(null);
   const [notice, setNotice] = useState('Scénario France · 1er janvier 2000 chargé.');
+  const [lastBriefing, setLastBriefing] = useState<TurnBriefing | null>(null);
   const [isAdvancing, setIsAdvancing] = useState(false);
   const player = world.countries[world.playerCountryId];
   const autonomousCount = useMemo(() => new Set(world.actions.filter((action) => action.origin === 'local_rule').map((action) => action.actorId)).size, [world.actions]);
@@ -1375,6 +1408,7 @@ export default function Home() {
     const before = world;
     const result = advanceWorld(before, addMonths(before.currentDate, months));
     setWorld(result.state);
+    setLastBriefing(buildTurnBriefing(before, result.state));
     const countries = [...new Set(result.reviewedCountryIds)].map((id) => result.state.countries[id]?.name).filter(Boolean);
     const auditNotice = result.audit.ok ? '' : ` · audit : ${result.audit.issues[0] ?? 'incohérence détectée'}`;
     const baseNotice = `${result.elapsedDays} jours simulés · ${countries.length} État(s) réévalué(s)${result.manifestations.length ? ` · ${result.manifestations.length} manifestation(s) historique(s)` : ''}${auditNotice}`;
@@ -1394,6 +1428,7 @@ export default function Home() {
         });
       }
       setWorld(pulse.state);
+      setLastBriefing(buildTurnBriefing(before, pulse.state));
       const touched = pulse.createdDossierIds.length + pulse.updatedDossierIds.length;
       if (pulse.createdDossierIds.length) setSelectedDossierId(pulse.createdDossierIds[0]);
       if (pulse.ok) {
@@ -1423,12 +1458,13 @@ export default function Home() {
       const restored = await loadWorldFromBrowser();
       if (!restored) return setNotice('Aucune sauvegarde locale.');
       setWorld(restored);
+      setLastBriefing(null);
       setNotice('Sauvegarde locale restaurée.');
     } catch {
       setNotice('La sauvegarde locale est illisible ou obsolète.');
     }
   };
-  const reset = () => { setWorld(createFrance2000World()); setNotice('Scénario 2000 réinitialisé.'); };
+  const reset = () => { setWorld(createFrance2000World()); setLastBriefing(null); setNotice('Scénario 2000 réinitialisé.'); };
   const clearPulseAudit = () => { localStorage.removeItem(worldPulseAuditStorageKey); setPulseAudit([]); };
 
   return <main className="min-h-screen bg-background text-foreground">
@@ -1443,6 +1479,7 @@ export default function Home() {
       {dossierAlerts.length > 0 && <div className="border-t border-border bg-card/60"><div className="mx-auto flex max-w-[1600px] items-center gap-2 overflow-x-auto px-4 py-2 lg:px-6"><BellRing className="size-4 shrink-0 text-amber-300" /><span className="shrink-0 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Dossiers actifs</span>{dossierAlerts.slice(0, 4).map((dossier) => <button key={dossier.id} onClick={() => openDossier(dossier.id)} className="shrink-0 border border-border bg-background px-2 py-1 text-xs hover:border-primary"><span className={dossierImportanceTone[dossier.importance]}>●</span> {dossier.title}{dossier.pendingDecisions.length > 0 ? ' · décision attendue' : ` · ${dossierUnreadCount(world, dossier.id)} nouveau(x)`}</button>)}</div></div>}
     </header>
     <div className="border-b border-border bg-muted/20"><div className="mx-auto flex max-w-[1600px] items-center justify-between gap-4 px-4 py-2 text-xs text-muted-foreground lg:px-6"><span>{notice}</span><span className="hidden font-mono sm:block">{autonomousCount} acteurs autonomes · seed {world.seed} · séquence {world.sequence}</span></div></div>
+    {lastBriefing && <TurnBriefingPanel briefing={lastBriefing} onOpenDossier={openDossier} />}
     <div className="mx-auto max-w-[1600px] p-4 lg:p-6">
       {panel === 'world' && <><WorldPanel world={world} onWorldChange={setWorld} onNotice={setNotice} /><div className="mt-4"><WorldPulseAuditPanel entries={pulseAudit} onClear={clearPulseAudit} /></div></>}
       {panel === 'map' && <MapPanel world={world} />}

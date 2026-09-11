@@ -1,6 +1,6 @@
 import { commitWorldAction } from './ledger';
 import { historicalAnchorChannelEffects } from './history';
-import { dossierDecisionChannels, makeDossierDecision } from './dossier-decisions';
+import { makeDossierDecision } from './dossier-decisions';
 import type {
   ActionOrigin, CountryId, DossierDecision, DossierDecisionChannel, DossierEntry, StrategicDossier, Visibility, WorldState,
 } from './types';
@@ -8,6 +8,17 @@ import type {
 const importanceRank = { minor: 0, moderate: 1, major: 2, critical: 3 } as const;
 const decisionDelayMonths: Record<DossierDecision['urgency'], number> = { low: 4, medium: 3, high: 2, critical: 1 };
 const importanceByRank: StrategicDossier['importance'][] = ['minor', 'moderate', 'major', 'critical'];
+const resolutionQuietMonths: Record<StrategicDossier['importance'], number> = { minor: 3, moderate: 4, major: 6, critical: 9 };
+
+export type DossierResolutionAssessment = {
+  stage: 'active' | 'stabilising' | 'blocked' | 'resolved';
+  canResolve: boolean;
+  quietMonths: number;
+  requiredQuietMonths: number;
+  positiveSignals: string[];
+  blockers: string[];
+  nextMilestone: string;
+};
 
 const entryVisibleToPlayer = (state: WorldState, entry: DossierEntry) =>
   entry.visibility === 'public'
@@ -25,6 +36,52 @@ export function dossierUpdatesSinceView(state: WorldState, dossierId: string) {
 
 export function dossierUnreadCount(state: WorldState, dossierId: string) {
   return dossierUpdatesSinceView(state, dossierId).length;
+}
+
+/**
+ * Explique la sortie possible d'un dossier avec des faits déjà présents dans
+ * le monde. Il n'ajoute aucune jauge arbitraire à la sauvegarde.
+ */
+export function assessDossierResolution(state: WorldState, dossier: StrategicDossier): DossierResolutionAssessment {
+  const requiredQuietMonths = resolutionQuietMonths[dossier.importance];
+  const quietMonths = monthsBetween(dossier.updatedAt, state.currentDate);
+  if (dossier.status === 'resolved') return {
+    stage: 'resolved', canResolve: false, quietMonths, requiredQuietMonths,
+    positiveSignals: ['La situation est stabilisée et sa chronologie reste archivée.'], blockers: [],
+    nextMilestone: 'Le dossier ne sera rouvert que par un nouveau signal matériel.',
+  };
+  const programs = Object.values(state.actionPrograms ?? {}).filter((program) => program.linkedDossierId === dossier.id);
+  const recentPrograms = programs.filter((program) => program.status === 'active' || monthsBetween(program.expectedCompletionAt, state.currentDate) <= 18);
+  const hasActiveProgram = programs.some((program) => program.status === 'active');
+  const hasOpenDialogue = Object.values(state.diplomaticDialogues ?? {}).some((dialogue) => dialogue.linkedDossierId === dossier.id && dialogue.status !== 'closed');
+  const hasOpenSession = Object.values(state.diplomaticSessions ?? {}).some((session) => session.linkedDossierId === dossier.id && !['refused', 'closed', 'active'].includes(session.status));
+  const anchor = dossier.relatedAnchorId ? state.historicalAnchors?.[dossier.relatedAnchorId] : undefined;
+  const historicalPressureContinues = Boolean(anchor && ['proposed', 'active'].includes(anchor.status));
+  const positiveSignals = [
+    ...(dossier.commitments.length ? [`${dossier.commitments.length} engagement(s) formalisé(s)`] : []),
+    ...recentPrograms.filter((program) => program.status === 'succeeded').slice(-2).map((program) => `Résultat obtenu : ${program.title}`),
+    ...(dossier.trend === 'deescalating' ? ['La trajectoire observée est en désescalade.'] : []),
+  ];
+  const blockers = [
+    ...(dossier.pendingDecisions.length ? [`${dossier.pendingDecisions.length} décision(s) encore attendue(s)`] : []),
+    ...(hasActiveProgram ? ['Un programme lié est encore en cours.'] : []),
+    ...(hasOpenDialogue || hasOpenSession ? ['Une négociation liée reste ouverte.'] : []),
+    ...(historicalPressureContinues ? ['La tendance historique sous-jacente reste active.'] : []),
+    ...(recentPrograms.some((program) => program.status === 'failed') ? ['Un programme récent a échoué et entretient la pression.'] : []),
+    ...(dossier.status !== 'deescalating' || dossier.trend !== 'deescalating' ? ['La situation n’est pas encore dans une désescalade vérifiable.'] : []),
+    ...(quietMonths < requiredQuietMonths ? [`Il manque ${requiredQuietMonths - quietMonths} mois calme(s) avant stabilisation.`] : []),
+  ];
+  const canResolve = dossier.status === 'deescalating' && dossier.trend === 'deescalating'
+    && dossier.pendingDecisions.length === 0 && !hasActiveProgram && !hasOpenDialogue && !hasOpenSession
+    && !historicalPressureContinues && quietMonths >= requiredQuietMonths;
+  const nextMilestone = dossier.pendingDecisions.length ? 'Traiter ou assumer explicitement les décisions en attente.'
+    : hasActiveProgram ? 'Attendre la résolution du programme engagé.'
+      : hasOpenDialogue || hasOpenSession ? 'Faire aboutir ou fermer la négociation en cours.'
+        : historicalPressureContinues ? 'Infléchir la tendance de fond ou attendre sa manifestation.'
+          : dossier.status !== 'deescalating' || dossier.trend !== 'deescalating' ? 'Obtenir un résultat concret capable d’amorcer la désescalade.'
+            : quietMonths < requiredQuietMonths ? `Maintenir la désescalade encore ${requiredQuietMonths - quietMonths} mois.`
+              : 'La clôture interviendra à la prochaine frontière mensuelle.';
+  return { stage: canResolve ? 'stabilising' : blockers.length ? 'blocked' : 'active', canResolve, quietMonths, requiredQuietMonths, positiveSignals, blockers, nextMilestone };
 }
 
 export function dossiersRequiringAttention(state: WorldState) {
@@ -181,6 +238,37 @@ export function advanceDossierLifecycle(state: WorldState) {
             importance: dossier.importance, actorIds: dossier.actorIds, requiresDecision: false, visibility: 'player',
           },
           reason: 'Le cycle de vie réduit le bruit des dossiers secondaires inactifs.', visibility: 'player',
+        },
+      ],
+    });
+  }
+  // Un dossier ne disparaît pas dès qu'une action réussit : il entre en
+  // désescalade, reste observable plusieurs mois, puis se clôt seulement si
+  // aucune décision, négociation, action ou tendance historique ne le maintient.
+  for (const dossier of Object.values(next.strategicDossiers ?? {})) {
+    const assessment = assessDossierResolution(next, dossier);
+    if (!assessment.canResolve) continue;
+    next = commitWorldAction(next, {
+      kind: dossier.kind === 'economic' ? 'economic' : dossier.kind === 'historical' ? 'historical' : 'diplomatic',
+      actorId: next.playerCountryId,
+      targetIds: dossier.actorIds.filter((id) => id !== next.playerCountryId),
+      origin: 'time', visibility: 'player',
+      intent: `Clore le dossier « ${dossier.title} » après désescalade`,
+      effects: [
+        {
+          kind: 'dossier_patch', dossierId: dossier.id,
+          patch: { status: 'resolved', phase: 'Situation stabilisée', autoTracked: false, sleepingAt: undefined },
+          reason: 'La désescalade s’est maintenue sans nouveau signal, décision ou programme actif.', visibility: 'player',
+        },
+        {
+          kind: 'dossier_entry_add', dossierId: dossier.id,
+          entry: {
+            id: `dossier-resolved-${dossier.id}-${next.currentDate}`,
+            date: next.currentDate, title: 'Situation stabilisée',
+            summary: `Aucun élément matériel n’a relancé la situation pendant ${resolutionQuietMonths[dossier.importance]} mois. Le dossier est clos, mais sa chronologie reste consultable.`,
+            importance: dossier.importance, actorIds: dossier.actorIds, requiresDecision: false, visibility: 'player',
+          },
+          reason: 'La clôture est conservée comme une étape explicite de la chronologie.', visibility: 'player',
         },
       ],
     });

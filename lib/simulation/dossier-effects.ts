@@ -29,6 +29,7 @@ export type DossierPressureProfile = {
   dossierId: string;
   active: boolean;
   mitigationPct: number;
+  mitigationSources: Array<{ label: string; value: number }>;
   pressures: DossierPressureSnapshot[];
   internal: InternalPressure[];
 };
@@ -55,24 +56,31 @@ function isEligible(dossier: StrategicDossier) {
  * vaut davantage et finit par vieillir pour éviter un bonus permanent magique.
  */
 function mitigationFor(state: WorldState, dossier: StrategicDossier) {
-  let mitigation = Math.min(20, dossier.commitments.length * 7);
-  if (dossier.playerStance) mitigation += 6;
+  const sources: Array<{ label: string; value: number }> = [];
+  const commitmentValue = Math.min(20, dossier.commitments.length * 7);
+  if (commitmentValue) sources.push({ label: `${dossier.commitments.length} engagement(s) formalisé(s)`, value: commitmentValue });
   for (const program of Object.values(state.actionPrograms ?? {})) {
     if (program.linkedDossierId !== dossier.id) continue;
-    if (program.status === 'active') mitigation += 8;
-    if (program.status === 'partially_succeeded') mitigation += 8;
+    if (program.status === 'active') sources.push({ label: `Programme en cours : ${program.title}`, value: 8 });
+    if (program.status === 'partially_succeeded') {
+      const age = monthsBetween(program.expectedCompletionAt, state.currentDate);
+      const value = age <= 6 ? 8 : age <= 18 ? 4 : 0;
+      if (value) sources.push({ label: `Résultat partiel : ${program.title}`, value });
+    }
     if (program.status === 'succeeded') {
       const age = monthsBetween(program.expectedCompletionAt, state.currentDate);
-      mitigation += age <= 6 ? 16 : age <= 18 ? 9 : 4;
+      const value = age <= 6 ? 16 : age <= 18 ? 9 : age <= 36 ? 4 : 0;
+      if (value) sources.push({ label: `Résultat obtenu : ${program.title}`, value });
     }
-    if (program.status === 'failed') mitigation -= 6;
+    if (program.status === 'failed' && monthsBetween(program.expectedCompletionAt, state.currentDate) <= 12) sources.push({ label: `Échec aggravant : ${program.title}`, value: -6 });
   }
   const anchor = dossier.relatedAnchorId ? state.historicalAnchors[dossier.relatedAnchorId] : undefined;
   if (anchor?.interventionBalance !== undefined) {
-    mitigation += Math.min(20, Math.max(0, -anchor.interventionBalance) * 0.8);
-    mitigation -= Math.min(10, Math.max(0, anchor.interventionBalance) * 0.35);
+    const value = Math.round(Math.min(20, Math.max(0, -anchor.interventionBalance) * 0.8)
+      - Math.min(10, Math.max(0, anchor.interventionBalance) * 0.35));
+    if (value) sources.push({ label: 'Interventions sur la trajectoire historique', value });
   }
-  return Math.round(clamp(mitigation, 0, 55));
+  return { mitigationPct: Math.round(clamp(sources.reduce((sum, item) => sum + item.value, 0), 0, 55)), sources };
 }
 
 function pressure(
@@ -148,11 +156,14 @@ function profileRules(dossier: StrategicDossier, strength: number): InternalPres
 
 /** Construit une lecture explicable des effets d'un dossier, sans encore modifier le monde. */
 export function dossierPressureProfile(state: WorldState, dossier: StrategicDossier): DossierPressureProfile {
-  if (!isEligible(dossier)) return { dossierId: dossier.id, active: false, mitigationPct: 0, pressures: [], internal: [] };
-  const mitigationPct = mitigationFor(state, dossier);
+  if (!isEligible(dossier)) return { dossierId: dossier.id, active: false, mitigationPct: 0, mitigationSources: [], pressures: [], internal: [] };
+  const { mitigationPct, sources: mitigationSources } = mitigationFor(state, dossier);
   const strength = importanceWeight[dossier.importance] * trendWeight[dossier.trend] * (1 - mitigationPct / 100);
   const internal = profileRules(dossier, strength).filter((item) => item.level > 0);
-  return { dossierId: dossier.id, active: internal.length > 0, mitigationPct, pressures: internal.map(({ shockIntensity, metricDelta, relationDelta, ...item }) => item), internal };
+  const pressures = internal.map((item): DossierPressureSnapshot => ({
+    channel: item.channel, level: item.level, label: item.label, summary: item.summary, direction: item.direction,
+  }));
+  return { dossierId: dossier.id, active: internal.length > 0, mitigationPct, mitigationSources, pressures, internal };
 }
 
 /**

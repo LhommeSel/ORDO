@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import { answerAdvisorQuestion, assessStrategicPlan, classifyAdvisorQuestion } from './advisor';
 import { createAdvisorAIRequest } from '../ai/contracts';
-import { launchCommonAction, prepareCommonAction, prepareDossierDelegation } from './action-programs';
+import { advanceCommonActionPrograms, launchCommonAction, prepareCommonAction, prepareDossierDelegation } from './action-programs';
 import { energyBalance, nodeAvailableExport, proposeEnergyContract } from './energy';
 import {
   acceptEnergyOffer, adjustEnergyOffer, createAdministrativeEnergyOffer, sendEnergyOffer,
@@ -28,7 +28,7 @@ import {
 } from './power-struggles';
 import { interpretPlayerIntent, rankEnergySuppliers } from './intent';
 import {
-  advanceDossierEscalation, advanceDossierLifecycle, dossierUnreadCount, dossiersRequiringAttention, markDossierViewed, reactivateDossier, resolveDossierDecision, setDossierFollowed,
+  advanceDossierEscalation, advanceDossierLifecycle, assessDossierResolution, dossierUnreadCount, dossiersRequiringAttention, markDossierViewed, reactivateDossier, resolveDossierDecision, setDossierFollowed,
 } from './dossiers';
 import { advanceDossierEffects, dossierPressureProfile, selectDossiersForEffects } from './dossier-effects';
 import { applyWorldPulseAnswer, createWorldPulseRequest, executeWorldPulse } from './ai/world-pulse';
@@ -39,6 +39,7 @@ import { activeMajorDossierCount, rankStrategicDossierReviews } from './ai/dossi
 import { commitWorldAction } from './ledger';
 import { applyDiplomaticDialogueAIAnswer, openDiplomaticDialogue, openDiplomaticDialogueForDossier, requestDiplomaticDialogueAI, resolveDiplomaticDialogueResponse, sendDiplomaticDialogueMessage } from './diplomacy-dialogue';
 import { validateCountryRegistry } from './data-validator';
+import { buildTurnBriefing } from './turn-briefing';
 
 test('le scénario 2000 charge un monde cohérent et jouable', () => {
   const state = createFrance2000World();
@@ -59,6 +60,10 @@ test('un dossier actif transmet une pression bornée au macro-modèle et les eng
   assert.equal(baseline.active, true);
   assert.ok(baseline.pressures.some((item) => item.channel === 'financial'));
 
+  const merelyPositioned = structuredClone(initial);
+  merelyPositioned.strategicDossiers[dossier.id].playerStance = 'Le gouvernement affirme suivre la situation.';
+  assert.equal(dossierPressureProfile(merelyPositioned, merelyPositioned.strategicDossiers[dossier.id]).mitigationPct, baseline.mitigationPct);
+
   const committed = structuredClone(initial);
   committed.strategicDossiers[dossier.id].commitments = ['Coordination prudentielle avec les partenaires européens'];
   const reduced = dossierPressureProfile(committed, committed.strategicDossiers[dossier.id]);
@@ -70,6 +75,60 @@ test('un dossier actif transmet une pression bornée au macro-modèle et les eng
   assert.ok(shock && shock.intensity > 0);
   assert.equal(applied.strategicDossiers[dossier.id].impactState?.lastAppliedAt, initial.currentDate);
   assert.ok(applied.strategicDossiers[dossier.id].entries.some((entry) => entry.id === `dossier-impact-${dossier.id}-${initial.currentDate}`));
+});
+
+test('le résultat d’un programme joueur calme un dossier tandis que son échec l’aggrave', () => {
+  const initial = createFrance2000World();
+  const dossierId = 'current-dotcom-exuberance';
+  const prepared = prepareCommonAction(initial, 'Lancer un programme économique de prévention financière', { source: 'player', linkedDossierId: dossierId, category: 'economic' });
+  assert.equal(prepared.ok, true);
+  if (!prepared.ok) return;
+
+  const successLaunch = launchCommonAction(initial, { ...prepared.action, durationMonths: 1, successProbability: 100 });
+  assert.equal(successLaunch.ok, true);
+  if (!successLaunch.ok) return;
+  const success = advanceCommonActionPrograms(successLaunch.state, 1);
+  assert.equal(success.strategicDossiers[dossierId].status, 'deescalating');
+  assert.equal(success.strategicDossiers[dossierId].trend, 'deescalating');
+
+  const failureLaunch = launchCommonAction(initial, { ...prepared.action, durationMonths: 1, successProbability: -100 });
+  assert.equal(failureLaunch.ok, true);
+  if (!failureLaunch.ok) return;
+  const failure = advanceCommonActionPrograms(failureLaunch.state, 1);
+  assert.equal(failure.strategicDossiers[dossierId].status, 'active');
+  assert.equal(failure.strategicDossiers[dossierId].trend, 'escalating');
+});
+
+test('un dossier réellement désescaladé se clôt après une période calme et reste archivé', () => {
+  const state = structuredClone(createFrance2000World());
+  const dossier = state.strategicDossiers['current-dotcom-exuberance'];
+  state.currentDate = '2000-08-01';
+  state.strategicDossiers[dossier.id] = {
+    ...dossier, status: 'deescalating', trend: 'deescalating', phase: 'Réponse efficace',
+    updatedAt: '2000-01-01', pendingDecisions: [], decisionRecords: [], relatedAnchorId: undefined,
+  };
+  const assessment = assessDossierResolution(state, state.strategicDossiers[dossier.id]);
+  assert.equal(assessment.canResolve, true);
+  assert.match(assessment.nextMilestone, /prochaine frontière mensuelle/i);
+  const resolved = advanceDossierLifecycle(state);
+  assert.equal(resolved.strategicDossiers[dossier.id].status, 'resolved');
+  assert.equal(resolved.strategicDossiers[dossier.id].autoTracked, false);
+  assert.ok(resolved.strategicDossiers[dossier.id].entries.some((entry) => entry.id.startsWith(`dossier-resolved-${dossier.id}`)));
+});
+
+test('le bilan de tour résume les indicateurs et les changements de dossier sans dupliquer la sauvegarde', () => {
+  const before = createFrance2000World();
+  const after = structuredClone(before);
+  after.currentDate = '2000-02-01';
+  after.macroEconomies.FRA.realGdpBillion2000Usd += 2;
+  after.strategicDossiers['current-dotcom-exuberance'].trend = 'deescalating';
+  after.strategicDossiers['current-dotcom-exuberance'].phase = 'Correction ordonnée';
+  const briefing = buildTurnBriefing(before, after);
+  assert.equal(briefing.from, '2000-01-01');
+  assert.equal(briefing.to, '2000-02-01');
+  assert.equal(briefing.metrics.find((item) => item.id === 'gdp')?.delta, 2);
+  assert.ok(briefing.highlights.some((item) => item.dossierId === 'current-dotcom-exuberance'));
+  assert.equal(before.currentDate, '2000-01-01');
 });
 
 test('le moteur limite les conséquences systémiques simultanées à quatre dossiers', () => {
@@ -1395,7 +1454,11 @@ test('un programme autonome conserve le dossier qui l’a déclenché', () => {
   assert.ok(resolved.actionPrograms[program.id]?.resolution);
   const dossier = resolved.strategicDossiers['current-dotcom-exuberance'];
   assert.ok(dossier.entries.some((entry) => entry.id === `${program.id}-resolution`));
-  assert.ok(dossier.pendingDecisions.some((decision) => decision.includes('résolution du programme autonome')));
+  const needsFollowUp = resolved.actionPrograms[program.id]?.status !== 'succeeded';
+  assert.equal(
+    dossier.pendingDecisions.some((decision) => decision.includes('résolution du programme autonome')),
+    needsFollowUp,
+  );
 });
 
 test('un même dossier majeur calme bénéficie d’un délai entre deux réévaluations', () => {
