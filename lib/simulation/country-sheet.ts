@@ -7,7 +7,33 @@ export type DefenseReference = {
   activePersonnelThousands: number;
   posture: string;
   capabilities: string[];
+  /** Inventaire agrégé pour le dossier militaire (ordre de grandeur jouable). */
+  unitTypes?: Array<{ id: string; label: string; personnelThousands: number; quality: number; qualityLabel: string }>;
+  /** Répartition indicative des forces par théâtre ou zone de projection. */
+  deployments?: Array<{ location: string; personnelThousands: number; mission: string }>;
   modelingLevel?: 'documented' | 'aggregate';
+};
+
+export type SecurityActorReference = {
+  id: string;
+  name: string;
+  category: 'organized_crime' | 'terrorist' | 'paramilitary';
+  activity: string;
+  zones: string[];
+  estimatedStrength: string;
+  threatLevel: 'low' | 'moderate' | 'high' | 'critical';
+  notes: string;
+};
+
+/** Acteurs non étatiques documentés comme contexte de scénario autour de 2000. */
+export const securityActorReference2000: Record<CountryId, SecurityActorReference[]> = {
+  FRA: [
+    { id: 'illegal-gold-miners-guyane', name: 'Réseaux d’orpaillage illégal en Guyane', category: 'organized_crime', activity: 'Extraction clandestine, contrebande d’or et logistique fluviale', zones: ['Maroni', 'Oyapock', 'intérieur guyanais'], estimatedStrength: 'réseaux diffus · plusieurs centaines d’opérateurs', threatLevel: 'high', notes: 'Pression sur l’environnement, les communes isolées et la souveraineté territoriale.' },
+    { id: 'corsican-organized-crime', name: 'Réseaux de grand banditisme corse', category: 'organized_crime', activity: 'Extorsion, trafics et blanchiment', zones: ['Corse', 'arc méditerranéen', 'métropoles'], estimatedStrength: 'cellules et soutiens · ordre de grandeur non consolidé', threatLevel: 'high', notes: 'Capacité d’influence locale et d’intimidation des acteurs économiques.' },
+    { id: 'metropolitan-organized-crime', name: 'Réseaux de grand banditisme métropolitain', category: 'organized_crime', activity: 'Stupéfiants, armes, braquages et recyclage financier', zones: ['Île-de-France', 'Provence', 'grands ports'], estimatedStrength: 'réseaux fragmentés · milliers de membres et relais', threatLevel: 'moderate', notes: 'Menace principalement criminelle, avec effets sur la corruption et la sécurité urbaine.' },
+    { id: 'corsican-clandestine-groups', name: 'Groupes armés clandestins corses', category: 'paramilitary', activity: 'Actions armées, intimidation et contrôle territorial ponctuel', zones: ['Corse'], estimatedStrength: 'quelques centaines de membres et soutiens', threatLevel: 'high', notes: 'Catégorie paramilitaire utilisée par le scénario pour suivre les capacités armées clandestines.' },
+    { id: 'jihadist-networks-2000', name: 'Réseaux jihadistes clandestins issus du GIA', category: 'terrorist', activity: 'Soutien logistique, recrutement et préparation d’attentats', zones: ['métropole · réseaux transnationaux'], estimatedStrength: 'petites cellules · effectifs discrets', threatLevel: 'moderate', notes: 'Signal de renseignement : la capacité réelle dépend de la surveillance et des connexions extérieures.' },
+  ],
 };
 
 /**
@@ -16,7 +42,25 @@ export type DefenseReference = {
  * par le moteur et sont filtrées par le renseignement du joueur.
  */
 export const defenseReference2000: Record<CountryId, DefenseReference> = {
-  FRA: { budgetBillionUsd: 44, activePersonnelThousands: 353, posture: 'dissuasion indépendante et projection', capabilities: ['dissuasion nucléaire', 'aéronavale', 'forces de projection'] },
+  FRA: {
+    budgetBillionUsd: 44, activePersonnelThousands: 353, posture: 'dissuasion indépendante et projection',
+    capabilities: ['dissuasion nucléaire', 'aéronavale', 'forces de projection'],
+    unitTypes: [
+      { id: 'army', label: 'Armée de terre', personnelThousands: 139, quality: 78, qualityLabel: 'Bonne · professionnalisation en cours' },
+      { id: 'navy', label: 'Marine nationale', personnelThousands: 44, quality: 82, qualityLabel: 'Très bonne · haute disponibilité navale' },
+      { id: 'air', label: "Armée de l'air", personnelThousands: 64, quality: 80, qualityLabel: 'Très bonne · supériorité aérienne régionale' },
+      { id: 'gendarmerie', label: 'Gendarmerie nationale', personnelThousands: 100, quality: 74, qualityLabel: 'Bonne · maillage territorial' },
+      { id: 'joint', label: 'Services interarmées', personnelThousands: 6, quality: 76, qualityLabel: 'Bonne · soutien et renseignement' },
+    ],
+    deployments: [
+      { location: 'Métropole', personnelThousands: 240, mission: 'Défense du territoire, dissuasion et entraînement' },
+      { location: "Outre-mer et bases prépositionnées", personnelThousands: 24, mission: 'Souveraineté, protection des approches et présence' },
+      { location: 'Afrique', personnelThousands: 18, mission: 'Coopération de défense et opérations extérieures' },
+      { location: 'Balkans', personnelThousands: 8, mission: 'KFOR, maintien de la paix et sécurisation' },
+      { location: 'Missions navales et aériennes', personnelThousands: 15, mission: 'Projection, surveillance et contrôle des espaces' },
+      { location: 'Réserve opérationnelle / rotation', personnelThousands: 48, mission: 'Alerte, relève et renfort des théâtres' },
+    ],
+  },
   DEU: { budgetBillionUsd: 28, activePersonnelThousands: 333, posture: 'défense alliée européenne', capabilities: ['armée de terre mécanisée', 'industrie de défense', 'OTAN'] },
   ITA: { budgetBillionUsd: 20, activePersonnelThousands: 320, posture: 'méditerranée et coalition', capabilities: ['marine', 'bases méditerranéennes', 'OTAN'] },
   POL: { budgetBillionUsd: 4.5, activePersonnelThousands: 235, posture: 'défense territoriale en transition', capabilities: ['forces terrestres', 'adaptation OTAN'] },
@@ -81,6 +125,10 @@ export function defenseReferenceForCountry(state: WorldState, countryId: Country
   };
 }
 
+export function securityActorsForCountry(_state: WorldState, countryId: CountryId): SecurityActorReference[] {
+  return securityActorReference2000[countryId] ?? [];
+}
+
 const normalize = (value: string) => value
   .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
   .toLocaleLowerCase('fr').replace(/[’']/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim();
@@ -114,6 +162,7 @@ export type CountrySheet = {
   macro: { gdp: number; growth: number; population: number; inflation: number; unemployment: number; debt: number; fiscalBalance: number } | null;
   energy: { oilImports: number; gasImports: number; oilStocksMonths: number; gasStocksMonths: number } | null;
   defense: DefenseReference | null;
+  securityActors: SecurityActorReference[];
   relation?: { value: number; trust: number };
   topGoal?: string;
   vulnerabilities: string[];
@@ -134,6 +183,7 @@ export function countrySheet(state: WorldState, countryId: CountryId): CountrySh
     } : null,
     energy: oil && gas ? { oilImports: oil.imports, gasImports: gas.imports, oilStocksMonths: oil.coverageMonths, gasStocksMonths: gas.coverageMonths } : null,
     defense: defenseReferenceForCountry(state, countryId),
+    securityActors: securityActorsForCountry(state, countryId),
     relation: relation ? { value: relation.relation, trust: relation.trust } : undefined,
     topGoal: country.strategy.goals.slice().sort((a, b) => b.priority - a.priority)[0]?.label,
     vulnerabilities: country.strategy.vulnerabilities,

@@ -3,7 +3,7 @@ import { commitWorldAction } from './ledger';
 import { relationBetween } from './ledger';
 import { resolveDossierDecision } from './dossiers';
 import { historicalAnchorChannelEffects } from './history';
-import type { DiplomaticDialogue, DiplomaticTurn, GeneralAIJob, CountryId, WorldState, AIJobOutcome } from './types';
+import type { DiplomaticDialogue, DiplomaticTurn, GeneralAIJob, CountryId, WorldState, AIJobOutcome, DossierEntry, StrategicDossier } from './types';
 import type { AIDiplomaticMove } from '../ai/job-contracts';
 
 const unique = <T,>(items: T[]) => [...new Set(items)];
@@ -85,6 +85,51 @@ export function openDiplomaticDialogue(state: WorldState, participantIds: Countr
       }] : []),
     ],
   }), dialogueId: id };
+}
+
+/** Ajoute un interlocuteur à un canal déjà ouvert sans perdre son historique. */
+export function addDiplomaticDialogueParticipant(state: WorldState, dialogueId: string, countryId: CountryId) {
+  const dialogue = state.diplomaticDialogues?.[dialogueId];
+  if (!dialogue || dialogue.status === 'closed') return { ok: false as const, state, error: 'Ce canal est fermé.' };
+  if (!state.countries[countryId] || countryId === state.playerCountryId) return { ok: false as const, state, error: 'Ce pays ne peut pas être ajouté au canal.' };
+  if (dialogue.participantIds.includes(countryId)) return { ok: false as const, state, error: 'Ce pays participe déjà à la discussion.' };
+  const nextDialogue: DiplomaticDialogue = {
+    ...dialogue,
+    kind: 'multilateral_dialogue',
+    participantIds: [...dialogue.participantIds, countryId],
+    updatedAt: state.currentDate,
+  };
+  const addedName = state.countries[countryId]?.name ?? countryId;
+  const effects: import('./types').WorldEffect[] = [{
+    kind: 'diplomatic_dialogue_patch', dialogueId, patch: nextDialogue,
+    reason: `${addedName} rejoint le canal diplomatique sans effacer les échanges précédents.`, visibility: 'player',
+  }];
+  if (dialogue.linkedDossierId && state.strategicDossiers[dialogue.linkedDossierId]) effects.push({
+    kind: 'dossier_entry_add', dossierId: dialogue.linkedDossierId,
+    entry: {
+      id: `dialogue-participant-${dialogue.id}-${countryId}-${state.sequence + 1}`, date: state.currentDate,
+      title: 'Participant ajouté au canal', summary: `${addedName} est invité à la discussion diplomatique en cours.`,
+      importance: state.strategicDossiers[dialogue.linkedDossierId].importance, actorIds: nextDialogue.participantIds,
+      requiresDecision: false, visibility: 'player',
+    }, reason: 'L’élargissement du canal est conservé dans le dossier diplomatique.', visibility: 'player',
+  });
+  return { ok: true as const, state: commitWorldAction(state, {
+    kind: 'diplomatic', actorId: state.playerCountryId, targetIds: nextDialogue.participantIds.filter((id) => id !== state.playerCountryId),
+    origin: 'player', visibility: 'player', intent: `Ajouter ${addedName} au dialogue`, effects,
+  }) };
+}
+
+function dialogueDossier(state: WorldState, dialogue: DiplomaticDialogue, title: string, summary: string, entryTitle: string, entrySummary: string, commitments: string[] = []): StrategicDossier {
+  const entry: DossierEntry = {
+    id: `dialogue-dossier-entry-${dialogue.id}-${state.sequence + 1}`, date: state.currentDate, title: entryTitle, summary: entrySummary,
+    importance: 'moderate', actorIds: dialogue.participantIds, requiresDecision: false, visibility: 'player',
+  };
+  return {
+    id: `diplomatic-dialogue-${dialogue.id}`, title, kind: 'cooperation', status: 'active', importance: 'moderate',
+    actorIds: dialogue.participantIds, regionTags: [], startedAt: state.currentDate, updatedAt: state.currentDate,
+    phase: title.startsWith('Procédure') ? 'Procédure d’accord' : 'Accord conclu', trend: 'stable', publicSummary: summary,
+    followed: true, autoTracked: true, commitments, pendingDecisions: [], relatedCurrentIds: [], relatedActionIds: [], entries: [entry],
+  };
 }
 
 /** Ouvre un dialogue depuis une décision de dossier et consomme cette décision. */
@@ -217,6 +262,16 @@ export function resolveDiplomaticDialogueResponse(
     kind: 'relation_delta' as const, from: state.playerCountryId, to: targetId, relation: relationEffect.relation, trust: relationEffect.trust,
     reason: decision === 'accept' ? 'L’acceptation d’un engagement diplomatique renforce la relation.' : 'Le refus d’une position diplomatique dégrade la relation.', visibility: 'player' as const,
   })));
+  const formalAgreement = decision === 'accept' && (response.kind === 'accept' || response.kind === 'counter');
+  const agreementDossierId = `diplomatic-dialogue-${dialogue.id}`;
+  if (!dialogue.linkedDossierId && (formalAgreement || decision === 'request_revision')) {
+    const names = dialogue.participantIds.map((id) => state.countries[id]?.name ?? id).join(', ');
+    const agreementLabel = response.agreementType.replaceAll('_', ' ');
+    const dossier = formalAgreement
+      ? dialogueDossier(state, dialogue, `Accord diplomatique · ${names}`, `Un accord de ${agreementLabel} est conclu avec ${names} et doit désormais être suivi dans le temps.`, 'Accord diplomatique conclu', response.position, [`Engagement diplomatique : ${response.position}`])
+      : dialogueDossier(state, dialogue, `Procédure d’accord · ${names}`, `Une procédure de négociation est ouverte avec ${names} ; les garanties et conditions restent à préciser.`, 'Procédure d’accord ouverte', messages.request_revision);
+    effects.push({ kind: 'dossier_add', dossier, reason: formalAgreement ? 'L’accord conclu devient un dossier de suivi.' : 'La demande de révision ouvre une procédure d’accord suivie.', visibility: 'player' });
+  }
   if (dialogue.linkedDossierId && state.strategicDossiers[dialogue.linkedDossierId]) {
     const dossier = state.strategicDossiers[dialogue.linkedDossierId];
     effects.push(
