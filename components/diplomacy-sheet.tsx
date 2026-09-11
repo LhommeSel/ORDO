@@ -93,6 +93,7 @@ type DiplomacySheetProps = {
   dialogues?: DialogueSummary[];
   onSelectDialogue?: (id: string) => void;
   selectedDialogueId?: string | null;
+  onNewDialogue?: () => void;
   selectedCountry: SheetCountry;
   messages: SheetMessage[];
   structuredResponse?: StructuredDiplomaticResponse;
@@ -169,6 +170,7 @@ export function DiplomacySheet({
   dialogues = [],
   onSelectDialogue,
   selectedDialogueId,
+  onNewDialogue,
   selectedCountry,
   messages,
   structuredResponse,
@@ -209,6 +211,7 @@ export function DiplomacySheet({
 
         <div className="diplomacy-sheet-layout">
           <nav className="diplomacy-contact-list" aria-label="Interlocuteurs diplomatiques">
+            {onNewDialogue && <div className="border-b border-border/70 p-2"><Button type="button" size="sm" variant="outline" onClick={onNewDialogue} className="w-full justify-start rounded-none text-[11px]">Nouveau canal</Button></div>}
             {dialogues.length > 0 && onSelectDialogue && <div className="mb-2 border-b border-border/70 pb-2">
               <p className="px-3 pb-2 pt-3 font-mono text-[8px] tracking-[0.12em] text-muted-foreground">CANAUX RÉCENTS</p>
               <div className="space-y-1 px-2">
