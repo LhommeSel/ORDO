@@ -29,6 +29,8 @@ type D1Like = {
 type D1RunResult = { meta?: { changes?: number } };
 
 let warnedUnavailable = false;
+let quotaSchemaDatabase: D1Like | null = null;
+let quotaSchemaPromise: Promise<void> | null = null;
 
 /**
  * Récupère le binding D1 uniquement dans le runtime Worker. Le fallback est
@@ -47,6 +49,36 @@ async function getQuotaDatabase(): Promise<D1Like | null> {
     console.warn('ORDO persistent AI quota unavailable; using in-memory safeguards.');
   }
   return null;
+}
+
+/**
+ * Les environnements Sites disposent de la migration D1, tandis que vinext
+ * peut démarrer une base locale vierge. Le schéma minimal est donc créé à la
+ * demande, de façon idempotente, pour que le fallback mémoire ne masque pas
+ * une vraie réservation persistante pendant les tests ou après un redémarrage.
+ */
+async function ensureQuotaSchema(database: D1Like) {
+  if (quotaSchemaDatabase === database) return;
+  if (!quotaSchemaPromise) {
+    quotaSchemaPromise = database.prepare(
+      `CREATE TABLE IF NOT EXISTS ai_quota_windows (
+         scope TEXT NOT NULL,
+         subject_key TEXT NOT NULL,
+         window_start TEXT NOT NULL,
+         reset_at INTEGER NOT NULL,
+         request_count INTEGER NOT NULL DEFAULT 0,
+         estimated_usd REAL NOT NULL DEFAULT 0,
+         updated_at INTEGER NOT NULL,
+         PRIMARY KEY (scope, subject_key, window_start)
+       )`,
+    ).bind().run().then(() => {
+      quotaSchemaDatabase = database;
+    }).catch((error) => {
+      quotaSchemaPromise = null;
+      throw error;
+    });
+  }
+  await quotaSchemaPromise;
 }
 
 const utcWindow = () => {
@@ -103,6 +135,7 @@ export async function claimPersistentAIRequest(ipKey: string, sessionKey: string
   const policy = aiRuntimePolicy();
   const { now, windowStart, resetAt } = utcWindow();
   try {
+    await ensureQuotaSchema(database);
     const budget = await readBudget(database, windowStart);
     if (budget && budget.estimated_usd >= policy.dailyBudgetUsd) {
       return {
@@ -154,6 +187,7 @@ export async function recordPersistentAICost(estimatedUsd: number) {
   if (!database) return;
   const { windowStart, resetAt } = utcWindow();
   try {
+    await ensureQuotaSchema(database);
     await database.prepare(
       `INSERT INTO ai_quota_windows
          (scope, subject_key, window_start, reset_at, request_count, estimated_usd, updated_at)
