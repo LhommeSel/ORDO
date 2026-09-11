@@ -2,11 +2,19 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createAIJobAIRequest, parseAIJobAIRequest, type AIJobAIResponse } from './job-contracts';
 import { advisorAnswerGroundingIssues } from './contracts';
+import { worldPulseAIJsonSchema } from './world-pulse-contracts';
 import { compileContextForAIJob, selectSupplementalFacts } from '../simulation/ai/context';
 import { executeAIJob } from '../simulation/ai/executor';
 import { createFrance2000World } from '../simulation/scenario-2000';
 import { createAdministrativeEnergyOffer, startEnergyNegotiationAI } from '../simulation/energy-negotiation';
 import type { GeneralAIJob } from '../simulation/types';
+
+test('le schéma du pouls déclare aussi les champs optionnels pour la sortie structurée stricte', () => {
+  const proposal = worldPulseAIJsonSchema.properties.proposals.items;
+  assert.ok(Array.isArray(proposal.required));
+  assert.ok(proposal.required.includes('historicalAnchorId'));
+  assert.ok(proposal.required.includes('autonomousAction'));
+});
 
 test('le pipeline IA compile un contexte visible, valide le contrat et conserve une réponse sans effet libre', async () => {
   const initial = createFrance2000World();

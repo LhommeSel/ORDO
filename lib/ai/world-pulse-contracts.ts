@@ -291,7 +291,7 @@ const relationEffectSchema = {
 
 const proposalSchema = {
   type: 'object', additionalProperties: false,
-  required: ['dossierId', 'title', 'kind', 'importance', 'actorIds', 'regionTags', 'phase', 'trend', 'summary', 'requiresPlayerDecision', 'playerDecision', 'factIds', 'relationEffects', 'autonomousAction'],
+  required: ['dossierId', 'historicalAnchorId', 'title', 'kind', 'importance', 'actorIds', 'regionTags', 'phase', 'trend', 'summary', 'requiresPlayerDecision', 'playerDecision', 'factIds', 'relationEffects', 'autonomousAction'],
   properties: {
     dossierId: { anyOf: [{ type: 'string', maxLength: 120 }, { type: 'null' }] },
     historicalAnchorId: { anyOf: [{ type: 'string', maxLength: 120 }, { type: 'null' }] },
