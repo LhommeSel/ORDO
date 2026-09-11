@@ -162,7 +162,7 @@ export type WorldPulseResponse =
       retryAfterSeconds?: number;
     };
 
-const dossierKinds: DossierKind[] = ['conflict', 'diplomatic_crisis', 'economic', 'security', 'cooperation', 'historical', 'power_struggle'];
+const dossierKinds: DossierKind[] = ['conflict', 'diplomatic_crisis', 'economic', 'security', 'cooperation', 'historical', 'power_struggle', 'political_transition'];
 const importance: DossierImportance[] = ['minor', 'moderate', 'major', 'critical'];
 const domains: AIContextDomain[] = ['overview', 'economy', 'energy', 'industry', 'diplomacy', 'politics', 'military', 'history', 'dossier', 'actor', 'capacity'];
 const actionCategories: CommonActionCategory[] = ['diplomacy', 'economic', 'institutional', 'defense', 'intelligence'];

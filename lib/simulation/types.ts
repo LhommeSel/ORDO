@@ -81,6 +81,32 @@ export type CountryLeadership = {
   sourceBasis: string;
 };
 
+export type PoliticalCycleMode =
+  | 'competitive_election'
+  | 'managed_election'
+  | 'party_congress'
+  | 'dynastic_succession'
+  | 'institutional_review';
+
+/**
+ * Calendrier institutionnel minimal. Il décrit quand le pouvoir doit être
+ * réévalué, sans pré-écrire le vainqueur historique ni conserver éternellement
+ * le dirigeant du scénario 2000.
+ */
+export type PoliticalCycle = {
+  countryId: CountryId;
+  mode: PoliticalCycleMode;
+  intervalMonths: number;
+  warningMonths: number;
+  nextReviewDate: ISODate;
+  lastReviewDate?: ISODate;
+  cycleNumber: number;
+  status: 'scheduled' | 'campaign';
+  dossierId?: string | null;
+  lastOutcome?: 'renewal' | 'alternation' | 'succession' | 'continuity';
+  lastSupportScore?: number;
+};
+
 export type ApparatusCurrent = {
   id: string;
   label: string;
@@ -1121,6 +1147,9 @@ export type WorldEffect =
   | { kind: 'processed_stop_add'; stopId: string; reason: string; visibility?: Visibility }
   | { kind: 'metric_delta'; countryId: CountryId; metric: WorldMetric; delta: number; reason: string; visibility?: Visibility }
   | { kind: 'politics_patch'; countryId: CountryId; patch: Partial<PoliticalSystem>; reason: string; visibility?: Visibility }
+  | { kind: 'leadership_patch'; countryId: CountryId; patch: Partial<CountryLeadership>; reason: string; visibility?: Visibility }
+  | { kind: 'political_apparatus_patch'; countryId: CountryId; patch: Partial<PoliticalApparatusProfile>; reason: string; visibility?: Visibility }
+  | { kind: 'political_cycle_patch'; countryId: CountryId; patch: Partial<PoliticalCycle>; reason: string; visibility?: Visibility }
   | { kind: 'country_strategy_patch'; countryId: CountryId; patch: Partial<CountryStrategy>; reason: string; visibility?: Visibility }
   | { kind: 'capacity_commitment'; countryId: CountryId; domain: CapacityDomainId; delta: number; reason: string; visibility?: Visibility }
   | { kind: 'capacity_maximum'; countryId: CountryId; domain: CapacityDomainId; delta: number; reason: string; visibility?: Visibility }
@@ -1201,7 +1230,7 @@ export type SimulationStop = {
 };
 
 export type DossierImportance = 'minor' | 'moderate' | 'major' | 'critical';
-export type DossierKind = 'conflict' | 'diplomatic_crisis' | 'economic' | 'security' | 'cooperation' | 'historical' | 'power_struggle';
+export type DossierKind = 'conflict' | 'diplomatic_crisis' | 'economic' | 'security' | 'cooperation' | 'historical' | 'power_struggle' | 'political_transition';
 
 export type DossierEntry = {
   id: string;
@@ -1303,6 +1332,7 @@ export type WorldState = {
   tradeFlows: Record<string, BilateralTradeFlow>;
   decisionProfiles: Record<CountryId, CountryDecisionProfile>;
   leadership: Record<CountryId, CountryLeadership>;
+  politicalCycles: Record<CountryId, PoliticalCycle>;
   politicalApparatus: Record<CountryId, PoliticalApparatusProfile>;
   structuralProfiles: Record<CountryId, CountryStructuralProfile>;
   stakeholderGroups: Record<string, StakeholderGroup>;

@@ -13,6 +13,7 @@ import { advanceDossierEscalation, advanceDossierLifecycle } from './dossiers';
 import { reactivateDossiersOnWorldSignals } from './dossiers';
 import { advanceDossierEffects } from './dossier-effects';
 import { compactWorldForSave } from './persistence';
+import { advancePoliticalCycles } from './political-cycles';
 import type { ISODate, SimulationStop, WorldEffect, WorldState } from './types';
 
 export type SimulationPhaseAudit = {
@@ -120,6 +121,7 @@ function simulationPhases(
     { id: 'treaties', advance: (state, context) => advanceTreaties(state, context.elapsedMonths) },
     { id: 'institutions', advance: (state, context) => advanceInstitutions(state, context.elapsedMonths) },
     { id: 'common-actions', advance: (state, context) => advanceCommonActionPrograms(state, context.elapsedMonths) },
+    { id: 'political-cycles', advance: (state, context) => context.reachedMonthBoundary ? advancePoliticalCycles(state) : state },
     { id: 'dossier-escalation', advance: (state, context) => context.reachedMonthBoundary ? advanceDossierEscalation(state) : state },
     { id: 'dossier-lifecycle', advance: (state, context) => context.reachedMonthBoundary ? advanceDossierLifecycle(state) : state },
     { id: 'stakeholders', advance: (state, context) => advanceStakeholderReactions(state, context.elapsedMonths) },

@@ -42,6 +42,7 @@ import { validateCountryRegistry } from './data-validator';
 import { buildTurnBriefing } from './turn-briefing';
 import { queueAutonomousProgram } from './ai/autonomous-programs';
 import { authorizeArmamentProspect, createAutomaticArmamentProspects, rankArmamentProspectBuyers, rejectArmamentProspect } from './industry';
+import { advancePoliticalCycles, assessPoliticalSupport, politicalCycleStops } from './political-cycles';
 
 test('le scénario 2000 charge un monde cohérent et jouable', () => {
   const state = createFrance2000World();
@@ -53,6 +54,75 @@ test('le scénario 2000 charge un monde cohérent et jouable', () => {
   assert.ok(Object.keys(state.armamentProducts).length >= 6);
   assert.ok(Object.keys(state.strategicDossiers).length >= 2);
   assert.ok(Object.keys(state.historicalAnchors).length >= 20);
+  assert.equal(Object.keys(state.politicalCycles).length, 195);
+});
+
+test('les échéances politiques sont réparties et ouvrent un dossier avant les scrutins majeurs', () => {
+  const initial = createFrance2000World();
+  const atCampaign = { ...initial, currentDate: '2000-06-01' as const };
+  const advanced = advancePoliticalCycles(atCampaign);
+  assert.equal(advanced.politicalCycles.USA.status, 'campaign');
+  const dossier = advanced.strategicDossiers['political-cycle-usa-1'];
+  assert.ok(dossier);
+  assert.equal(dossier.kind, 'political_transition');
+  assert.match(dossier.publicSummary, /aucun vainqueur historique n’est pré-écrit/);
+});
+
+test('une alternance remplace la direction de 2000 sans effacer l’appareil permanent', () => {
+  const initial = createFrance2000World();
+  const stressed = structuredClone(initial);
+  stressed.currentDate = '2000-11-01';
+  stressed.countries.USA.politics.publicApproval = 8;
+  stressed.countries.USA.metrics.stability = 15;
+  stressed.countries.USA.metrics.security = 20;
+  stressed.leadership.USA.executiveCoordination = 18;
+  stressed.macroEconomies.USA.realGrowthAnnualPct = -6;
+  stressed.macroEconomies.USA.unemploymentPct = 16;
+  const assessment = assessPoliticalSupport(stressed, 'USA');
+  assert.equal(assessment.retained, false);
+  const permanentCurrentId = stressed.politicalApparatus.USA.currents[0].id;
+  const advanced = advancePoliticalCycles(stressed);
+  assert.equal(advanced.politicalCycles.USA.lastOutcome, 'alternation');
+  assert.notEqual(advanced.leadership.USA.figures[0].name, 'Bill Clinton');
+  assert.equal(advanced.politicalApparatus.USA.currents[0].id, permanentCurrentId);
+  assert.match(advanced.countries.USA.politics.governmentLabel, /alternance/);
+});
+
+test('une direction soutenue peut être reconduite mais son prochain contrôle reste planifié', () => {
+  const initial = createFrance2000World();
+  const stable = structuredClone(initial);
+  stable.currentDate = '2000-11-01';
+  stable.countries.USA.politics.publicApproval = 88;
+  stable.countries.USA.metrics.stability = 90;
+  stable.leadership.USA.executiveCoordination = 92;
+  const advanced = advancePoliticalCycles(stable);
+  assert.equal(advanced.politicalCycles.USA.lastOutcome, 'renewal');
+  assert.equal(advanced.leadership.USA.figures[0].name, 'Bill Clinton');
+  assert.equal(advanced.politicalCycles.USA.nextReviewDate, '2004-11-01');
+});
+
+test('une échéance compétitive départage une cohabitation au lieu de la figer pour toujours', () => {
+  const initial = createFrance2000World();
+  const stable = structuredClone(initial);
+  stable.currentDate = '2002-04-01';
+  stable.countries.FRA.politics.publicApproval = 90;
+  stable.countries.FRA.metrics.stability = 90;
+  stable.leadership.FRA.executiveCoordination = 88;
+  const advanced = advancePoliticalCycles(stable);
+  assert.equal(advanced.politicalCycles.FRA.lastOutcome, 'renewal');
+  assert.equal(advanced.leadership.FRA.figures.length, 1);
+  assert.equal(advanced.countries.FRA.politics.regime.includes('cohabitation'), false);
+  assert.equal(advanced.countries.FRA.politics.executive, advanced.leadership.FRA.figures[0].name);
+});
+
+test('une avance longue s’arrête avant l’échéance politique du pays joué', () => {
+  const initial = createFrance2000World();
+  const requestedDate = '2003-01-01' as const;
+  const result = advanceWorld(initial, requestedDate, politicalCycleStops(initial, requestedDate));
+  assert.equal(result.reachedDate, '2001-12-01');
+  assert.equal(result.stop?.kind, 'political');
+  assert.equal(result.state.politicalCycles.FRA.status, 'campaign');
+  assert.ok(result.state.strategicDossiers['political-cycle-fra-1']);
 });
 
 test('un dossier actif transmet une pression bornée au macro-modèle et les engagements l’amortissent', () => {

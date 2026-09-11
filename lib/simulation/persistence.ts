@@ -6,6 +6,7 @@ import { createStakeholderGroups2000 } from './stakeholder-data-2000';
 import { createTradeFlows2000 } from './trade-data-2000';
 import { createDecisionProfiles2000 } from './decision-data-2000';
 import { createLeadership2000, createPoliticalApparatus2000 } from './political-identity-data-2000';
+import { createPoliticalCycles2000 } from './political-cycles';
 import { createHistoricalAnchors2000 } from './historical-anchors-2000';
 
 export type SaveEnvelope = {
@@ -245,6 +246,7 @@ export function deserializeWorld(raw: string): WorldState {
     tradeFlows: restored.tradeFlows ?? createTradeFlows2000(),
     decisionProfiles: restored.decisionProfiles ?? createDecisionProfiles2000(restored.countries),
     leadership: restored.leadership ?? createLeadership2000(restored.countries),
+    politicalCycles: restored.politicalCycles ?? createPoliticalCycles2000(restored.countries),
     politicalApparatus: restored.politicalApparatus ?? createPoliticalApparatus2000(restored.countries),
     structuralProfiles,
     stakeholderGroups: restored.stakeholderGroups ?? createStakeholderGroups2000(restored.countries, structuralProfiles),

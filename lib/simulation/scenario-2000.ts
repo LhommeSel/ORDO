@@ -18,6 +18,7 @@ import { createStakeholderGroups2000 } from './stakeholder-data-2000';
 import { createTradeFlows2000 } from './trade-data-2000';
 import { createDecisionProfiles2000 } from './decision-data-2000';
 import { createLeadership2000, createPoliticalApparatus2000 } from './political-identity-data-2000';
+import { createPoliticalCycles2000 } from './political-cycles';
 import { createNationalBaselineCountries2000 } from './national-baseline-2000';
 import { createGlobalBaselineCountries2000 } from './global-baseline-2000';
 import { assertValidCountryRegistry } from './data-validator';
@@ -570,6 +571,7 @@ export function createFrance2000World(): WorldState {
     tradeFlows: createTradeFlows2000(),
     decisionProfiles: createDecisionProfiles2000(allCountries),
     leadership: createLeadership2000(allCountries),
+    politicalCycles: createPoliticalCycles2000(allCountries),
     politicalApparatus: createPoliticalApparatus2000(allCountries),
     structuralProfiles,
     stakeholderGroups: createStakeholderGroups2000(allCountries, structuralProfiles),

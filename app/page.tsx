@@ -34,6 +34,7 @@ import {
   dossierDecisionRecords,
   dossierPressureProfile,
   buildTurnBriefing,
+  politicalCycleStops,
   countrySheet,
   type AdvisorAnswer, type AdvisorQuestionKind, type EnergyAdministrativeOffer, type EnergyCounterpartResponse,
   type CommonActionCategory, type EnergyOfferAdjustment, type HistoricalInterventionDirection, type ISODate, type StrategicDossier, type StrategicPlan,
@@ -313,6 +314,7 @@ function MapPanel({ world }: { world: WorldState }) {
   const [selectedCountryId, setSelectedCountryId] = useState(world.playerCountryId);
   const selected = world.countries[selectedCountryId];
   const sheet = countrySheet(world, selectedCountryId);
+  const politicalCycle = world.politicalCycles?.[selectedCountryId];
   const activeMetrics = useMemo(() => Object.fromEntries(Object.keys(world.countries).map((id) => [id, 100])), [world.countries]);
   const activeCountries = Object.values(world.countries).sort((a, b) => b.weight - a.weight);
 
@@ -329,6 +331,7 @@ function MapPanel({ world }: { world: WorldState }) {
           <div className="font-mono text-[10px] uppercase tracking-wider text-emerald-300">État modélisé</div>
           <h3 className="mt-1 text-xl font-semibold">{selected.flag} {selected.name}</h3>
           <p className="mt-1 text-xs text-muted-foreground">{selected.politics.governmentLabel}</p>
+          {politicalCycle && <p className="mt-1 text-[11px] text-muted-foreground">Prochaine échéance politique : <b className="text-foreground">{politicalCycle.nextReviewDate}</b> · {politicalCycle.status === 'campaign' ? 'séquence ouverte' : 'planifiée'}{politicalCycle.lastOutcome ? ` · dernier résultat : ${politicalCycle.lastOutcome}` : ''}</p>}
           <div className="map-facts">
             <Stat label="PIB réel" value={sheet?.macro ? `${sheet.macro.gdp.toFixed(0)} Md$` : '—'} detail="base 2000" />
             <Stat label="Croissance" value={sheet?.macro ? `${sheet.macro.growth.toFixed(1)} %` : '—'} />
@@ -1116,7 +1119,7 @@ function DossiersPanel({ world, selectedId, onSelect, onWorldChange, onNotice, o
   };
   const prepareLocalDecision = (decision: string) => {
     const categoryByDossier: Record<StrategicDossier['kind'], CommonActionCategory> = {
-      economic: 'economic', security: 'defense', conflict: 'defense', diplomatic_crisis: 'diplomacy', cooperation: 'diplomacy', historical: 'institutional', power_struggle: 'institutional',
+      economic: 'economic', security: 'defense', conflict: 'defense', diplomatic_crisis: 'diplomacy', cooperation: 'diplomacy', historical: 'institutional', power_struggle: 'institutional', political_transition: 'institutional',
     };
     const category = categoryByDossier[selected.kind];
     const counterpart = selected.actorIds
@@ -1424,12 +1427,14 @@ export default function Home() {
     if (isAdvancing) return;
     setIsAdvancing(true);
     const before = world;
-    const result = advanceWorld(before, addMonths(before.currentDate, months));
+    const requestedDate = addMonths(before.currentDate, months);
+    const result = advanceWorld(before, requestedDate, politicalCycleStops(before, requestedDate));
     setWorld(result.state);
     setLastBriefing(buildTurnBriefing(before, result.state));
     const countries = [...new Set(result.reviewedCountryIds)].map((id) => result.state.countries[id]?.name).filter(Boolean);
     const auditNotice = result.audit.ok ? '' : ` · audit : ${result.audit.issues[0] ?? 'incohérence détectée'}`;
-    const baseNotice = `${result.elapsedDays} jours simulés · ${countries.length} État(s) réévalué(s)${result.manifestations.length ? ` · ${result.manifestations.length} manifestation(s) historique(s)` : ''}${auditNotice}`;
+    const stopNotice = result.stop ? ` · arrêt : ${result.stop.title}` : '';
+    const baseNotice = `${result.elapsedDays} jours simulés · ${countries.length} État(s) réévalué(s)${result.manifestations.length ? ` · ${result.manifestations.length} manifestation(s) historique(s)` : ''}${stopNotice}${auditNotice}`;
     setNotice(`${baseNotice} · pouls mondial IA en cours…`);
     try {
       // Les actions du joueur précèdent nécessairement le clic d'avance. On les

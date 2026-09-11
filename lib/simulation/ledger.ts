@@ -95,6 +95,30 @@ function applyEffect(state: WorldState, action: WorldAction, effect: WorldEffect
     return appendChange(next, action, effect, `countries.${effect.countryId}.politics`, before, after);
   }
 
+  if (effect.kind === 'leadership_patch') {
+    const leadership = state.leadership[effect.countryId];
+    if (!leadership) return state;
+    const after = { ...leadership, ...effect.patch, countryId: effect.countryId };
+    const next = { ...state, leadership: { ...state.leadership, [effect.countryId]: after } };
+    return appendChange(next, action, effect, `leadership.${effect.countryId}`, leadership, after);
+  }
+
+  if (effect.kind === 'political_apparatus_patch') {
+    const apparatus = state.politicalApparatus[effect.countryId];
+    if (!apparatus) return state;
+    const after = { ...apparatus, ...effect.patch, countryId: effect.countryId };
+    const next = { ...state, politicalApparatus: { ...state.politicalApparatus, [effect.countryId]: after } };
+    return appendChange(next, action, effect, `politicalApparatus.${effect.countryId}`, apparatus, after);
+  }
+
+  if (effect.kind === 'political_cycle_patch') {
+    const cycle = state.politicalCycles[effect.countryId];
+    if (!cycle) return state;
+    const after = { ...cycle, ...effect.patch, countryId: effect.countryId };
+    const next = { ...state, politicalCycles: { ...state.politicalCycles, [effect.countryId]: after } };
+    return appendChange(next, action, effect, `politicalCycles.${effect.countryId}`, cycle, after);
+  }
+
   if (effect.kind === 'country_strategy_patch') {
     const country = state.countries[effect.countryId];
     if (!country) return state;

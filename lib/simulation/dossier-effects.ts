@@ -145,6 +145,10 @@ function profileRules(dossier: StrategicDossier, strength: number): InternalPres
         pressure('stability', 0.8, 'La contestation organisée pèse sur la cohérence de l’appareil d’État.', strength),
         pressure('confidence', 5.5, 'L’incertitude politique fragilise les anticipations des acteurs économiques.', strength),
       ];
+    case 'political_transition':
+      return dossier.status === 'emerging' || dossier.status === 'active' ? [
+        pressure('confidence', 2.6, 'L’échéance politique accroît modérément l’attentisme sans constituer par elle-même une crise.', strength),
+      ] : [];
     case 'historical':
       return [
         pressure('confidence', 4.2, 'La tendance de fond alimente une prudence progressive avant sa manifestation concrète.', strength),
