@@ -984,6 +984,21 @@ test('la cadence autonome dépend du calendrier, pas du nombre de clics', () => 
   assert.deepEqual(nonPlayerReviews(oneJump), nonPlayerReviews(monthly));
 });
 
+test('chaque avance expose une résolution de tour unique et traçable', () => {
+  const initial = createFrance2000World();
+  const result = advanceWorld(initial, '2000-04-01');
+
+  assert.equal(result.resolution.from, initial.currentDate);
+  assert.equal(result.resolution.to, result.reachedDate);
+  assert.equal(result.resolution.requestedDate, '2000-04-01');
+  assert.equal(result.resolution.isNoop, false);
+  assert.ok(result.resolution.phasesCompleted.includes('macroeconomy'));
+  assert.ok(result.resolution.phasesCompleted.includes('country-autonomy'));
+  assert.equal(result.resolution.actionsAdded, result.state.actions.length - initial.actions.length);
+  assert.equal(result.resolution.changesAdded, result.state.ledger.length - initial.ledger.length);
+  assert.ok(result.resolution.autonomousActions > 0);
+});
+
 test('le monde agit sans attendre le joueur', () => {
   const result = advanceWorld(createFrance2000World(), '2001-01-01');
   const autonomousActors = new Set(result.state.actions

@@ -14,6 +14,7 @@ import { reactivateDossiersOnWorldSignals } from './dossiers';
 import { advanceDossierEffects } from './dossier-effects';
 import { compactWorldForSave } from './persistence';
 import { advancePoliticalCycles } from './political-cycles';
+import { summarizeTurnResolution, type TurnResolutionSummary } from './core/turn-orchestrator';
 import type { ISODate, SimulationStop, WorldEffect, WorldState } from './types';
 
 export type SimulationPhaseAudit = {
@@ -45,6 +46,8 @@ export type AdvanceResult = {
   manifestations: HistoricalManifestation[];
   reviewedCountryIds: string[];
   audit: SimulationAudit;
+  /** Bilan unique de la résolution locale de cette avance. */
+  resolution: TurnResolutionSummary;
 };
 
 const elapsedDaysBetween = (start: ISODate, end: ISODate) => Math.max(0, Math.round((new Date(`${end}T12:00:00Z`).getTime() - new Date(`${start}T12:00:00Z`).getTime()) / 86_400_000));
@@ -182,6 +185,7 @@ export function advanceWorld(
     return {
       state, requestedDate, reachedDate: state.currentDate, elapsedDays: 0, elapsedMonths: 0, manifestations: [], reviewedCountryIds: [],
       audit: { from: state.currentDate, to: state.currentDate, chunks: 0, phases: [], issues: [], ok: true },
+      resolution: summarizeTurnResolution(state, state, requestedDate, state.currentDate, []),
     };
   }
   const stop = stops
@@ -251,6 +255,7 @@ export function advanceWorld(
     manifestations,
     reviewedCountryIds,
     audit,
+    resolution: summarizeTurnResolution(state, next, requestedDate, reachedDate, phaseAudit.map((phase) => phase.id)),
   };
 }
 
