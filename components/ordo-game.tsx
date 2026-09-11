@@ -32,7 +32,7 @@ import {
   openDiplomaticDialogue, openDiplomaticDialogueForDossier, sendDiplomaticDialogueMessage, requestDiplomaticDialogueAI, addDiplomaticDialogueParticipant,
   structuralDiagnosisGroups,
   classifyAdvisorQuestion,
-  createWorldPulseRequest, executeWorldPulse, rankStrategicDossierReviews,
+  createWorldPulseRequest, executeWorldPulse, rankDossierReviews, rankStrategicDossierReviews,
   setDossierFollowed,
   dossierDecisionRecords,
   dossierPressureProfile,
@@ -1146,6 +1146,7 @@ function DossiersPanel({ world, selectedId, onSelect, onWorldChange, onNotice, o
   };
   const dossiers = Object.values(world.strategicDossiers).sort((a, b) => rank[b.importance] - rank[a.importance] || b.updatedAt.localeCompare(a.updatedAt));
   const scheduledReviews = useMemo(() => new globalThis.Map(rankStrategicDossierReviews(world).map((review) => [review.dossierId, review])), [world]);
+  const reviewSchedules = useMemo(() => new globalThis.Map(rankDossierReviews(world).map((review) => [review.dossierId, review])), [world]);
   const selected = dossiers.find((dossier) => dossier.id === selectedId) ?? dossiers[0];
   const updates = selected ? dossierUpdatesSinceView(world, selected.id) : [];
   const decisionRecords = selected ? dossierDecisionRecords(selected) : [];
@@ -1293,10 +1294,11 @@ function DossiersPanel({ world, selectedId, onSelect, onWorldChange, onNotice, o
       <div className="divide-y divide-border/60">{dossiers.map((dossier) => {
         const unread = dossierUnreadCount(world, dossier.id);
         const review = scheduledReviews.get(dossier.id);
+        const schedule = reviewSchedules.get(dossier.id);
         return <button key={dossier.id} onClick={() => onSelect(dossier.id)} className={`w-full p-4 text-left transition-colors hover:bg-muted/30 ${selected.id === dossier.id ? 'bg-muted/30' : ''}`}>
           <div className="flex items-start justify-between gap-3"><div className="font-medium">{dossier.title}</div><span className={`font-mono text-[10px] uppercase ${dossierImportanceTone[dossier.importance]}`}>{dossier.importance}</span></div>
           <div className="mt-1 text-xs text-muted-foreground">{dossier.phase} · {dossier.updatedAt}</div>
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">{dossier.followed && <span className="text-primary">Épinglé</span>}{dossier.autoTracked && <span className="text-amber-300">Suivi majeur</span>}{(dossier.escalationCount ?? 0) > 0 && <span className="text-red-300">Relances : {dossier.escalationCount}</span>}{review ? <span className={review.requiresImmediateReview ? 'text-red-300' : 'text-amber-200'}>{review.requiresImmediateReview ? 'Réévaluation prioritaire' : 'Réévaluation possible'}</span> : (dossier.importance === 'major' || dossier.importance === 'critical') && <span className="text-muted-foreground">Sous surveillance · aucun signal neuf</span>}{unread > 0 && <span className="ml-auto bg-primary/15 px-2 py-0.5 text-primary">{unread} nouveau{unread > 1 ? 'x' : ''}</span>}</div>
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">{dossier.followed && <span className="text-primary">Épinglé</span>}{dossier.autoTracked && <span className="text-amber-300">Suivi majeur</span>}{(dossier.escalationCount ?? 0) > 0 && <span className="text-red-300">Relances : {dossier.escalationCount}</span>}{review ? <span className={review.requiresImmediateReview ? 'text-red-300' : 'text-amber-200'}>{review.requiresImmediateReview ? 'Réévaluation prioritaire' : 'Réévaluation possible'}</span> : (dossier.importance === 'major' || dossier.importance === 'critical') && <span className="text-muted-foreground">Sous surveillance · aucun signal neuf</span>}{schedule && <span className={schedule.due ? 'text-cyan-200' : 'text-muted-foreground'}>{schedule.due ? 'Revue due' : `Prochaine revue ${schedule.nextReviewAt}`}</span>}{unread > 0 && <span className="ml-auto bg-primary/15 px-2 py-0.5 text-primary">{unread} nouveau{unread > 1 ? 'x' : ''}</span>}</div>
         </button>;
       })}</div>
     </section>

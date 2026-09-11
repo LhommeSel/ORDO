@@ -16,7 +16,7 @@ import { applyDebtCrisisResponse } from './sovereign-debt';
 import { evaluateStrategicAction, selectStrategicAction } from './decision-making';
 import { reviewCountryStrategy } from './autonomy';
 import { countrySheet } from './country-sheet';
-import type { GovernmentMeasure, StrategicActionCandidate } from './types';
+import type { GovernmentMeasure, ISODate, StrategicActionCandidate } from './types';
 import { createFrance2000World, createWorld2000 } from './scenario-2000';
 import { deriveStructuralDiagnostics } from './structural-diagnostics';
 import {
@@ -35,7 +35,7 @@ import { applyWorldPulseAnswer, createWorldPulseRequest, executeWorldPulse } fro
 import { parseWorldPulseRequest } from '../ai/world-pulse-contracts';
 import { runMinorEventCycle } from './minor-events';
 import { rankWorldAttention } from './ai/world-attention';
-import { activeMajorDossierCount, rankStrategicDossierReviews } from './ai/dossier-scheduler';
+import { activeMajorDossierCount, rankDossierReviews, rankStrategicDossierReviews } from './ai/dossier-scheduler';
 import { commitWorldAction } from './ledger';
 import { applyDiplomaticDialogueAIAnswer, openDiplomaticDialogue, openDiplomaticDialogueForDossier, requestDiplomaticDialogueAI, resolveDiplomaticDialogueResponse, sendDiplomaticDialogueMessage } from './diplomacy-dialogue';
 import { validateCountryRegistry } from './data-validator';
@@ -696,6 +696,32 @@ test('les dossiers majeurs calmes quittent la file IA, mais une décision en att
   const autonomy = request.pulses.find((candidate) => candidate.kind === 'world_autonomy');
   assert.ok(autonomy?.context.strategicDossierQueue.some((candidate) => candidate.dossierId === dotcom.id));
   assert.ok(parseWorldPulseRequest(request));
+});
+
+test('les voies de suivi des dossiers ont des cadences indépendantes', () => {
+  const initial = createFrance2000World();
+  const schedules = rankDossierReviews(initial);
+  const major = schedules.find((review) => review.dossierId === 'current-dotcom-exuberance');
+  const moderate = schedules.find((review) => review.dossierId === 'current-lisbon-convergence');
+
+  assert.equal(major?.lane, 'major');
+  assert.equal(major?.requiresImmediateReview, true);
+  assert.equal(major?.due, true);
+  assert.equal(moderate?.lane, 'moderate');
+  assert.equal(moderate?.requiresImmediateReview, false);
+  assert.equal(moderate?.intervalMonths, 6);
+  assert.equal(moderate?.nextReviewAt, '2000-07-01');
+
+  let state = initial;
+  for (let month = 2; month <= 13; month += 1) {
+    const year = 2000 + Math.floor((month - 1) / 12);
+    const monthNumber = ((month - 1) % 12) + 1;
+    const requestedDate = `${year}-${String(monthNumber).padStart(2, '0')}-01` as ISODate;
+    state = advanceWorld(state, requestedDate).state;
+  }
+  assert.equal(state.currentDate, '2001-01-01');
+  assert.equal(new Set(state.actions.map((action) => action.id)).size, state.actions.length);
+  assert.equal(new Set(state.ledger.map((change) => change.id)).size, state.ledger.length);
 });
 
 test('un choix lié à un dossier est détecté même s’il est produit au même mois que la précédente revue', () => {
