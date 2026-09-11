@@ -24,7 +24,7 @@ import { createPoliticalCycles2000 } from './political-cycles';
 import { createNationalBaselineCountries2000 } from './national-baseline-2000';
 import { createGlobalBaselineCountries2000 } from './global-baseline-2000';
 import { assertValidCountryRegistry } from './data-validator';
-import { defenseReference2000 } from './country-sheet';
+import { defenseReferences2000ForValidation } from './country-sheet';
 import { createHistoricalAnchors2000 } from './historical-anchors-2000';
 import { createNationalReforms2000 } from './reforms';
 
@@ -518,7 +518,7 @@ function defaultCountryEnergy2000(country: CountryState): CountryEnergyState {
 export function createWorld2000(requestedPlayerCountryId: CountryId = 'FRA'): WorldState {
   const structuralProfiles = createStructuralProfiles2000(allCountries);
   const macroEconomies = createMacroEconomies2000();
-  assertValidCountryRegistry(allCountries, macroEconomies, { defenseReferences: defenseReference2000 });
+  assertValidCountryRegistry(allCountries, macroEconomies, { defenseReferences: defenseReferences2000ForValidation });
   const playerCountryId = allCountries[requestedPlayerCountryId] ? requestedPlayerCountryId : 'FRA';
   const playerCountry = allCountries[playerCountryId];
   const dossiers = structuredClone(strategicDossiers);

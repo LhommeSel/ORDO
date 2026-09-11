@@ -23,6 +23,86 @@ export type DefenseReference = {
   modelingLevel?: 'documented' | 'aggregate';
 };
 
+type DeploymentSeed = NonNullable<DefenseReference['deployments']>;
+
+/** Ventilations régionales d'ordre de grandeur pour les armées les plus suivies. */
+const deploymentReference2000: Partial<Record<CountryId, DeploymentSeed>> = {
+  DEU: [
+    { location: 'Métropole', personnelThousands: 290, mission: 'Défense du territoire et entraînement' },
+    { location: 'Balkans', personnelThousands: 18, mission: 'SFOR/KFOR et stabilisation européenne', countryBreakdown: [{ countryId: 'BIH', personnelThousands: 8 }, { countryId: 'MKD', personnelThousands: 10 }] },
+    { location: 'OTAN Europe', personnelThousands: 12, mission: 'État-major, surveillance et renfort allié' },
+    { location: 'Réserve opérationnelle / rotation', personnelThousands: 13, mission: 'Relève et renfort' },
+  ],
+  ITA: [
+    { location: 'Métropole', personnelThousands: 270, mission: 'Défense du territoire et préparation' },
+    { location: 'Méditerranée', personnelThousands: 20, mission: 'Surveillance maritime et protection des approches' },
+    { location: 'Balkans', personnelThousands: 18, mission: 'SFOR/KFOR et stabilisation', countryBreakdown: [{ countryId: 'ALB', personnelThousands: 9 }, { countryId: 'BIH', personnelThousands: 4 }, { countryId: 'MKD', personnelThousands: 5 }] },
+    { location: 'Réserve opérationnelle / rotation', personnelThousands: 12, mission: 'Relève et renfort' },
+  ],
+  POL: [
+    { location: 'Métropole', personnelThousands: 213, mission: 'Défense territoriale et adaptation OTAN' },
+    { location: 'Balkans', personnelThousands: 6, mission: 'SFOR/KFOR et observation régionale' },
+    { location: 'OTAN Europe', personnelThousands: 4, mission: 'Coopération et exercices alliés' },
+    { location: 'Réserve opérationnelle / rotation', personnelThousands: 12, mission: 'Relève et renfort' },
+  ],
+  GBR: [
+    { location: 'Métropole', personnelThousands: 135, mission: 'Défense du territoire et préparation de la force de projection' },
+    { location: 'Europe', personnelThousands: 20, mission: 'Présence alliée et coopération OTAN' },
+    { location: 'Golfe et océan Indien', personnelThousands: 15, mission: 'Protection maritime et intérêts extérieurs' },
+    { location: 'Atlantique Nord', personnelThousands: 10, mission: 'Dissuasion, surveillance et contrôle maritime' },
+    { location: 'Balkans', personnelThousands: 12, mission: 'SFOR/KFOR et stabilisation', countryBreakdown: [{ countryId: 'BIH', personnelThousands: 4 }, { countryId: 'MKD', personnelThousands: 3 }, { countryId: 'ALB', personnelThousands: 5 }] },
+    { location: 'Réserve opérationnelle / rotation', personnelThousands: 20, mission: 'Relève et renfort' },
+  ],
+  USA: [
+    { location: 'Métropole', personnelThousands: 990, mission: 'Défense du territoire, entraînement et soutien stratégique' },
+    { location: 'Europe', personnelThousands: 90, mission: 'Présence avancée et garanties alliées' },
+    { location: 'Indo-Pacifique', personnelThousands: 120, mission: 'Dissuasion, alliances et contrôle des approches', countryBreakdown: [{ countryId: 'JPN', personnelThousands: 45 }, { countryId: 'KOR', personnelThousands: 35 }, { countryId: 'AUS', personnelThousands: 20 }, { countryId: 'PHL', personnelThousands: 20 }] },
+    { location: 'Moyen-Orient', personnelThousands: 80, mission: 'Protection des voies maritimes et des partenaires régionaux' },
+    { location: 'Réserve opérationnelle / rotation', personnelThousands: 90, mission: 'Relève et renfort' },
+  ],
+  RUS: [
+    { location: 'Métropole', personnelThousands: 900, mission: 'Défense du territoire et posture nucléaire' },
+    { location: 'Caucase', personnelThousands: 100, mission: 'Contrôle territorial et opérations de sécurité' },
+    { location: 'Extrême-Orient', personnelThousands: 100, mission: 'Surveillance des frontières et dissuasion régionale' },
+    { location: 'Asie centrale', personnelThousands: 30, mission: 'Présence et coopération de sécurité' },
+    { location: 'Réserve opérationnelle / rotation', personnelThousands: 70, mission: 'Relève et renfort' },
+  ],
+  CHN: [
+    { location: 'Métropole', personnelThousands: 2050, mission: 'Défense territoriale et modernisation' },
+    { location: 'Taïwan et mer de Chine', personnelThousands: 180, mission: 'Pression stratégique et contrôle des approches' },
+    { location: 'Tibet et Xinjiang', personnelThousands: 180, mission: 'Contrôle territorial et sécurisation intérieure' },
+    { location: 'Frontières nord', personnelThousands: 40, mission: 'Surveillance et défense des frontières' },
+    { location: 'Réserve opérationnelle / rotation', personnelThousands: 50, mission: 'Relève et renfort' },
+  ],
+  DZA: [
+    { location: 'Métropole', personnelThousands: 70, mission: 'Sécurité du régime et préparation' },
+    { location: 'Sahara', personnelThousands: 30, mission: 'Surveillance du territoire et des frontières' },
+    { location: 'Frontières orientales', personnelThousands: 10, mission: 'Contrôle des passages et prévention des infiltrations' },
+    { location: 'Réserve opérationnelle / rotation', personnelThousands: 10, mission: 'Relève et renfort' },
+  ],
+  IND: [
+    { location: 'Métropole', personnelThousands: 880, mission: 'Défense territoriale et préparation interarmées' },
+    { location: 'Frontière pakistanaise', personnelThousands: 220, mission: 'Dissuasion et contrôle de la ligne de contact' },
+    { location: 'Himalaya', personnelThousands: 120, mission: 'Surveillance des cols et défense de haute altitude' },
+    { location: 'Océan Indien', personnelThousands: 30, mission: 'Surveillance maritime et sécurisation des approches' },
+    { location: 'Réserve opérationnelle / rotation', personnelThousands: 50, mission: 'Relève et renfort' },
+  ],
+  JPN: [
+    { location: 'Métropole', personnelThousands: 180, mission: 'Défense insulaire et préparation' },
+    { location: 'Okinawa', personnelThousands: 25, mission: 'Surveillance des approches méridionales' },
+    { location: 'Mer de Chine et approches', personnelThousands: 15, mission: 'Surveillance aéronavale' },
+    { location: 'Coopération américaine', personnelThousands: 8, mission: 'Interopérabilité et soutien aux installations alliées' },
+    { location: 'Réserve opérationnelle / rotation', personnelThousands: 12, mission: 'Relève et renfort' },
+  ],
+  TUR: [
+    { location: 'Métropole', personnelThousands: 430, mission: 'Défense territoriale et posture régionale' },
+    { location: 'Sud-est anatolien', personnelThousands: 130, mission: 'Sécurité intérieure et contrôle des frontières' },
+    { location: 'Chypre du Nord', personnelThousands: 20, mission: 'Présence et garantie stratégique' },
+    { location: 'Balkans et Caucase', personnelThousands: 30, mission: 'Coopération et influence régionale' },
+    { location: 'Réserve opérationnelle / rotation', personnelThousands: 30, mission: 'Relève et renfort' },
+  ],
+};
+
 export type SecurityActorReference = {
   id: string;
   name: string;
@@ -102,6 +182,14 @@ export const defenseReference2000: Record<CountryId, DefenseReference> = {
   VNM: { budgetBillionUsd: 1, activePersonnelThousands: 480, posture: 'défense territoriale', capabilities: ['forces terrestres', 'défense côtière'] },
 };
 
+/** Référentiel documenté complet utilisé par les audits, avec ses ventilations régionales. */
+export const defenseReferences2000ForValidation: Record<CountryId, DefenseReference> = Object.fromEntries(
+  Object.entries(defenseReference2000).map(([countryId, reference]) => [countryId, {
+    ...reference,
+    deployments: reference.deployments ?? deploymentReference2000[countryId],
+  }]),
+) as Record<CountryId, DefenseReference>;
+
 const clamp = (value: number, minimum: number, maximum: number) => Math.min(maximum, Math.max(minimum, value));
 
 /**
@@ -111,7 +199,11 @@ const clamp = (value: number, minimum: number, maximum: number) => Math.min(maxi
  */
 export function defenseReferenceForCountry(state: WorldState, countryId: CountryId): DefenseReference | null {
   const documented = defenseReference2000[countryId];
-  if (documented) return { ...documented, modelingLevel: 'documented' };
+  if (documented) return {
+    ...documented,
+    deployments: documented.deployments ?? deploymentReference2000[countryId],
+    modelingLevel: 'documented',
+  };
   const country = state.countries[countryId];
   const economy = state.macroEconomies[countryId];
   if (!country || !economy) return null;

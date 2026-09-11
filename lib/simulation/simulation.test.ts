@@ -15,7 +15,7 @@ import { addEconomicShock, setEconomicPolicy } from './macro-economy';
 import { applyDebtCrisisResponse } from './sovereign-debt';
 import { evaluateStrategicAction, selectStrategicAction } from './decision-making';
 import { reviewCountryStrategy } from './autonomy';
-import { countrySheet, defenseReference2000 } from './country-sheet';
+import { countrySheet, defenseReferences2000ForValidation } from './country-sheet';
 import type { GovernmentMeasure, ISODate, StrategicActionCandidate } from './types';
 import { createFrance2000World, createWorld2000 } from './scenario-2000';
 import { deriveStructuralDiagnostics } from './structural-diagnostics';
@@ -50,7 +50,7 @@ test('le scénario 2000 charge un monde cohérent et jouable', () => {
   assert.equal(state.currentDate, '2000-01-01');
   assert.equal(state.playerCountryId, 'FRA');
   assert.equal(Object.keys(state.countries).length, 195);
-  assert.equal(validateCountryRegistry(state.countries, state.macroEconomies, { defenseReferences: defenseReference2000 }).filter((issue) => issue.severity === 'error').length, 0);
+  assert.equal(validateCountryRegistry(state.countries, state.macroEconomies, { defenseReferences: defenseReferences2000ForValidation }).filter((issue) => issue.severity === 'error').length, 0);
   assert.ok(Object.keys(state.historicalCurrents).length >= 3);
   assert.ok(Object.keys(state.armamentProducts).length >= 6);
   assert.ok(Object.keys(state.strategicDossiers).length >= 2);
@@ -1919,10 +1919,20 @@ test('le dossier militaire décompose un théâtre large par pays sans changer l
 
 test('le registre militaire refuse une ventilation qui dépasse son théâtre', () => {
   const state = createFrance2000World();
-  const invalid = structuredClone(defenseReference2000);
+  const invalid = structuredClone(defenseReferences2000ForValidation);
   invalid.FRA.deployments![2].countryBreakdown![0].personnelThousands = 19;
   const issues = validateCountryRegistry(state.countries, state.macroEconomies, { defenseReferences: invalid });
   assert.ok(issues.some((issue) => issue.severity === 'error' && issue.field?.includes('countryBreakdown')));
+});
+
+test('les principales puissances disposent d’un déploiement régional total cohérent', () => {
+  const state = createFrance2000World();
+  for (const countryId of ['DEU', 'ITA', 'POL', 'GBR', 'USA', 'RUS', 'CHN', 'DZA', 'IND', 'JPN', 'TUR']) {
+    const defense = countrySheet(state, countryId)?.defense;
+    assert.ok(defense?.deployments?.length, `${countryId} doit exposer ses théâtres principaux`);
+    const total = defense!.deployments!.reduce((sum, deployment) => sum + deployment.personnelThousands, 0);
+    assert.equal(total, defense!.activePersonnelThousands, `${countryId} : déploiements et effectifs doivent coïncider`);
+  }
 });
 
 test('un programme autonome diplomatique ne peut pas cibler son propre État', () => {
