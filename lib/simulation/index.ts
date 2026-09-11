@@ -32,6 +32,7 @@ export * from './structural-data-2000';
 export * from './structural-diagnostics';
 export * from './stakeholder-data-2000';
 export * from './stakeholders';
+export * from './reforms';
 export * from './sovereign-debt';
 export * from './trade-data-2000';
 export * from './turn-briefing';

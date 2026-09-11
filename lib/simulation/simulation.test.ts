@@ -43,6 +43,7 @@ import { buildTurnBriefing } from './turn-briefing';
 import { queueAutonomousProgram } from './ai/autonomous-programs';
 import { authorizeArmamentProspect, createAutomaticArmamentProspects, rankArmamentProspectBuyers, rejectArmamentProspect } from './industry';
 import { advancePoliticalCycles, assessPoliticalSupport, choosePoliticalCampaignStrategy, politicalCampaignDecisionPrompt, politicalCycleStops } from './political-cycles';
+import { nationalReformEffects, reformStateKey } from './reforms';
 
 test('le scénario 2000 charge un monde cohérent et jouable', () => {
   const state = createFrance2000World();
@@ -55,6 +56,35 @@ test('le scénario 2000 charge un monde cohérent et jouable', () => {
   assert.ok(Object.keys(state.strategicDossiers).length >= 2);
   assert.ok(Object.keys(state.historicalAnchors).length >= 20);
   assert.equal(Object.keys(state.politicalCycles).length, 195);
+  assert.equal(Object.keys(state.nationalReforms).length, 195 * 3);
+});
+
+test('une réforme nationale est un programme résoluble et ouvre un dossier permanent', () => {
+  const state = createFrance2000World();
+  const prepared = prepareCommonAction(state, 'Réforme nationale de laïcité : renforcer la neutralité de l’État', { category: 'institutional' });
+  assert.equal(prepared.ok, true);
+  if (!prepared.ok) return;
+  assert.equal(prepared.action.lever, 'national_reform');
+  const launched = launchCommonAction(state, { ...prepared.action, durationMonths: 1, successProbability: 92 });
+  assert.equal(launched.ok, true);
+  if (!launched.ok) return;
+  const resolved = advanceCommonActionPrograms(launched.state, 1);
+  const reform = resolved.nationalReforms[reformStateKey('FRA', 'religion')];
+  assert.equal(reform.activeProgramId, null);
+  assert.ok(reform.lastOutcome);
+  assert.ok(resolved.strategicDossiers['reform-FRA-religion']);
+});
+
+test('les effets de réforme restent bornés et traçables', () => {
+  const state = createFrance2000World();
+  const before = state.nationalReforms[reformStateKey('FRA', 'immigration')];
+  const effects = nationalReformEffects(state, 'Resserrement des admissions et contrôle des flux migratoires', 'adopted');
+  assert.ok(effects.some((effect) => effect.kind === 'national_reform_patch'));
+  const patched = commitWorldAction(state, { kind: 'political', actorId: 'FRA', origin: 'player', intent: 'Tester une réforme migratoire', effects });
+  const after = patched.nationalReforms[reformStateKey('FRA', 'immigration')];
+  assert.ok(after.position >= 0 && after.position <= 100);
+  assert.ok(after.polarization >= before.polarization);
+  assert.ok(patched.ledger.some((change) => change.path.includes('nationalReforms.FRA:immigration')));
 });
 
 test('une nouvelle partie peut attribuer au joueur n’importe quel pays du registre', () => {

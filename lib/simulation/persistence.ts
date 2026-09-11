@@ -3,6 +3,7 @@ import { createTerritorialState, indexTerritorialState } from './territories';
 import { createMacroEconomies2000, worldEconomy2000 } from './macro-data-2000';
 import { createStructuralProfiles2000 } from './structural-data-2000';
 import { createStakeholderGroups2000 } from './stakeholder-data-2000';
+import { createNationalReforms2000 } from './reforms';
 import { createTradeFlows2000 } from './trade-data-2000';
 import { createDecisionProfiles2000 } from './decision-data-2000';
 import { createLeadership2000, createPoliticalApparatus2000 } from './political-identity-data-2000';
@@ -259,6 +260,7 @@ export function deserializeWorld(raw: string): WorldState {
     structuralProfiles,
     stakeholderGroups: restored.stakeholderGroups ?? createStakeholderGroups2000(restored.countries, structuralProfiles),
     stakeholderReactions: restored.stakeholderReactions ?? {},
+    nationalReforms: restored.nationalReforms ?? createNationalReforms2000(restored.countries, restored.currentDate),
     powerActors: restored.powerActors ?? {},
     powerStruggleCampaigns: restored.powerStruggleCampaigns ?? {},
     aiJobs: restored.aiJobs ?? (restored as unknown as { powerStruggleAIRequests?: WorldState['aiJobs'] }).powerStruggleAIRequests ?? {},

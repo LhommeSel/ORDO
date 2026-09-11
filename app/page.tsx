@@ -36,9 +36,10 @@ import {
   buildTurnBriefing,
   assessPoliticalSupport, choosePoliticalCampaignStrategy, politicalCampaignOptions, politicalCycleStops,
   countrySheet,
+  nationalReformOptions, reformPositionLabel, reformStateKey,
   type AdvisorAnswer, type AdvisorQuestionKind, type EnergyAdministrativeOffer, type EnergyCounterpartResponse,
   type CommonActionCategory, type EnergyOfferAdjustment, type HistoricalInterventionDirection, type ISODate, type StrategicDossier, type StrategicPlan,
-  type PoliticalCampaignStrategy, type PreparedCommonAction, type PrototypeMeasureId, type StructuralDiagnosis, type TurnBriefing, type WorldState,
+  type NationalReformDomain, type PoliticalCampaignStrategy, type PreparedCommonAction, type PrototypeMeasureId, type StructuralDiagnosis, type TurnBriefing, type WorldState,
 } from '@/lib/simulation';
 import {
   createAdvisorAIRequest,
@@ -50,7 +51,7 @@ import {
 } from '@/lib/ai/contracts';
 import type { WorldPulseResponse } from '@/lib/ai/world-pulse-contracts';
 
-type Panel = 'world' | 'map' | 'economy' | 'energy' | 'industry' | 'dossiers' | 'diplomacy' | 'advisor' | 'ledger';
+type Panel = 'world' | 'map' | 'economy' | 'energy' | 'industry' | 'reforms' | 'dossiers' | 'diplomacy' | 'advisor' | 'ledger';
 
 type AdvisorAIAuditEntry = {
   id: string;
@@ -97,6 +98,7 @@ const panels: Array<{ id: Panel; label: string; icon: typeof Activity }> = [
   { id: 'economy', label: 'Économie', icon: TrendingUp },
   { id: 'energy', label: 'Énergie', icon: Fuel },
   { id: 'industry', label: 'Industrie', icon: Factory },
+  { id: 'reforms', label: 'Réformes', icon: SlidersHorizontal },
   { id: 'dossiers', label: 'Dossiers', icon: Swords },
   { id: 'diplomacy', label: 'Diplomatie', icon: Send },
   { id: 'advisor', label: 'Conseiller', icon: BrainCircuit },
@@ -307,6 +309,54 @@ function EventFeedPanel({ feed }: { feed: EventFeedItem[] }) {
       const entries = feed.filter((item) => item.importance === group.key).slice(0, 8);
       return <section key={group.key} className="border border-border/80 bg-background/25 p-3"><div className={`font-mono text-[10px] uppercase tracking-wider ${group.tone}`}>{group.label} · {entries.length}</div><div className="mt-2 space-y-2">{entries.length ? entries.map((item) => <div key={item.id} className="border-b border-border/60 pb-2 last:border-0"><div className="text-xs font-medium">{item.title}</div><div className="mt-1 text-[10px] text-muted-foreground">{item.date} · {item.source}</div><p className="mt-1 line-clamp-3 text-[11px] text-muted-foreground">{item.summary}</p></div>) : <div className="text-xs text-muted-foreground">Aucun événement dans cette catégorie.</div>}</div></section>;
     })}</div>
+  </div>;
+}
+
+const reformDomainLabels: Record<NationalReformDomain, { label: string; subtitle: string }> = {
+  religion: { label: 'Religion et neutralité de l’État', subtitle: 'Laïcité, reconnaissance des cultes et place des autorités religieuses.' },
+  immigration: { label: 'Immigration et intégration', subtitle: 'Admissions, contrôle des flux, langue, emploi et naturalisation.' },
+  societal: { label: 'Politique sociétale', subtitle: 'Droits civils, normes familiales et ordre public.' },
+};
+
+function ReformsPanel({ world, onWorldChange, onNotice }: { world: WorldState; onWorldChange: (world: WorldState) => void; onNotice: (message: string) => void }) {
+  const player = world.countries[world.playerCountryId];
+  const [launching, setLaunching] = useState<string | null>(null);
+  const engage = (optionId: string) => {
+    const option = nationalReformOptions.find((item) => item.id === optionId);
+    if (!option) return;
+    const intent = `Réforme nationale ${reformDomainLabels[option.domain].label} : ${option.title}. ${option.summary}`;
+    const prepared = prepareCommonAction(world, intent, { category: 'institutional' });
+    if (!prepared.ok) { onNotice(prepared.error); return; }
+    const launched = launchCommonAction(world, prepared.action);
+    if (!launched.ok) { onNotice(launched.error); return; }
+    setLaunching(option.id);
+    onWorldChange(launched.state);
+    onNotice(`${option.title} engagé · ${prepared.action.successProbability}% de réussite initiale · résolution prévue dans ${prepared.action.durationMonths} mois.`);
+    window.setTimeout(() => setLaunching(null), 350);
+  };
+  return <div className="space-y-4">
+    <section className="border border-border bg-card/70 p-4">
+      <div className="flex items-center gap-2 font-semibold"><SlidersHorizontal className="size-4 text-primary" /> Réformes nationales</div>
+      <p className="mt-1 max-w-4xl text-sm text-muted-foreground">Ces sujets ne sont pas des bonus abstraits : chaque réforme déplace une position nationale, consomme les capacités du gouvernement et de l’administration, puis produit une polarisation et un dossier consultable. Les libellés masquent les valeurs internes du moteur.</p>
+    </section>
+    <div className="grid gap-4 xl:grid-cols-3">
+      {(['religion', 'immigration', 'societal'] as const).map((domain) => {
+        const reform = world.nationalReforms?.[reformStateKey(player.id, domain)];
+        const options = nationalReformOptions.filter((option) => option.domain === domain);
+        return <section key={domain} className="border border-border bg-card/70">
+          <div className="border-b border-border p-4"><div className="font-semibold">{reformDomainLabels[domain].label}</div><p className="mt-1 text-xs text-muted-foreground">{reformDomainLabels[domain].subtitle}</p></div>
+          <div className="p-4">
+            {reform ? <><div className="flex items-end justify-between gap-3"><div><div className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Position actuelle</div><div className="mt-1 text-sm font-medium">{reformPositionLabel(domain, reform.position)}</div></div><div className="font-mono text-xs text-primary">{reform.position}/100</div></div><div className="mt-2 h-1.5 bg-muted"><div className="h-full bg-primary" style={{ width: `${reform.position}%` }} /></div><div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[10px] text-muted-foreground"><span>polarisation {reform.polarization}/100</span><span>ancrage {reform.institutionalAnchor}/100</span>{reform.activeProgramId && <span className="text-amber-300">programme en cours</span>}</div></> : <p className="text-xs text-muted-foreground">Données de réforme absentes de cette sauvegarde.</p>}
+            <div className="mt-4 space-y-2">{options.map((option) => {
+              const prepared = prepareCommonAction(world, `Réforme nationale ${reformDomainLabels[domain].label} : ${option.title}. ${option.summary}`, { category: 'institutional' });
+              const disabled = !reform || Boolean(reform.activeProgramId) || !prepared.ok || launching === option.id;
+              const probability = prepared.ok ? `${prepared.action.successProbability}%` : '—';
+              return <button key={option.id} type="button" disabled={disabled} onClick={() => engage(option.id)} title={prepared.ok ? prepared.warnings.join(' ') : undefined} className="w-full border border-border bg-background/30 p-3 text-left transition-colors hover:border-primary disabled:cursor-not-allowed disabled:opacity-55"><div className="flex items-start justify-between gap-3"><span className="text-sm font-medium">{option.title}</span><span className="shrink-0 font-mono text-[10px] text-primary">{probability}</span></div><p className="mt-1 text-xs text-muted-foreground">{option.summary}</p><div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[10px] text-muted-foreground"><span>{option.durationMonths} mois</span><span>{option.budgetCost.toFixed(1)} budget</span><span>{option.intensity}</span></div></button>;
+            })}</div>
+          </div>
+        </section>;
+      })}
+    </div>
   </div>;
 }
 
@@ -1546,6 +1596,7 @@ export default function Home() {
       {panel === 'economy' && <EconomyPanel world={world} />}
       {panel === 'energy' && <EnergyPanel world={world} />}
       {panel === 'industry' && <IndustryPanel world={world} onWorldChange={setWorld} onNotice={setNotice} />}
+      {panel === 'reforms' && <ReformsPanel world={world} onWorldChange={setWorld} onNotice={setNotice} />}
       {panel === 'dossiers' && <DossiersPanel world={world} selectedId={selectedDossierId} onSelect={setSelectedDossierId} onWorldChange={setWorld} onNotice={setNotice} onOpenDiplomacy={(dialogueId) => { setSelectedDialogueId(dialogueId); setPanel('diplomacy'); }} />}
       {panel === 'diplomacy' && <DiplomacyPanel world={world} onWorldChange={setWorld} onNotice={setNotice} initialDialogueId={selectedDialogueId} />}
       {panel === 'advisor' && <AdvisorPanel world={world} onWorldChange={setWorld} onNotice={setNotice} />}

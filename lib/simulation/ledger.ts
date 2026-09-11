@@ -460,6 +460,26 @@ function applyEffect(state: WorldState, action: WorldAction, effect: WorldEffect
     return appendChange(next, action, effect, `stakeholderReactions.${effect.reactionId}`, reaction, after);
   }
 
+  if (effect.kind === 'national_reform_patch') {
+    const key = `${effect.countryId}:${effect.domain}`;
+    const reform = state.nationalReforms?.[key];
+    if (!reform) return state;
+    const after = {
+      ...reform,
+      ...effect.patch,
+      countryId: effect.countryId,
+      domain: effect.domain,
+      position: Number(clamp(effect.patch.position ?? reform.position).toFixed(2)),
+      institutionalAnchor: Number(clamp(effect.patch.institutionalAnchor ?? reform.institutionalAnchor).toFixed(2)),
+      publicSalience: Number(clamp(effect.patch.publicSalience ?? reform.publicSalience).toFixed(2)),
+      polarization: Number(clamp(effect.patch.polarization ?? reform.polarization).toFixed(2)),
+      implementationCapacity: Number(clamp(effect.patch.implementationCapacity ?? reform.implementationCapacity).toFixed(2)),
+      administrativeBurden: Number(clamp(effect.patch.administrativeBurden ?? reform.administrativeBurden).toFixed(2)),
+    };
+    const next = { ...state, nationalReforms: { ...state.nationalReforms, [key]: after } };
+    return appendChange(next, action, effect, `nationalReforms.${key}`, reform, after);
+  }
+
   if (effect.kind === 'power_actor_add') {
     const actors = state.powerActors ?? {};
     const before = actors[effect.actor.id] ?? null;

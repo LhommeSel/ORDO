@@ -25,6 +25,7 @@ import { createNationalBaselineCountries2000 } from './national-baseline-2000';
 import { createGlobalBaselineCountries2000 } from './global-baseline-2000';
 import { assertValidCountryRegistry } from './data-validator';
 import { createHistoricalAnchors2000 } from './historical-anchors-2000';
+import { createNationalReforms2000 } from './reforms';
 
 const capacities = (values: Partial<Record<keyof CapacityState, [number, number]>> = {}): CapacityState => ({
   government: { maximum: values.government?.[0] ?? 55, committed: values.government?.[1] ?? 25 },
@@ -586,6 +587,7 @@ export function createWorld2000(requestedPlayerCountryId: CountryId = 'FRA'): Wo
     structuralProfiles,
     stakeholderGroups: createStakeholderGroups2000(allCountries, structuralProfiles),
     stakeholderReactions: {},
+    nationalReforms: createNationalReforms2000(allCountries),
     powerActors: {},
     powerStruggleCampaigns: {},
     aiJobs: {},

@@ -53,6 +53,7 @@ export const actionLeverProfiles: Record<CommonActionLever, ActionLeverProfile> 
   administrative_reform: profile('administrative_reform', 'institutional', 'Modernisation administrative', 12, 6, -6, [{ domain: 'administration', commitment: 9 }, { domain: 'government', commitment: 5 }, { domain: 'economy', commitment: 2 }]),
   government_reorganization: profile('government_reorganization', 'institutional', 'Réorganisation gouvernementale', 8, 4.5, -4, [{ domain: 'administration', commitment: 7 }, { domain: 'government', commitment: 8 }]),
   anti_corruption: profile('anti_corruption', 'institutional', 'Renforcement de l’intégrité publique', 12, 5, -9, [{ domain: 'administration', commitment: 10 }, { domain: 'government', commitment: 7 }, { domain: 'intelligence', commitment: 2 }]),
+  national_reform: profile('national_reform', 'institutional', 'Réforme nationale', 12, 4, -8, [{ domain: 'government', commitment: 8 }, { domain: 'administration', commitment: 9 }, { domain: 'diplomacy', commitment: 1 }]),
 
   force_readiness: profile('force_readiness', 'defense', 'Préparation et entraînement des forces', 9, 6, -3, [{ domain: 'defense', commitment: 9 }, { domain: 'administration', commitment: 3 }, { domain: 'government', commitment: 2 }]),
   defense_procurement: profile('defense_procurement', 'defense', 'Acquisition d’équipements militaires', 24, 12, -9, [{ domain: 'defense', commitment: 10 }, { domain: 'administration', commitment: 6 }, { domain: 'economy', commitment: 4 }]),
@@ -91,6 +92,7 @@ export const actionLeverPolitics: Record<CommonActionLever, ActionLeverPolitics>
   administrative_reform: politics({ economic: 8 }, { growth: 18, fiscal_sustainability: 28, regime_survival: 18 }, ['market_liberalization'], [{ signal: 'administrative_reorganization', weight: 1 }], 'legislative', 58, 82, 42, 36),
   government_reorganization: politics({}, { regime_survival: 30, elite_support: -15 }, ['elite_displacement'], [{ signal: 'administrative_reorganization', weight: 1 }], 'executive', 64, 68, 58, 44),
   anti_corruption: politics({ social: 18 }, { fiscal_sustainability: 35, regime_survival: 12, elite_support: -55, social_cohesion: 38 }, ['elite_displacement', 'political_opening'], [{ signal: 'administrative_reorganization', weight: 0.8 }], 'legislative', 82, 86, 72, 58),
+  national_reform: politics({ social: 16 }, { regime_survival: 18, social_cohesion: 28, elite_support: -12 }, ['political_opening'], [{ signal: 'administrative_reorganization', weight: 0.35 }], 'legislative', 76, 78, 58, 52),
   force_readiness: politics({ security: 48 }, { strategic_autonomy: 38, fiscal_sustainability: -18, international_prestige: 18 }, ['military_escalation', 'deficit_spending'], [], 'executive', 38, 62, 48, 32),
   defense_procurement: politics({ security: 58 }, { strategic_autonomy: 48, fiscal_sustainability: -38, international_prestige: 22 }, ['military_escalation', 'deficit_spending'], [{ signal: 'public_industrial_investment', weight: 0.45 }], 'legislative', 62, 78, 52, 42),
   force_deployment: politics({ security: 72 }, { strategic_autonomy: 28, alliance_cohesion: 30, social_cohesion: -25, international_prestige: 45 }, ['military_escalation', 'alliance_cooperation'], [], 'executive', 84, 66, 82, 78),
@@ -123,6 +125,7 @@ export function inferActionLever(category: CommonActionCategory, text: string): 
   }
   if (category === 'institutional') {
     if (/\b(corruption|integrite|transparence|conflit d interet)\b/.test(value)) return 'anti_corruption';
+    if (/\b(reforme|relig|laic|confession|immigr|asile|naturalisation|integration|societ|famille|ordre public|droits civils|egalite)\b/.test(value)) return 'national_reform';
     if (/\b(ministere|sous ministere|secretariat d etat|gouvernement|cabinet)\b/.test(value)) return 'government_reorganization';
     return 'administrative_reform';
   }

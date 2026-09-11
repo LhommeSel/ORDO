@@ -7,6 +7,7 @@ import { actionLeverPolitics, actionLeverProfile } from './action-levers';
 import { evaluateStrategicAction } from './decision-making';
 import { evaluatePoliticalPathway } from './politics';
 import { stakeholderReactionEffects } from './stakeholders';
+import { nationalReformEffects, nationalReformSupport, reformDomainFromText, reformOptionForText } from './reforms';
 import type {
   ActionKind,
   ActionProgram,
@@ -62,7 +63,7 @@ function inferCategory(text: string): CommonActionCategory | undefined {
   const value = normalize(text);
   if (/\b(renseignement|dgse|espion|surveill|infiltr|ecoute)\b/.test(value)) return 'intelligence';
   if (/\b(militaire|defense|armee|arme|troupe|deploi|dissuasion)\b/.test(value)) return 'defense';
-  if (/\b(ministere|sous ministere|administration|institution|reforme de l etat|service public)\b/.test(value)) return 'institutional';
+  if (/\b(ministere|sous ministere|administration|institution|reforme|service public|relig|laic|immigr|asile|naturalisation|integration|societ|famille|ordre public|droits civils|egalite)\b/.test(value)) return 'institutional';
   if (/\b(n egocier|negocier|negociation|alliance|cooperation|cooperer|dialogue|accord|partenariat|sommet|mediation)\b/.test(value)) return 'diplomacy';
   if (/\b(programme|plan|industrie|industriel|budget|budgetaire|fiscal|deficit|depense|austerite|consolidation|assainir|investir|investissement|production|commerce|croissance|dette|emploi|energie|energetique|gaz|petrole|semiconducteur|nucleaire|relance|filiere)\b/.test(value)) return 'economic';
   return undefined;
@@ -288,7 +289,10 @@ function effectsFor(state: WorldState, category: CommonActionCategory, lever: Co
     }
   }
   if (category === 'institutional') {
-    if (lever === 'government_reorganization') {
+    if (lever === 'national_reform') {
+      success.push(...nationalReformEffects(state, intent, 'adopted'));
+      partial.push(...nationalReformEffects(state, intent, 'partial'));
+    } else if (lever === 'government_reorganization') {
       success.push({ kind: 'capacity_maximum', countryId: player.id, domain: 'government', delta: 3, reason: 'La nouvelle organisation augmente la capacité de coordination gouvernementale.' });
       partial.push({ kind: 'capacity_maximum', countryId: player.id, domain: 'government', delta: 1, reason: 'La coordination gouvernementale progresse modestement.' });
     } else if (lever === 'anti_corruption') {
@@ -382,7 +386,10 @@ export function prepareCommonAction(
     + (politicalEvaluation.institutionalFeasibility - 50) * 0.16
     + clamp(politicalEvaluation.finalScore, -40, 40) * 0.12
     - (politicalEvaluation.blocked ? 22 : 0);
-  const successProbability = Math.round(clamp(base + relationFactor + leverProfile.difficultyModifier + politicalModifier - (overloaded ? 20 : 0), 12, 92));
+  const reformOption = leverProfile.lever === 'national_reform' ? reformOptionForText(intent) : undefined;
+  const reformSupport = reformOption ? nationalReformSupport(state, reformOption.domain, reformOption.targetPosition) : undefined;
+  const reformModifier = reformSupport ? (reformSupport.score - 50) * 0.34 : 0;
+  const successProbability = Math.round(clamp(base + relationFactor + leverProfile.difficultyModifier + politicalModifier + reformModifier - (overloaded ? 20 : 0), 12, 92));
   const warnings: string[] = [];
   if (overloaded) warnings.push('Les moyens engagés dépassent une capacité opérationnelle : le risque d’échec augmente fortement.');
   if (targetId && relation && relation.relation < 35) warnings.push(`La relation avec ${state.countries[targetId]?.name} rend l’initiative politiquement difficile.`);
@@ -390,6 +397,7 @@ export function prepareCommonAction(
   else if (politicalEvaluation.apparatusSupport < 42) warnings.push('L’appareil politique soutient peu cette orientation et peut ralentir son exécution.');
   if (politicalEvaluation.leaderDisposition < 42) warnings.push('La direction effective est personnellement réticente à ce levier.');
   if (leverProfile.lever === 'energy_resilience') warnings.push('Ce programme développe la résilience et les infrastructures ; constituer un stock physique exige encore un contrat d’approvisionnement distinct.');
+  if (reformSupport) warnings.push(...reformSupport.obstacles);
   if (leverProfile.lever === 'strategic_sector' && !strategicSectorInText(state, player.id, intent)) warnings.push('La filière demandée n’a pas encore de registre sectoriel détaillé : seuls les effets transversaux seront appliqués.');
   const effects = effectsFor(state, category, leverProfile.lever, targetId, intent);
   const operation = category === 'diplomacy' ? diplomaticOperation(intent) : undefined;
@@ -498,6 +506,9 @@ export function launchCommonAction(state: WorldState, prepared: PreparedCommonAc
       signals: program.policySignals,
       effects: [],
     }) : []),
+    ...(program.lever === 'national_reform' && reformDomainFromText(program.intent)
+      ? [{ kind: 'national_reform_patch' as const, countryId: program.actorId, domain: reformDomainFromText(program.intent)!, patch: { activeProgramId: program.id }, reason: 'La réforme est inscrite comme programme national en cours.', visibility: 'player' as const }]
+      : []),
   ];
   return {
     ok: true as const,

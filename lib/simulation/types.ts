@@ -25,6 +25,30 @@ export type GovernmentDoctrine = {
   security: number;
 };
 
+/** Domaines de réforme nationale : une posture interne, pas une jauge de "capital politique". */
+export type NationalReformDomain = 'religion' | 'immigration' | 'societal';
+export type NationalReformOutcome = 'adopted' | 'partial' | 'stalled' | 'reversed';
+
+/**
+ * État synthétique d'une politique nationale. `position` reste interne au moteur
+ * (0 = plus traditionnel/restrictif, 100 = plus sécularisé/ouvert/libéral selon
+ * le domaine) ; l'interface l'affiche sous forme de libellés qualitatifs.
+ */
+export type NationalReformState = {
+  countryId: CountryId;
+  domain: NationalReformDomain;
+  position: number;
+  institutionalAnchor: number;
+  publicSalience: number;
+  polarization: number;
+  implementationCapacity: number;
+  administrativeBurden: number;
+  reformCount: number;
+  activeProgramId?: string | null;
+  lastOutcome?: NationalReformOutcome;
+  lastChangedAt: ISODate;
+};
+
 export type PoliticalSystem = {
   regime: string;
   executive: string;
@@ -1100,6 +1124,7 @@ export type CommonActionLever =
   | 'administrative_reform'
   | 'government_reorganization'
   | 'anti_corruption'
+  | 'national_reform'
   | 'force_readiness'
   | 'defense_procurement'
   | 'force_deployment'
@@ -1198,6 +1223,7 @@ export type WorldEffect =
   | { kind: 'stakeholder_group_add'; group: StakeholderGroup; reason: string; visibility?: Visibility }
   | { kind: 'stakeholder_reaction_add'; reaction: StakeholderReaction; reason: string; visibility?: Visibility }
   | { kind: 'stakeholder_reaction_patch'; reactionId: string; patch: Partial<StakeholderReaction>; reason: string; visibility?: Visibility }
+  | { kind: 'national_reform_patch'; countryId: CountryId; domain: NationalReformDomain; patch: Partial<NationalReformState>; reason: string; visibility?: Visibility }
   | { kind: 'power_actor_add'; actor: EmergentPowerActor; reason: string; visibility?: Visibility }
   | { kind: 'power_actor_patch'; actorId: string; patch: Partial<EmergentPowerActor>; reason: string; visibility?: Visibility }
   | { kind: 'power_campaign_add'; campaign: PowerStruggleCampaign; reason: string; visibility?: Visibility }
@@ -1353,6 +1379,7 @@ export type WorldState = {
   structuralProfiles: Record<CountryId, CountryStructuralProfile>;
   stakeholderGroups: Record<string, StakeholderGroup>;
   stakeholderReactions: Record<string, StakeholderReaction>;
+  nationalReforms: Record<string, NationalReformState>;
   powerActors: Record<string, EmergentPowerActor>;
   powerStruggleCampaigns: Record<string, PowerStruggleCampaign>;
   aiJobs: Record<string, AIJob>;
