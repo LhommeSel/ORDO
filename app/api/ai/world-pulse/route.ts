@@ -105,11 +105,12 @@ function instructionFor(item: WorldPulseRequestItem) {
 
 export async function POST(request: Request) {
   if (!isSameOriginRequest(request)) return json({ ok: false, code: 'invalid_request', message: 'Origine de la demande refusée.' }, 403);
+  const requestPolicy = aiRuntimePolicy();
   const declaredSize = Number.parseInt(request.headers.get('content-length') ?? '0', 10);
-  if (declaredSize > 260_000) return json({ ok: false, code: 'invalid_request', message: 'Contexte du pouls mondial trop volumineux.' }, 413);
+  if (declaredSize > requestPolicy.maxRequestBytes) return json({ ok: false, code: 'invalid_request', message: 'Contexte du pouls mondial trop volumineux.' }, 413);
   let body: unknown;
   try { body = await request.json(); } catch { return json({ ok: false, code: 'invalid_request', message: 'Demande illisible.' }, 400); }
-  if (JSON.stringify(body).length > 260_000) return json({ ok: false, code: 'invalid_request', message: 'Contexte du pouls mondial trop volumineux.' }, 413);
+  if (JSON.stringify(body).length > requestPolicy.maxRequestBytes) return json({ ok: false, code: 'invalid_request', message: 'Contexte du pouls mondial trop volumineux.' }, 413);
   const parsed = parseWorldPulseRequest(body);
   if (!parsed) return json({ ok: false, code: 'invalid_request', message: 'Le contrat du pouls mondial est invalide.' }, 400);
 

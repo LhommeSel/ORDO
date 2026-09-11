@@ -38,6 +38,13 @@ function relativeGap(ordo: number, reference: number): number {
   return Math.abs(ordo - reference) / denominator;
 }
 
+// Une valeur WDI exactement nulle pour une part sectorielle signale ici une
+// série absente ou non publiée, pas une industrie réellement inexistante. Elle
+// ne doit donc pas transformer une fiche ORDO en faux outlier.
+function comparable(key: Key, reference: number): boolean {
+  return !(key === 'industry' && reference === 0);
+}
+
 const data = Object.fromEntries(
   await Promise.all(
     (Object.entries(indicators) as [Key, string][]).map(async ([key, indicator]) => [key, await readIndicator(indicator)]),
@@ -54,6 +61,7 @@ for (const key of Object.keys(indicators) as Key[]) {
   for (const country of nationalBaseline2000) {
     const reference = data[key].get(country.id);
     if (reference == null) continue;
+    if (!comparable(key, reference)) continue;
     available++;
     const gap = relativeGap(toWorldBankUnits(key, country[key]), reference);
     if (gap <= 0.25) within25++;
@@ -67,6 +75,7 @@ for (const country of nationalBaseline2000) {
   const flags = (Object.keys(indicators) as Key[]).flatMap((key) => {
     const reference = data[key].get(country.id);
     if (reference == null) return [];
+    if (!comparable(key, reference)) return [];
     const gap = relativeGap(toWorldBankUnits(key, country[key]), reference);
     return gap > 0.5 ? [`${key}=${country[key]} vs WB=${reference.toFixed(2)}`] : [];
   });

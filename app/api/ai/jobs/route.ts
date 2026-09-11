@@ -104,11 +104,12 @@ function parseSupplementalRequest(call: FunctionCall): SupplementalFactRequest |
 
 export async function POST(request: Request) {
   if (!isSameOriginRequest(request)) return json({ ok: false, code: 'invalid_request', message: 'Origine de la demande refusée.' }, 403);
+  const requestPolicy = aiRuntimePolicy();
   const declaredSize = Number.parseInt(request.headers.get('content-length') ?? '0', 10);
-  if (declaredSize > 400_000) return json({ ok: false, code: 'invalid_request', message: 'Contexte IA trop volumineux.' }, 413);
+  if (declaredSize > requestPolicy.maxRequestBytes) return json({ ok: false, code: 'invalid_request', message: 'Contexte IA trop volumineux.' }, 413);
   let body: unknown;
   try { body = await request.json(); } catch { return json({ ok: false, code: 'invalid_request', message: 'Demande illisible.' }, 400); }
-  if (JSON.stringify(body).length > 400_000) return json({ ok: false, code: 'invalid_request', message: 'Contexte IA trop volumineux.' }, 413);
+  if (JSON.stringify(body).length > requestPolicy.maxRequestBytes) return json({ ok: false, code: 'invalid_request', message: 'Contexte IA trop volumineux.' }, 413);
   const parsed = parseAIJobAIRequest(body);
   if (!parsed) return json({ ok: false, code: 'invalid_request', message: 'Le contexte transmis ne respecte pas le contrat ORDO.' }, 400);
 

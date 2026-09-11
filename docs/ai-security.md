@@ -18,14 +18,16 @@
 | `AI_ENABLED` | configuration | `true` uniquement après pose des limites OpenAI |
 | `AI_DAILY_BUDGET_USD` | configuration | `0.50` |
 | `AI_PER_IP_PER_MINUTE` | configuration | `4` |
+| `AI_PER_IP_PER_DAY` | configuration | `60` |
 | `AI_PER_SESSION_PER_DAY` | configuration | `20` |
 | `AI_MAX_INFLIGHT` | configuration | `4` |
 | `AI_MAX_OUTPUT_TOKENS` | configuration | `1400` |
+| `AI_MAX_REQUEST_BYTES` | configuration | `160000` |
 
 Ne jamais enregistrer les deux secrets dans le code, `.openai/hosting.json`, une sauvegarde ou une archive.
 
 ## Limite actuelle du prototype
 
-Les compteurs applicatifs sont conservés dans la mémoire de chaque instance serveur. Ils limitent les abus ordinaires, mais ne constituent pas un plafond financier mondial durable lorsque plusieurs instances fonctionnent en parallèle. La limite dure du projet OpenAI reste donc obligatoire.
+Les compteurs applicatifs sont conservés dans la mémoire de chaque instance serveur. Le quota par IP et la limite de taille réduisent la rotation de sessions et les requêtes coûteuses, mais ne constituent pas un plafond financier mondial durable lorsque plusieurs instances fonctionnent en parallèle. La limite dure du projet OpenAI reste donc obligatoire.
 
 Avant une bêta publique gratuite, remplacer ces compteurs par un quota durable lié à un compte joueur et stocké dans D1, ajouter une protection antibot, puis vérifier le coupe-circuit par un test contrôlé. Ne pas publier un accès anonyme illimité.

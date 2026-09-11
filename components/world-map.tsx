@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react';
 import { LocateFixed, Minus, Plus } from 'lucide-react';
 import type { GeometryCollection, MultiPolygon, Polygon, Topology } from 'topojson-specification';
 
@@ -17,7 +17,8 @@ type WorldMapProps = {
 type MapEntity = {
   id: string;
   name: string;
-  path: string;
+  path?: string;
+  point?: [number, number];
 };
 
 type AtlasProperties = { id?: string; name?: string; name_long?: string };
@@ -31,6 +32,22 @@ const viewHeight = 500;
 // qu'une zone pourtant modélisée ouvre une fausse fiche « non modélisée ».
 const historicalIds = new Set(['SRB', 'MNE', 'KOS', 'SDN', 'SDS']);
 const atlasAliases: Record<string, string> = { PSX: 'PSE' };
+// Les micro-États et quelques territoires ne possèdent pas de polygone
+// exploitable dans le fond 110m. Un repère ponctuel les rend néanmoins
+// sélectionnables au même titre que les grands pays ; la fiche complète reste
+// accessible dans la liste sous la carte.
+const fallbackCoordinates: Record<string, [number, number]> = {
+  AND: [1.6, 42.5], ATG: [-61.8, 17.1], BRB: [-59.5, 13.2], BRN: [114.7, 4.5],
+  BTN: [90.4, 27.5], CPV: [-24.0, 16.0], COM: [43.3, -11.7], DJI: [43.1, 11.6],
+  DMA: [-61.4, 15.4], FJI: [178.0, -18.0], FSM: [158.2, 6.9], GRD: [-61.7, 12.1],
+  KIR: [173.0, 1.8], LCA: [-61.0, 14.0], LIE: [9.5, 47.1], MHL: [171.2, 7.1],
+  MCO: [7.4, 43.7], MNE: [19.3, 42.7], NRU: [166.9, -0.5], PLW: [134.5, 7.5],
+  SMR: [12.5, 43.9], SSD: [31.3, 6.9], STP: [6.6, 0.2], TON: [-175.2, -21.2],
+  TUV: [179.1, -8.5], VAT: [12.5, 41.9], VUT: [167.0, -16.2], WSM: [-172.1, -13.8],
+  SAH: [-12.0, 24.0], FLK: [-59.0, -51.7], GRL: [-42.0, 72.0], ATF: [69.0, -49.0],
+  PRI: [-66.5, 18.2], NCL: [165.6, -21.5], TWN: [121.0, 23.7], ATA: [0.0, -80.0],
+  CYN: [33.0, 35.2], SOL: [46.0, 5.0],
+};
 
 export function WorldMap({ mode, metrics, selectedId, onSelect, playerCountryId }: WorldMapProps) {
   const [transform, setTransform] = useState({ x: 0, y: 0, k: 1 });
@@ -71,7 +88,15 @@ export function WorldMap({ mode, metrics, selectedId, onSelect, playerCountryId 
       ordinary.push({ id: 'SDN', name: 'Soudan', geometry: topojson.merge(topology, geometries.filter((item) => ['SDN', 'SDS'].includes(String(item.properties?.id)))) as GeoJSON.Geometry });
       const projection = d3.geoNaturalEarth1().fitExtent([[12, 14], [viewWidth - 12, viewHeight - 14]], { type: 'Sphere' });
       const path = d3.geoPath(projection);
-      setEntities(ordinary.map((entity) => ({ id: entity.id, name: entity.name, path: path({ type: 'Feature', properties: { id: entity.id }, geometry: entity.geometry } as GeoJSON.Feature) ?? '' })));
+      const represented = new Set(ordinary.map((entity) => entity.id));
+      const mapped = ordinary.map((entity) => ({ id: entity.id, name: entity.name, path: path({ type: 'Feature', properties: { id: entity.id }, geometry: entity.geometry } as GeoJSON.Feature) ?? '' }));
+      const points = Object.entries(fallbackCoordinates)
+        .filter(([id]) => !represented.has(id))
+        .flatMap(([id, coordinates]) => {
+          const point = projection(coordinates);
+          return point ? [{ id, name: countries.getName(id, 'fr') ?? id, point: point as [number, number] }] : [];
+        });
+      setEntities([...mapped, ...points]);
       setSpherePath(path({ type: 'Sphere' }) ?? undefined);
       setGraticulePath(path(d3.geoGraticule10()) ?? undefined);
     }).catch(() => { if (!cancelled) setLoadError(true); });
@@ -135,25 +160,23 @@ export function WorldMap({ mode, metrics, selectedId, onSelect, playerCountryId 
         <path className="map-sphere" d={spherePath ?? undefined} />
         <path className="map-graticule" d={graticulePath ?? undefined} />
         <g transform={`translate(${transform.x} ${transform.y}) scale(${transform.k})`}>
-          {entities.map((entity) => (
-            <path
-              key={entity.id}
-              d={entity.path}
-              className={`map-country ${entityClass(entity.id)}`}
-              vectorEffect="non-scaling-stroke"
-              role="button"
-              tabIndex={0}
-              aria-label={entity.name}
-              aria-pressed={entity.id === selectedId}
-              onClick={(event) => { event.stopPropagation(); if (!moved.current) onSelect(entity.id, entity.name); }}
-              onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onSelect(entity.id, entity.name); } }}
-            >
-              <title>{entity.name}</title>
-            </path>
-          ))}
+          {entities.map((entity) => {
+            const common = {
+              className: `map-country ${entityClass(entity.id)}`,
+              role: 'button' as const,
+              tabIndex: 0,
+              'aria-label': entity.name,
+              'aria-pressed': entity.id === selectedId,
+              onClick: (event: ReactMouseEvent<SVGElement>) => { event.stopPropagation(); if (!moved.current) onSelect(entity.id, entity.name); },
+              onKeyDown: (event: ReactKeyboardEvent<SVGElement>) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onSelect(entity.id, entity.name); } },
+            };
+            return entity.point
+              ? <circle key={entity.id} {...common} cx={entity.point[0]} cy={entity.point[1]} r={entity.id === selectedId ? 4 : 2.5}><title>{entity.name} · repère ponctuel</title></circle>
+              : <path key={entity.id} {...common} d={entity.path ?? ''} vectorEffect="non-scaling-stroke"><title>{entity.name}</title></path>;
+          })}
         </g>
       </svg>
-      <p className="map-historical-note">REPÈRES SIMPLIFIÉS · Soudan et Yougoslavie regroupés pour 2000 · Autres contours issus d’un fond contemporain, non exhaustivement historicisé · Zoom par boutons, déplacement après zoom</p>
+      <p className="map-historical-note">REPÈRES SIMPLIFIÉS · Soudan et Yougoslavie regroupés pour 2000 · points ponctuels pour les petits États sans polygone · contours issus d’un fond contemporain, non exhaustivement historicisé · Zoom par boutons, déplacement après zoom</p>
     </div>
   );
 }

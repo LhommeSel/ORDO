@@ -101,6 +101,35 @@ export const nationalBaseline2000: NationalBaselineDescriptor[] = [
   d({ id:'KHM', name:'Cambodge', flag:'🇰🇭', leader:'Hun Sen', regime:'Monarchie constitutionnelle à parti dominant', government:'Parti du peuple cambodgien', orientation:'party_state', scale:26, gdp:4, population:12.2, growth:10.0, populationGrowth:1.6, inflation:-0.8, unemployment:2.5, industry:14, openness:48, confidence:38, stability:43, security:45, interests:['Consolider le pouvoir','Développer le textile et l’aide asiatique'], vulnerabilities:['Pauvreté','Dépendance aux investisseurs','Institutions faibles'], redLines:['Retour à la guerre civile'], partners:['VNM','CHN','THA'], rivals:[] }),
 ];
 
+/**
+ * Harmonisation des séries qui alimentent le macro-moteur.
+ *
+ * Les fiches compactes avaient mélangé, pour quelques pays, chômage déclaré
+ * et sous-emploi estimé. Le moteur attend ici le taux harmonisé comparable
+ * d'une économie à l'autre ; la pression sociale et l'informalité restent
+ * portées par stabilité, industrie et vulnérabilités, pas par un faux taux de
+ * chômage officiel. Les valeurs sont arrondies à deux décimales.
+ */
+const harmonized2000: Record<string, Partial<Pick<NationalBaselineDescriptor, 'unemployment' | 'industry' | 'populationGrowth'>>> = {
+  AFG: { unemployment: 7.90 }, AGO: { unemployment: 16.65 }, BHR: { unemployment: 1.08 },
+  BLR: { unemployment: 12.19 }, BIH: { unemployment: 25.45 }, BOL: { unemployment: 2.44 },
+  COD: { unemployment: 3.25 }, DOM: { unemployment: 6.43 }, ECU: { unemployment: 4.80 },
+  ETH: { unemployment: 3.50 }, GTM: { unemployment: 2.14 }, IRQ: { unemployment: 8.04, industry: 84.80 },
+  KEN: { unemployment: 2.88 }, KWT: { unemployment: 0.80 }, MMR: { unemployment: 0.71, industry: 9.69 },
+  PAK: { unemployment: 0.61 }, PAN: { unemployment: 6.19 }, PER: { unemployment: 4.96 },
+  PHL: { unemployment: 3.77 }, QAT: { unemployment: 0.87 }, ROU: { unemployment: 6.97, populationGrowth: -0.13 },
+  YEM: { unemployment: 11.56, industry: 48.78 }, ZWE: { unemployment: 5.68 }, MOZ: { unemployment: 2.83 },
+  TZA: { unemployment: 3.13 }, SEN: { unemployment: 2.64 }, CIV: { unemployment: 4.83 },
+  UGA: { unemployment: 3.53 }, KHM: { unemployment: 0.74 },
+  BGR: { populationGrowth: -0.49 }, CZE: { populationGrowth: -0.28 }, HRV: { populationGrowth: -0.99 },
+  SRB: { populationGrowth: -0.32 }, URY: { populationGrowth: 0.37 },
+};
+
+for (const descriptor of nationalBaseline2000) {
+  const correction = harmonized2000[descriptor.id];
+  if (correction) Object.assign(descriptor, correction);
+}
+
 const capacities = (descriptor: NationalBaselineDescriptor): CapacityState => {
   const base = Math.min(92, 32 + descriptor.scale * 0.75);
   const admin = Math.min(95, base + (descriptor.orientation === 'party_state' || descriptor.orientation === 'military' ? 8 : 0));

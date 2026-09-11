@@ -5,6 +5,11 @@ type DailyBudget = { estimatedUsd: number; resetAt: number };
 
 const minuteCounters = new Map<string, WindowCounter>();
 const dailyCounters = new Map<string, WindowCounter>();
+// Défense en profondeur contre la rotation d'identifiants de partie. Ces
+// compteurs restent volontairement distincts du quota par session : un joueur
+// honnête peut avoir plusieurs sauvegardes, mais un même client ne peut pas
+// contourner le plafond en recréant localStorage à chaque requête.
+const dailyIpCounters = new Map<string, WindowCounter>();
 let dailyBudget: DailyBudget = { estimatedUsd: 0, resetAt: 0 };
 let inflight = 0;
 
@@ -23,10 +28,12 @@ export const aiRuntimePolicy = () => ({
   apiKey: process.env.OPENAI_API_KEY ?? '',
   model: process.env.AI_MODEL?.trim() || ORDO_AI_MODEL,
   perIpPerMinute: integerSetting('AI_PER_IP_PER_MINUTE', 4, 1, 30),
+  perIpPerDay: integerSetting('AI_PER_IP_PER_DAY', 60, 1, 500),
   perSessionPerDay: integerSetting('AI_PER_SESSION_PER_DAY', 20, 1, 200),
   maximumInflight: integerSetting('AI_MAX_INFLIGHT', 4, 1, 20),
   dailyBudgetUsd: numberSetting('AI_DAILY_BUDGET_USD', 0.5, 0.05, 100),
   maxOutputTokens: integerSetting('AI_MAX_OUTPUT_TOKENS', 1_400, 400, 4_000),
+  maxRequestBytes: integerSetting('AI_MAX_REQUEST_BYTES', 160_000, 20_000, 400_000),
 });
 
 const incrementWindow = (map: Map<string, WindowCounter>, key: string, durationMs: number, now: number) => {
@@ -70,6 +77,10 @@ export function admitAIRequest(ipKey: string, sessionKey: string): AIAdmission {
   const minute = incrementWindow(minuteCounters, ipKey, 60_000, now);
   if (minute.count > policy.perIpPerMinute) {
     return { ok: false, response: { ok: false, code: 'rate_limited', message: 'Trop de demandes rapprochées.', retryAfterSeconds: secondsUntil(minute.resetAt, now) } };
+  }
+  const ipDay = incrementWindow(dailyIpCounters, ipKey, 86_400_000, now);
+  if (ipDay.count > policy.perIpPerDay) {
+    return { ok: false, response: { ok: false, code: 'rate_limited', message: 'Le plafond quotidien de demandes depuis cette connexion est atteint.', retryAfterSeconds: secondsUntil(ipDay.resetAt, now) } };
   }
   const session = incrementWindow(dailyCounters, sessionKey, 86_400_000, now);
   if (session.count > policy.perSessionPerDay) {
