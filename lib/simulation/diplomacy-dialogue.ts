@@ -241,13 +241,11 @@ export function resolveDiplomaticDialogueResponse(
     };
     const monthlyByType: Record<DiplomaticAgreementType, Array<{ countryId: CountryId; metric: 'budget' | 'industry' | 'stability' | 'security'; delta: number }>> = {
       industrial_cooperation: dialogue.participantIds.map((countryId) => ({ countryId, metric: 'industry', delta: countryId === state.playerCountryId ? 0.05 : 0.035 })),
-      // Ce cadre améliore la coordination, la résilience et la sécurité des
-      // approvisionnements, mais ne débite aucun gisement et ne crée aucun
-      // contrat : les volumes passent par energy-negotiation.
-      energy_cooperation: dialogue.participantIds.flatMap((countryId) => [
-        { countryId, metric: 'industry' as const, delta: countryId === state.playerCountryId ? 0.025 : 0.018 },
-        { countryId, metric: 'stability' as const, delta: 0.012 },
-      ]),
+      // Un cadre de coopération ne crée pas de croissance, de stabilité ou de
+      // fiabilité « magiques ». Il organise seulement le canal politique ; les
+      // volumes, infrastructures et effets économiques passent par le registre
+      // énergétique et un contrat explicite.
+      energy_cooperation: [],
       information_sharing: [],
       security_cooperation: dialogue.participantIds.map((countryId) => ({ countryId, metric: 'security', delta: countryId === state.playerCountryId ? 0.05 : 0.035 })),
       political_guarantee: dialogue.participantIds.map((countryId) => ({ countryId, metric: 'stability', delta: countryId === state.playerCountryId ? 0.035 : 0.025 })),
@@ -268,11 +266,14 @@ export function resolveDiplomaticDialogueResponse(
     if (response.agreementType === 'energy_cooperation') {
       effects.push(...dialogue.participantIds.filter((id) => id !== state.playerCountryId).map((targetId) => ({
         kind: 'capacity_commitment' as const, countryId: state.playerCountryId, domain: 'economy' as const, delta: 2,
-        reason: `Le cadre énergétique avec ${state.countries[targetId]?.name ?? targetId} mobilise la coordination économique.`, visibility: 'player' as const,
+        reason: `Le cadre énergétique avec ${state.countries[targetId]?.name ?? targetId} mobilise un suivi administratif dédié.`, visibility: 'player' as const,
       })));
     }
   }
-  const relationEffect = decision === 'accept' && (response.kind === 'accept' || response.kind === 'counter') ? { relation: 4, trust: 3 } : decision === 'refuse' ? { relation: -3, trust: -2 } : null;
+  const isEnergyFramework = response.agreementType === 'energy_cooperation';
+  const relationEffect = decision === 'accept' && (response.kind === 'accept' || response.kind === 'counter')
+    ? { relation: isEnergyFramework ? 1 : 4, trust: isEnergyFramework ? 0 : 3 }
+    : decision === 'refuse' ? { relation: -3, trust: -2 } : null;
   if (relationEffect) effects.push(...dialogue.participantIds.filter((id) => id !== state.playerCountryId).map((targetId) => ({
     kind: 'relation_delta' as const, from: state.playerCountryId, to: targetId, relation: relationEffect.relation, trust: relationEffect.trust,
     reason: decision === 'accept' ? 'L’acceptation d’un engagement diplomatique renforce la relation.' : 'Le refus d’une position diplomatique dégrade la relation.', visibility: 'player' as const,
@@ -341,8 +342,13 @@ export function applyDiplomaticDialogueAIAnswer(state: WorldState, jobId: string
   }
   const nextSpeakerId = nextSpeaker(state, dialogue, [state.playerCountryId, speaker]);
   const response = outcome.publicMessage.trim();
-  const relationEffect = move?.kind === 'accept' ? { relation: 5, trust: 3 } : move?.kind === 'refuse' ? { relation: -5, trust: -3 } : move?.kind === 'counter' ? { relation: 2, trust: 1 } : null;
   const normalizedMove = move ? normalizeDialogueMove(move, response) : null;
+  const isEnergyFramework = normalizedMove?.scope === 'general_dialogue' && normalizedMove.agreementType === 'energy_cooperation';
+  const relationEffect = normalizedMove?.kind === 'accept'
+    ? { relation: isEnergyFramework ? 1 : 5, trust: isEnergyFramework ? 0 : 3 }
+    : normalizedMove?.kind === 'refuse' ? { relation: -5, trust: -3 }
+      : normalizedMove?.kind === 'counter' ? { relation: isEnergyFramework ? 1 : 2, trust: isEnergyFramework ? 0 : 1 }
+        : null;
   const structuredResponse = normalizedMove?.scope === 'general_dialogue' ? {
     kind: normalizedMove.kind,
     agreementType: normalizedMove.agreementType,

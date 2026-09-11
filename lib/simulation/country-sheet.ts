@@ -13,7 +13,13 @@ export type DefenseReference = {
   /** Inventaire agrégé pour le dossier militaire (ordre de grandeur jouable). */
   unitTypes?: Array<{ id: string; label: string; personnelThousands: number; quality: number; qualityLabel: string }>;
   /** Répartition indicative des forces par théâtre ou zone de projection. */
-  deployments?: Array<{ location: string; personnelThousands: number; mission: string }>;
+  deployments?: Array<{
+    location: string;
+    personnelThousands: number;
+    mission: string;
+    /** Décomposition optionnelle d'une zone large en pays d'accueil. */
+    countryBreakdown?: Array<{ countryId: CountryId; personnelThousands: number; mission?: string }>;
+  }>;
   modelingLevel?: 'documented' | 'aggregate';
 };
 
@@ -60,7 +66,17 @@ export const defenseReference2000: Record<CountryId, DefenseReference> = {
     deployments: [
       { location: 'Métropole', personnelThousands: 240, mission: 'Défense du territoire, dissuasion et entraînement' },
       { location: "Outre-mer et bases prépositionnées", personnelThousands: 24, mission: 'Souveraineté, protection des approches et présence' },
-      { location: 'Afrique', personnelThousands: 18, mission: 'Coopération de défense et opérations extérieures' },
+      {
+        location: 'Afrique', personnelThousands: 18, mission: 'Coopération de défense et opérations extérieures',
+        countryBreakdown: [
+          { countryId: 'CIV', personnelThousands: 6, mission: 'Coopération et présence prépositionnée' },
+          { countryId: 'DJI', personnelThousands: 4, mission: 'Base interarmées et contrôle des approches' },
+          { countryId: 'SEN', personnelThousands: 3, mission: 'Coopération et formation' },
+          { countryId: 'GAB', personnelThousands: 2, mission: 'Point d’appui et coopération régionale' },
+          { countryId: 'TCD', personnelThousands: 2, mission: 'Surveillance et soutien aux opérations' },
+          { countryId: 'CMR', personnelThousands: 1, mission: 'Coopération de défense' },
+        ],
+      },
       { location: 'Balkans', personnelThousands: 8, mission: 'KFOR, maintien de la paix et sécurisation' },
       { location: 'Missions navales et aériennes', personnelThousands: 15, mission: 'Projection, surveillance et contrôle des espaces' },
       { location: 'Réserve opérationnelle / rotation', personnelThousands: 48, mission: 'Alerte, relève et renfort des théâtres' },

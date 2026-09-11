@@ -1904,7 +1904,15 @@ test('un scope énergétique mal renvoyé dans un dialogue libre reste résolubl
   assert.equal(resolved.state.diplomaticDialogues[opened.dialogueId].resolution?.status, 'accepted');
   const treaty = Object.values(resolved.state.treaties).find((item) => item.id.startsWith(`dialogue-commitment-${opened.dialogueId}`));
   assert.ok(treaty?.label.includes('energy cooperation'));
-  assert.ok(treaty?.monthlyEffects.some((effect) => effect.metric === 'industry'));
+  assert.equal(treaty?.monthlyEffects.length, 0);
+});
+
+test('le dossier militaire décompose un théâtre large par pays sans changer le total', () => {
+  const sheet = countrySheet(createFrance2000World(), 'FRA');
+  const africa = sheet?.defense?.deployments?.find((deployment) => deployment.location === 'Afrique');
+  assert.equal(africa?.personnelThousands, 18);
+  assert.equal(africa?.countryBreakdown?.reduce((total, item) => total + item.personnelThousands, 0), 18);
+  assert.deepEqual(africa?.countryBreakdown?.map((item) => item.countryId), ['CIV', 'DJI', 'SEN', 'GAB', 'TCD', 'CMR']);
 });
 
 test('un programme autonome diplomatique ne peut pas cibler son propre État', () => {

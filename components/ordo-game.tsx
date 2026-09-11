@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { DeferredPanel, DiplomacySheet, TerritoryExplorer, WorldMap } from '@/components/panel-loaders';
 import {
@@ -41,7 +42,7 @@ import {
   countrySheet,
   nationalReformOptions, reformPositionLabel, reformStateKey,
   type AdvisorAnswer, type AdvisorQuestionKind, type EnergyAdministrativeOffer, type EnergyCounterpartResponse,
-  type CommonActionCategory, type EnergyOfferAdjustment, type HistoricalInterventionDirection, type ISODate, type StrategicDossier, type StrategicPlan,
+  type CommonActionCategory, type CountryId, type EnergyOfferAdjustment, type HistoricalInterventionDirection, type ISODate, type StrategicDossier, type StrategicPlan,
   type NationalReformDomain, type PoliticalCampaignStrategy, type PreparedCommonAction, type PrototypeMeasureId, type StructuralDiagnosis, type TurnBriefing, type WorldState,
 } from '@/lib/simulation';
 import {
@@ -446,9 +447,10 @@ function MilitaryPanel({ world, onNotice }: { world: WorldState; onNotice: (mess
   const theaterTotal = theaterDeployments.reduce((total, deployment) => total + deployment.personnelThousands, 0);
   const combatAvailable = defense ? defense.activePersonnelThousands * (defense.combatAvailabilityPct ?? 35) / 100 : 0;
   const sustainableProjection = defense ? defense.activePersonnelThousands * (defense.sustainableProjectionPct ?? 20) / 100 : 0;
-  const askTheaterAI = async (deployment: { location: string; personnelThousands: number; mission: string }) => {
+  const askTheaterAI = async (deployment: { location: string; personnelThousands: number; mission: string; countryBreakdown?: Array<{ countryId: CountryId; personnelThousands: number; mission?: string }> }) => {
     if (!selected || theaterAILoading) return;
-    const question = `Théâtre d’opérations « ${deployment.location} » de ${selected.name} en ${world.currentDate}. ${deployment.personnelThousands} milliers de personnels y sont recensés pour la mission suivante : ${deployment.mission}. Explique pourquoi cette présence existe, quels objectifs politiques et militaires sont plausibles, puis propose trois options concrètes pour le gouvernement français avec leurs risques et conditions. Distingue les faits du référentiel 2000 des recommandations et n’invente aucune opération précise.`;
+    const breakdown = deployment.countryBreakdown?.map((item) => `${world.countries[item.countryId]?.name ?? item.countryId} ${item.personnelThousands} k`).join(', ');
+    const question = `Théâtre d’opérations « ${deployment.location} » de ${selected.name} en ${world.currentDate}. ${deployment.personnelThousands} milliers de personnels y sont recensés pour la mission suivante : ${deployment.mission}.${breakdown ? ` Répartition indicative par pays : ${breakdown}.` : ''} Explique pourquoi cette présence existe, quels objectifs politiques et militaires sont plausibles, puis propose trois options concrètes pour ${selected.name} avec leurs risques et conditions. Distingue les faits du référentiel 2000 des recommandations et n’invente aucune opération précise.`;
     setSelectedTheaterLocation(deployment.location);
     setTheaterAILoading(deployment.location);
     try {
@@ -475,7 +477,7 @@ function MilitaryPanel({ world, onNotice }: { world: WorldState; onNotice: (mess
         <div className="mt-4 grid gap-2 sm:grid-cols-3"><Stat label="Aptes au combat" value={`${combatAvailable.toFixed(0)} k`} detail={`${defense.combatAvailabilityPct ?? 35}% des actifs`} /><Stat label="Projection durable" value={`${sustainableProjection.toFixed(0)} k`} detail={`${defense.sustainableProjectionPct ?? 20}% des actifs`} /><Stat label="Sur théâtres" value={`${theaterTotal.toFixed(0)} k`} detail={`${(theaterTotal / Math.max(1, defense.activePersonnelThousands) * 100).toFixed(0)}% des actifs`} /></div>
         <div className="mt-4 grid gap-px bg-border lg:grid-cols-2">
           <section className="bg-card p-4"><div className="font-mono text-[10px] uppercase tracking-wider text-primary">Effectifs par type d’unité</div><div className="mt-3 space-y-2">{defense.unitTypes?.map((unit) => <div key={unit.id} className="border-b border-border/70 pb-2 last:border-0"><div className="flex items-center justify-between gap-3 text-sm"><span>{unit.label}</span><b>{unit.personnelThousands.toFixed(0)} k</b></div><div className="mt-1 flex items-center justify-between gap-2 text-[11px] text-muted-foreground"><span>Qualité {unit.quality}/100</span><span>{unit.qualityLabel}</span></div><div className="mt-1 h-1 bg-muted"><div className="h-full bg-primary" style={{ width: `${Math.max(0, Math.min(100, unit.quality))}%` }} /></div></div>) ?? <p className="text-xs text-muted-foreground">Inventaire détaillé non documenté.</p>}</div></section>
-          <section className="bg-card p-4"><div className="font-mono text-[10px] uppercase tracking-wider text-primary">Projection et stationnement</div><div className="mt-3 space-y-2">{defense.deployments?.map((deployment) => <div key={deployment.location} className={`border-b border-border/70 pb-2 last:border-0 ${selectedTheaterLocation === deployment.location ? 'bg-primary/5' : ''}`}><div className="flex items-center justify-between gap-3 text-sm"><span>{deployment.location}</span><div className="flex items-center gap-2"><b>{deployment.personnelThousands.toFixed(0)} k</b>{!/métropole|réserve|rotation/i.test(deployment.location) && <Button type="button" size="sm" variant="outline" onClick={() => void askTheaterAI(deployment)} disabled={theaterAILoading !== null}>{theaterAILoading === deployment.location ? 'Analyse…' : 'Appel IA'}</Button>}</div></div><p className="mt-1 text-[11px] text-muted-foreground">{deployment.mission}</p></div>) ?? <p className="text-xs text-muted-foreground">Répartition géographique non documentée.</p>}</div><div className="mt-3 border-t border-border pt-2 text-xs text-muted-foreground">Total recensé : <b className="text-foreground">{deploymentTotal.toFixed(0)} k</b> · théâtres extérieurs : <b className="text-foreground">{theaterTotal.toFixed(0)} k</b>. Les appels IA donnent une lecture stratégique et ne modifient pas la partie.</div></section>
+          <section className="bg-card p-4"><div className="font-mono text-[10px] uppercase tracking-wider text-primary">Projection et stationnement</div><div className="mt-3 space-y-2">{defense.deployments?.map((deployment) => <div key={deployment.location} className={`border-b border-border/70 pb-2 last:border-0 ${selectedTheaterLocation === deployment.location ? 'bg-primary/5' : ''}`}><div className="flex items-center justify-between gap-3 text-sm"><span>{deployment.location}</span><div className="flex items-center gap-2"><b>{deployment.personnelThousands.toFixed(0)} k</b>{!/métropole|réserve|rotation/i.test(deployment.location) && <Button type="button" size="sm" variant="outline" onClick={() => void askTheaterAI(deployment)} disabled={theaterAILoading !== null}>{theaterAILoading === deployment.location ? 'Analyse…' : 'Appel IA'}</Button>}</div></div><p className="mt-1 text-[11px] text-muted-foreground">{deployment.mission}</p>{deployment.countryBreakdown && <div className="mt-2 ml-3 space-y-1 border-l border-primary/30 pl-3"><div className="font-mono text-[9px] uppercase tracking-wider text-primary">Répartition par pays</div>{deployment.countryBreakdown.map((item) => <div key={`${deployment.location}-${item.countryId}`} className="flex items-center justify-between gap-3 text-[11px] text-muted-foreground"><span>{world.countries[item.countryId]?.flag} {world.countries[item.countryId]?.name ?? item.countryId}{item.mission ? ` · ${item.mission}` : ''}</span><b className="shrink-0 text-foreground">{item.personnelThousands.toFixed(0)} k</b></div>)}</div>}</div>) ?? <p className="text-xs text-muted-foreground">Répartition géographique non documentée.</p>}</div><div className="mt-3 border-t border-border pt-2 text-xs text-muted-foreground">Total recensé : <b className="text-foreground">{deploymentTotal.toFixed(0)} k</b> · théâtres extérieurs : <b className="text-foreground">{theaterTotal.toFixed(0)} k</b>. Les appels IA donnent une lecture stratégique et ne modifient pas la partie.</div></section>
         </div>
         <section className="border border-primary/30 bg-card/70 p-4"><div className="font-mono text-[10px] uppercase tracking-wider text-primary">Appel IA · théâtre d’opération</div>{!selectedTheaterLocation && <p className="mt-2 text-xs text-muted-foreground">Sélectionnez « Appel IA » sur un théâtre extérieur pour obtenir une explication de la présence, des objectifs et des options possibles.</p>}{selectedTheaterLocation && theaterAILoading === selectedTheaterLocation && <p className="mt-2 text-xs text-muted-foreground">Analyse du théâtre « {selectedTheaterLocation} » en cours…</p>}{selectedTheaterLocation && theaterAILoading !== selectedTheaterLocation && theaterAI[selectedTheaterLocation] && <div className="mt-2 whitespace-pre-line border-l-2 border-primary bg-primary/5 p-3 text-[11px] leading-5 text-muted-foreground">{theaterAI[selectedTheaterLocation]}</div>}</section>
         <p className="mt-3 border-l-2 border-primary bg-primary/5 p-3 text-[11px] leading-5 text-muted-foreground"><b className="text-foreground">Pourquoi 353 k ne signifie pas 353 k combattants projetables :</b> les effectifs comprennent le soutien, les états-majors, la maintenance, la formation, la gendarmerie et les relèves. Le taux « aptes au combat » retire les absences et indisponibilités ; la « projection durable » réserve les forces nécessaires à la défense du territoire et aux rotations. Les théâtres extérieurs sont donc comparés à ces deux plafonds, pas au seul total administratif.</p>
@@ -487,8 +489,20 @@ function MilitaryPanel({ world, onNotice }: { world: WorldState; onNotice: (mess
 
 function EconomyPanel({ world }: { world: WorldState }) {
   const [selectedCountryId, setSelectedCountryId] = useState(world.playerCountryId);
+  const [countryQuery, setCountryQuery] = useState('');
   const economies = Object.values(world.macroEconomies).sort((a, b) => b.realGdpBillion2000Usd - a.realGdpBillion2000Usd);
   const selectedCountry = world.countries[selectedCountryId] ?? world.countries[world.playerCountryId];
+  const selectedEconomy = economies.find((economy) => economy.countryId === selectedCountry.id) ?? economies[0];
+  const normalizedQuery = countryQuery.trim().toLocaleLowerCase('fr');
+  const filteredEconomies = economies.filter((economy) => {
+    const country = world.countries[economy.countryId];
+    return !normalizedQuery || `${country?.name ?? ''} ${economy.countryId}`.toLocaleLowerCase('fr').includes(normalizedQuery);
+  });
+  const economyOptions = filteredEconomies.length
+    ? filteredEconomies
+    : selectedEconomy
+      ? [selectedEconomy]
+      : [];
   const profile = world.structuralProfiles[selectedCountry.id];
   const diagnoses = structuralDiagnosisGroups(world, selectedCountry.id);
   return <div className="space-y-4">
@@ -506,13 +520,13 @@ function EconomyPanel({ world }: { world: WorldState }) {
       <div className="border-b border-border p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div><div className="font-mono text-[10px] uppercase tracking-wider text-primary">Bilan structurel vivant</div><h2 className="mt-1 text-lg font-semibold">{selectedCountry.flag} {selectedCountry.name}</h2></div>
-          <div className="flex max-w-full gap-1 overflow-x-auto">{economies.map((economy) => {
-            const country = world.countries[economy.countryId];
-            return <button key={economy.countryId} onClick={() => setSelectedCountryId(economy.countryId)} className={`shrink-0 border px-2 py-1.5 text-xs ${selectedCountry.id === economy.countryId ? 'border-primary bg-primary/10 text-foreground' : 'border-border text-muted-foreground hover:text-foreground'}`}>{country?.flag} {country?.name}</button>;
-          })}</div>
+          <div className="flex w-full max-w-xl flex-wrap items-end gap-2">
+            <label htmlFor="economy-country-search" className="min-w-[13rem] flex-1 text-xs text-muted-foreground"><span className="mb-1 block font-mono text-[9px] uppercase tracking-wider text-primary">Rechercher un pays</span><Input id="economy-country-search" type="search" value={countryQuery} onChange={(event) => setCountryQuery(event.target.value)} placeholder="Nom ou code (ex. Algérie, JPN)" aria-label="Rechercher une économie" /></label>
+            <label htmlFor="economy-country-select" className="min-w-[13rem] flex-1 text-xs text-muted-foreground"><span className="mb-1 block font-mono text-[9px] uppercase tracking-wider text-primary">Choisir l’économie</span><select id="economy-country-select" aria-label="Sélectionner une économie" value={selectedCountry.id} onChange={(event) => setSelectedCountryId(event.target.value)} className="h-8 w-full border border-input bg-background px-2 text-sm">{economyOptions.map((economy) => { const country = world.countries[economy.countryId]; return <option key={economy.countryId} value={economy.countryId}>{country?.flag} {country?.name ?? economy.countryId}</option>; })}</select></label>
+          </div>
         </div>
         <div className="mt-3 flex flex-wrap gap-3 font-mono text-[10px] text-muted-foreground">
-          <span>{diagnoses.strengths.length} force(s)</span><span>{diagnoses.vulnerabilities.length} vulnérabilité(s)</span><span>{diagnoses.trends.length} dynamique(s)</span>
+          <span>{economies.length} économies disponibles</span><span>{diagnoses.strengths.length} force(s)</span><span>{diagnoses.vulnerabilities.length} vulnérabilité(s)</span><span>{diagnoses.trends.length} dynamique(s)</span>
           {profile && <span title={profile.source.basis}>socle structurel {profile.source.observationYear}</span>}
         </div>
       </div>
@@ -527,20 +541,10 @@ function EconomyPanel({ world }: { world: WorldState }) {
         </div>)}
       </div>
     </section>
-    <div className="overflow-x-auto border border-border bg-card/70">
-      <table className="w-full min-w-[980px] text-left text-sm">
-        <thead className="border-b border-border bg-muted/30 font-mono text-[10px] uppercase tracking-wider text-muted-foreground"><tr><th className="p-3">Pays</th><th>PIB réel</th><th>Croissance</th><th>Potentiel</th><th>Inflation</th><th>Chômage</th><th>Commerce</th><th>Investissement</th><th>Confiance</th></tr></thead>
-        <tbody>{economies.map((economy) => <tr key={economy.countryId} onClick={() => setSelectedCountryId(economy.countryId)} className={`cursor-pointer border-b border-border/60 hover:bg-muted/20 ${selectedCountry.id === economy.countryId ? 'bg-primary/5' : ''}`}>
-          <td className="p-3 font-medium">{world.countries[economy.countryId]?.flag} {world.countries[economy.countryId]?.name}</td>
-          <td>{economy.realGdpBillion2000Usd.toLocaleString('fr-FR', { maximumFractionDigits: 1 })} Md$</td>
-          <td className={economy.realGrowthAnnualPct < 0 ? 'text-red-300' : 'text-emerald-300'}>{economy.realGrowthAnnualPct.toFixed(2)} %</td>
-          <td>{economy.potentialGrowthAnnualPct.toFixed(2)} %</td><td>{economy.inflationAnnualPct.toFixed(2)} %</td><td>{economy.unemploymentPct.toFixed(2)} %</td>
-          <td className={economy.tradeBalancePctGdp < 0 ? 'text-amber-300' : ''}>{economy.tradeBalancePctGdp > 0 ? '+' : ''}{economy.tradeBalancePctGdp.toFixed(2)} % PIB</td>
-          <td>{economy.investmentSharePctGdp.toFixed(1)} % PIB</td>
-          <td title={`${economy.source.provider} · ${economy.source.indicatorCodes.join(', ')}`}>{economy.source.confidence} %</td>
-        </tr>)}</tbody>
-      </table>
-    </div>
+    {selectedEconomy ? <section className="border border-border bg-card/70 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2"><div className="font-mono text-[10px] uppercase tracking-wider text-primary">Indicateurs de {selectedCountry.name}</div><span className="text-xs text-muted-foreground">La liste complète reste dans le menu ci-dessus.</span></div>
+      <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4"><Stat label="PIB réel" value={`${selectedEconomy.realGdpBillion2000Usd.toLocaleString('fr-FR', { maximumFractionDigits: 1 })} Md$`} /><Stat label="Croissance" value={`${selectedEconomy.realGrowthAnnualPct.toFixed(2)} %`} /><Stat label="Potentiel" value={`${selectedEconomy.potentialGrowthAnnualPct.toFixed(2)} %`} /><Stat label="Inflation" value={`${selectedEconomy.inflationAnnualPct.toFixed(2)} %`} /><Stat label="Chômage" value={`${selectedEconomy.unemploymentPct.toFixed(2)} %`} /><Stat label="Solde commercial" value={`${selectedEconomy.tradeBalancePctGdp > 0 ? '+' : ''}${selectedEconomy.tradeBalancePctGdp.toFixed(2)} % PIB`} /><Stat label="Investissement" value={`${selectedEconomy.investmentSharePctGdp.toFixed(1)} % PIB`} /><Stat label="Référentiel" value={`${selectedEconomy.source.confidence} %`} detail={`${selectedEconomy.source.provider} · ${selectedEconomy.source.indicatorCodes.join(', ')}`} /></div>
+    </section> : <div className="border border-dashed border-border p-4 text-sm text-muted-foreground">Aucune économie ne correspond à la recherche.</div>}
     <div className="text-xs text-muted-foreground">Base 2000 : indicateurs macroéconomiques, structures productives et registre physique de l’énergie. Le moteur conserve un référentiel stable pour la simulation.</div>
   </div>;
 }
