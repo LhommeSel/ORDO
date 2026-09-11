@@ -129,6 +129,9 @@ export async function POST(request: Request) {
       'knownFacts contient uniquement les faits accessibles au pays demandeur. privateDecisionFacts contient les informations privées du pays qui décide.',
       'Utilise privateDecisionFacts pour prendre la décision mais ne les cite jamais, ne révèle jamais leurs valeurs, leurs formulations ni leurs sourcePath dans publicMessage, assessment ou proposals.',
       'Pour une tâche diplomatique, privateDecision doit expliquer confidentiellement la décision et publicMessage doit contenir uniquement ce que l’interlocuteur communique au joueur. La route supprimera privateDecision avant affichage.',
+      parsed.job.kind === 'diplomacy'
+        ? 'Réponds directement en tant que pays interlocuteur : ne répète pas, ne cite pas et ne reformule pas le premier message du joueur. Commence par la position, la réaction ou la demande de l’interlocuteur, puis avance une réponse concrète.'
+        : '',
       isFreeDialogue
         ? 'Pour ce dialogue politique libre, diplomaticMove.scope doit être general_dialogue. Décris la position, les concessions possibles, les garanties demandées, les conditions, les lignes rouges et un calendrier en langage naturel. N’utilise jamais les champs de volume, durée, prix ou clauses énergétiques.'
         : 'Pour une négociation énergétique, diplomaticMove.scope doit être energy_contract. Une contre-proposition doit renseigner volume, durée et posture de prix ; les autres mouvements peuvent mettre ces champs à null. N’utilise que les clauses du catalogue énergétique.',

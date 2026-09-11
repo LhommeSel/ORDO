@@ -1,5 +1,7 @@
 'use client';
 
+import { useEffect, useState } from 'react';
+
 import { Bot, Check, Clock3, MessageSquareText, Route, ShieldCheck, UserRoundCog } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -71,12 +73,27 @@ type DiplomaticResponseResolution = {
 
 type QuickReply = { label: string; value: string };
 
+type DialogueSummary = {
+  id: string;
+  kind: 'bilateral_dialogue' | 'multilateral_dialogue';
+  participantIds: string[];
+  status: string;
+  label: string;
+};
+
 type DiplomacySheetProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   countries: SheetCountry[];
   selectedId: string;
   onSelectCountry: (id: string) => void;
+  participantIds?: string[];
+  participantOptions?: SheetCountry[];
+  onAddParticipant?: (id: string) => void;
+  dialogues?: DialogueSummary[];
+  onSelectDialogue?: (id: string) => void;
+  selectedDialogueId?: string | null;
+  onNewDialogue?: () => void;
   selectedCountry: SheetCountry;
   messages: SheetMessage[];
   structuredResponse?: StructuredDiplomaticResponse;
@@ -147,6 +164,13 @@ export function DiplomacySheet({
   countries,
   selectedId,
   onSelectCountry,
+  participantIds = [],
+  participantOptions = [],
+  onAddParticipant,
+  dialogues = [],
+  onSelectDialogue,
+  selectedDialogueId,
+  onNewDialogue,
   selectedCountry,
   messages,
   structuredResponse,
@@ -171,6 +195,10 @@ export function DiplomacySheet({
   agreements = [],
 }: DiplomacySheetProps) {
   const tags = relationshipTags(selectedCountry);
+  const [participantToAdd, setParticipantToAdd] = useState(participantOptions[0]?.id ?? '');
+  useEffect(() => {
+    if (!participantOptions.some((country) => country.id === participantToAdd)) setParticipantToAdd(participantOptions[0]?.id ?? '');
+  }, [participantOptions, participantToAdd]);
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -183,7 +211,19 @@ export function DiplomacySheet({
 
         <div className="diplomacy-sheet-layout">
           <nav className="diplomacy-contact-list" aria-label="Interlocuteurs diplomatiques">
-            <p className="px-3 pb-2 pt-3 font-mono text-[8px] tracking-[0.12em] text-muted-foreground">ENTITÉS ACTIVES ET PRIORITAIRES</p>
+            {onNewDialogue && <div className="border-b border-border/70 p-2"><Button type="button" size="sm" variant="outline" onClick={onNewDialogue} className="w-full justify-start rounded-none text-[11px]">Nouveau canal</Button></div>}
+            {dialogues.length > 0 && onSelectDialogue && <div className="mb-2 border-b border-border/70 pb-2">
+              <p className="px-3 pb-2 pt-3 font-mono text-[8px] tracking-[0.12em] text-muted-foreground">CANAUX RÉCENTS</p>
+              <div className="space-y-1 px-2">
+                {dialogues.slice(0, 8).map((item) => {
+                  return <button key={item.id} type="button" onClick={() => onSelectDialogue(item.id)} className={`block w-full border px-2 py-1.5 text-left text-[11px] ${item.id === selectedDialogueId ? 'border-primary bg-primary/10' : 'border-border hover:bg-muted/30'}`}>
+                    <span className="block font-medium">{item.kind === 'multilateral_dialogue' ? 'Groupe' : 'Canal'} · {item.label || 'Dialogue'}</span>
+                    <span className="block text-[9px] text-muted-foreground">{item.status} · {item.participantIds.length - 1} interlocuteur(s)</span>
+                  </button>;
+                })}
+              </div>
+            </div>}
+            <p className="px-3 pb-2 pt-3 font-mono text-[8px] tracking-[0.12em] text-muted-foreground">PAYS DISPONIBLES</p>
             {countries.map((country) => (
               <button
                 key={country.id}
@@ -202,7 +242,7 @@ export function DiplomacySheet({
           <section className="diplomacy-conversation">
             <div className="diplomacy-country-heading">
               <span className="text-3xl" aria-hidden="true">{selectedCountry.flag}</span>
-              <div><p className="font-mono text-[8px] tracking-[0.12em] text-muted-foreground">CANAL {participantCount > 2 ? 'MULTILATÉRAL' : 'BILATÉRAL'} CHIFFRÉ</p><h2>{playerCountryName} — {selectedCountry.name}</h2>{statusLabel && <p className="mt-1 text-xs text-sky-300">{statusLabel}</p>}{activeSpeakerLabel && <p className="mt-1 text-xs text-amber-300">Prochain intervenant : {activeSpeakerLabel}</p>}</div>
+              <div className="min-w-0 flex-1"><p className="font-mono text-[8px] tracking-[0.12em] text-muted-foreground">CANAL {participantCount > 2 ? 'MULTILATÉRAL' : 'BILATÉRAL'} CHIFFRÉ</p><h2>{playerCountryName} — {selectedCountry.name}</h2>{participantCount > 2 && <p className="mt-1 text-[11px] text-muted-foreground">Participants : {participantIds.filter((id) => id !== selectedCountry.id).map((id) => countries.find((country) => country.id === id)?.name ?? id).join(', ')}</p>}{statusLabel && <p className="mt-1 text-xs text-sky-300">{statusLabel}</p>}{activeSpeakerLabel && <p className="mt-1 text-xs text-amber-300">Prochain intervenant : {activeSpeakerLabel}</p>}{onAddParticipant && participantOptions.length > 0 && <div className="mt-2 flex flex-wrap items-center gap-2"><select aria-label="Ajouter un pays au canal" value={participantToAdd} onChange={(event) => setParticipantToAdd(event.target.value)} className="border border-border bg-background px-2 py-1 text-xs">{participantOptions.map((country) => <option key={country.id} value={country.id}>{country.flag} {country.name}</option>)}</select><Button type="button" size="sm" variant="outline" onClick={() => { if (participantToAdd) onAddParticipant(participantToAdd); }}>Ajouter au canal</Button></div>}</div>
             </div>
 
             {activeEvent && activeEvent.countryId === selectedId && !activeEvent.resolved && (

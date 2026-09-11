@@ -1578,22 +1578,17 @@ test('les tensions émergentes sont plafonnées par passage pour préserver le b
   assert.ok(pending.length <= 3);
 });
 
-test('un dialogue libre conserve la première réponse locale et réserve Luna aux tours confirmés', () => {
+test('un dialogue libre attend une première réponse IA puis réserve Luna aux tours confirmés', () => {
   const initial = createFrance2000World();
   const opened = openDiplomaticDialogue(initial, ['DEU', 'ITA'], 'Nous proposons une coordination industrielle avant le prochain Conseil européen.');
   assert.equal(opened.ok, true);
   if (!opened.ok) return;
   const first = opened.state.diplomaticDialogues[opened.dialogueId];
   assert.equal(first.kind, 'multilateral_dialogue');
-  assert.equal(first.status, 'awaiting_player');
-  assert.equal(first.turns.length, 2);
+  assert.equal(first.status, 'awaiting_ai');
+  assert.equal(first.turns.length, 1);
 
-  const sent = sendDiplomaticDialogueMessage(opened.state, opened.dialogueId, 'Nous sommes prêts à discuter des garanties et du calendrier.');
-  assert.equal(sent.ok, true);
-  if (!sent.ok) return;
-  assert.equal(sent.state.diplomaticDialogues[opened.dialogueId].status, 'awaiting_ai');
-
-  const queued = requestDiplomaticDialogueAI(sent.state, opened.dialogueId);
+  const queued = requestDiplomaticDialogueAI(opened.state, opened.dialogueId);
   assert.equal(queued.ok, true);
   if (!queued.ok) return;
   assert.equal(queued.state.diplomaticDialogues[opened.dialogueId].aiMode, 'ai');
@@ -1616,7 +1611,7 @@ test('un dialogue libre conserve la première réponse locale et réserve Luna a
   if (!applied.ok) return;
   const finalDialogue = applied.state.diplomaticDialogues[opened.dialogueId];
   assert.equal(finalDialogue.status, 'awaiting_player');
-  assert.equal(finalDialogue.turns.length, 4);
+  assert.equal(finalDialogue.turns.length, 2);
   assert.equal(finalDialogue.lastResponse?.kind, 'counter');
   assert.match(finalDialogue.lastResponse?.position ?? '', /garanties politiques/);
   assert.equal(applied.state.aiJobs[queued.jobId].status, 'resolved');
@@ -1637,13 +1632,10 @@ test('un dialogue libre conserve la première réponse locale et réserve Luna a
 
 test('un message d’un dialogue lié est visible dans la chronologie du dossier', () => {
   const initial = createFrance2000World();
-  const opened = openDiplomaticDialogue(initial, ['DEU'], 'Ouvrons une consultation sur la stratégie économique européenne.', 'current-lisbon-convergence');
+  const opened = openDiplomaticDialogue(initial, ['DEU'], 'Ouvrons une consultation sur un calendrier en deux étapes avec garanties industrielles.', 'current-lisbon-convergence');
   assert.equal(opened.ok, true);
   if (!opened.ok) return;
-  const sent = sendDiplomaticDialogueMessage(opened.state, opened.dialogueId, 'Nous proposons un calendrier en deux étapes avec garanties industrielles.');
-  assert.equal(sent.ok, true);
-  if (!sent.ok) return;
-  const dossier = sent.state.strategicDossiers['current-lisbon-convergence'];
+  const dossier = opened.state.strategicDossiers['current-lisbon-convergence'];
   assert.ok(dossier.entries.some((entry) => entry.title === 'Message du gouvernement'));
   assert.ok(dossier.entries.some((entry) => entry.summary.includes('calendrier en deux étapes')));
 });
@@ -1665,7 +1657,15 @@ test('un scope énergétique mal renvoyé dans un dialogue libre reste résolubl
   const opened = openDiplomaticDialogue(initial, ['DEU'], 'Ouvrons une coopération industrielle et énergétique.');
   assert.equal(opened.ok, true);
   if (!opened.ok) return;
-  const sent = sendDiplomaticDialogueMessage(opened.state, opened.dialogueId, 'Nous proposons une première phase de garanties.');
+  const firstQueued = requestDiplomaticDialogueAI(opened.state, opened.dialogueId);
+  assert.equal(firstQueued.ok, true);
+  if (!firstQueued.ok) return;
+  const firstApplied = applyDiplomaticDialogueAIAnswer(firstQueued.state, firstQueued.jobId, {
+    headline: 'Précisions', assessment: 'Une première réponse est nécessaire.', publicMessage: 'Nous avons bien reçu votre ouverture et attendons vos garanties.', proposals: [], requestedFacts: [], contextFactIds: [], approximateInputTokens: 120,
+  });
+  assert.equal(firstApplied.ok, true);
+  if (!firstApplied.ok) return;
+  const sent = sendDiplomaticDialogueMessage(firstApplied.state, opened.dialogueId, 'Nous proposons une première phase de garanties.');
   assert.equal(sent.ok, true);
   if (!sent.ok) return;
   const queued = requestDiplomaticDialogueAI(sent.state, opened.dialogueId);

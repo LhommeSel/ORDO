@@ -38,10 +38,21 @@ function pulseFacts(
   const scheduledDossierIds = new Set(strategicDossierQueue.map((review) => review.dossierId));
   const scheduledDossierActors = new Set(strategicDossierQueue.flatMap((review) => review.actorIds));
   const explorationActorIds = new Set(autonomyFocus.flatMap((focus) => focus.countryIds));
+  const energyPattern = /\b(énergie|energet|pétrole|petrole|gaz|hydrocarbure|carburant|raffinerie|approvisionnement)\b/i;
+  const recentEnergySignal = recentPlayerActions.some((action) => action.kind === 'energy' || energyPattern.test(action.intent));
+  const scheduledEnergyDossier = strategicDossierQueue.some((review) => {
+    const dossier = state.strategicDossiers[review.dossierId];
+    return dossier ? energyPattern.test(`${dossier.title} ${dossier.publicSummary} ${dossier.entries.slice(-3).map((entry) => entry.summary).join(' ')}`) : false;
+  });
+  const playerEnergyFactRelevant = recentEnergySignal || scheduledEnergyDossier;
   const all = collectFacts(state)
     // Le pouls n'obtient pas les secrets des gouvernements : ses sorties seront
     // affichées au joueur et doivent rester compatibles avec cette visibilité.
     .filter((fact) => fact.visibility === 'public')
+    // La dépendance pétrolière française ne doit pas devenir un sujet récurrent
+    // par défaut. Elle revient dans le contexte uniquement lorsqu'une action ou
+    // un dossier stratégique traite réellement d'énergie.
+    .filter((fact) => !(fact.domain === 'energy' && fact.entityIds.includes(state.playerCountryId) && !playerEnergyFactRelevant))
     .map((fact) => ({
       id: fact.id,
       domain: fact.domain,

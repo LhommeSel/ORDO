@@ -3,7 +3,7 @@ import { commitWorldAction } from './ledger';
 import { relationBetween } from './ledger';
 import { resolveDossierDecision } from './dossiers';
 import { historicalAnchorChannelEffects } from './history';
-import type { DiplomaticDialogue, DiplomaticTurn, GeneralAIJob, CountryId, WorldState, AIJobOutcome } from './types';
+import type { DiplomaticDialogue, DiplomaticTurn, GeneralAIJob, CountryId, WorldState, AIJobOutcome, DossierEntry, StrategicDossier } from './types';
 import type { AIDiplomaticMove } from '../ai/job-contracts';
 
 const unique = <T,>(items: T[]) => [...new Set(items)];
@@ -21,14 +21,6 @@ function nextSpeaker(state: WorldState, dialogue: Pick<DiplomaticDialogue, 'part
     const br = relationBetween(state, dialogue.initiatorId, b)?.relation ?? 50;
     return ar - br || (state.countries[b]?.weight ?? 0) - (state.countries[a]?.weight ?? 0) || a.localeCompare(b);
   })[0] ?? dialogue.participantIds.find((id) => id !== dialogue.initiatorId) ?? dialogue.initiatorId;
-}
-
-function localReply(state: WorldState, speakerId: CountryId, message: string, participantIds: CountryId[]) {
-  const country = state.countries[speakerId];
-  const relation = relationBetween(state, state.playerCountryId, speakerId)?.relation ?? 50;
-  const stance = relation >= 65 ? 'accueille favorablement' : relation <= 35 ? 'réagit avec réserve' : 'répond prudemment à';
-  const focus = participantIds.length > 2 ? ' Les autres délégations sont invitées à préciser leurs lignes rouges.' : '';
-  return `${country?.name ?? speakerId} ${stance} votre message : « ${message.slice(0, 220)} ».${focus}`;
 }
 
 function turn(id: string, date: `${number}-${number}-${number}`, speakerId: CountryId, kind: DiplomaticTurn['kind'], publicMessage: string): DiplomaticTurn {
@@ -61,7 +53,7 @@ function normalizeDialogueMove(move: AIDiplomaticMove, publicMessage: string): E
   };
 }
 
-/** Ouvre un canal bilatéral ou multilatéral. La première réponse est locale et gratuite. */
+/** Ouvre un canal bilatéral ou multilatéral. La première réponse est produite par l'IA. */
 export function openDiplomaticDialogue(state: WorldState, participantIds: CountryId[], openingMessage: string, linkedDossierId?: string) {
   const participants = unique([state.playerCountryId, ...participantIds]).filter((id) => Boolean(state.countries[id]));
   const counterparts = participants.filter((id) => id !== state.playerCountryId);
@@ -71,18 +63,73 @@ export function openDiplomaticDialogue(state: WorldState, participantIds: Countr
   const dialogue: DiplomaticDialogue = {
     id, kind: participants.length > 2 ? 'multilateral_dialogue' : 'bilateral_dialogue',
     initiatorId: state.playerCountryId, participantIds: participants, activeSpeakerId: speaker,
-    status: 'awaiting_player', aiMode: 'local', openedAt: state.currentDate, updatedAt: state.currentDate, linkedDossierId,
+    status: 'awaiting_ai', aiMode: 'ai', openedAt: state.currentDate, updatedAt: state.currentDate, linkedDossierId,
     turns: [
       turn(`${id}-player-1`, state.currentDate, state.playerCountryId, 'message', openingMessage.trim()),
-      turn(`${id}-${speaker}-1`, state.currentDate, speaker, 'message', localReply(state, speaker, openingMessage, participants)),
     ],
   };
   return { ok: true as const, state: commitWorldAction(state, {
     kind: 'diplomatic', actorId: state.playerCountryId, targetIds: counterparts, origin: 'player', visibility: 'player',
     intent: `Ouvrir un dialogue ${dialogue.kind === 'multilateral_dialogue' ? 'multilatéral' : 'bilatéral'}`,
     ...(linkedDossierId ? { metadata: { linkedDossierId } } : {}),
-    effects: [{ kind: 'diplomatic_dialogue_add', dialogue, reason: 'Le canal diplomatique conserve le premier message et la réponse locale gratuite.', visibility: 'player' }],
+    effects: [
+      { kind: 'diplomatic_dialogue_add', dialogue, reason: 'Le canal diplomatique conserve le premier message et attend une réponse IA contextualisée.', visibility: 'player' },
+      ...(linkedDossierId && state.strategicDossiers[linkedDossierId] ? [{
+        kind: 'dossier_entry_add' as const,
+        dossierId: linkedDossierId,
+        entry: {
+          id: `dialogue-player-entry-${dialogue.id}-1`, date: state.currentDate, title: 'Message du gouvernement', summary: openingMessage.trim(),
+          importance: state.strategicDossiers[linkedDossierId].importance, actorIds: dialogue.participantIds, requiresDecision: false, visibility: 'player' as const,
+        },
+        reason: 'Le message initial du joueur est conservé dans la chronologie du dossier lié.', visibility: 'player' as const,
+      }] : []),
+    ],
   }), dialogueId: id };
+}
+
+/** Ajoute un interlocuteur à un canal déjà ouvert sans perdre son historique. */
+export function addDiplomaticDialogueParticipant(state: WorldState, dialogueId: string, countryId: CountryId) {
+  const dialogue = state.diplomaticDialogues?.[dialogueId];
+  if (!dialogue || dialogue.status === 'closed') return { ok: false as const, state, error: 'Ce canal est fermé.' };
+  if (!state.countries[countryId] || countryId === state.playerCountryId) return { ok: false as const, state, error: 'Ce pays ne peut pas être ajouté au canal.' };
+  if (dialogue.participantIds.includes(countryId)) return { ok: false as const, state, error: 'Ce pays participe déjà à la discussion.' };
+  const nextDialogue: DiplomaticDialogue = {
+    ...dialogue,
+    kind: 'multilateral_dialogue',
+    participantIds: [...dialogue.participantIds, countryId],
+    updatedAt: state.currentDate,
+  };
+  const addedName = state.countries[countryId]?.name ?? countryId;
+  const effects: import('./types').WorldEffect[] = [{
+    kind: 'diplomatic_dialogue_patch', dialogueId, patch: nextDialogue,
+    reason: `${addedName} rejoint le canal diplomatique sans effacer les échanges précédents.`, visibility: 'player',
+  }];
+  if (dialogue.linkedDossierId && state.strategicDossiers[dialogue.linkedDossierId]) effects.push({
+    kind: 'dossier_entry_add', dossierId: dialogue.linkedDossierId,
+    entry: {
+      id: `dialogue-participant-${dialogue.id}-${countryId}-${state.sequence + 1}`, date: state.currentDate,
+      title: 'Participant ajouté au canal', summary: `${addedName} est invité à la discussion diplomatique en cours.`,
+      importance: state.strategicDossiers[dialogue.linkedDossierId].importance, actorIds: nextDialogue.participantIds,
+      requiresDecision: false, visibility: 'player',
+    }, reason: 'L’élargissement du canal est conservé dans le dossier diplomatique.', visibility: 'player',
+  });
+  return { ok: true as const, state: commitWorldAction(state, {
+    kind: 'diplomatic', actorId: state.playerCountryId, targetIds: nextDialogue.participantIds.filter((id) => id !== state.playerCountryId),
+    origin: 'player', visibility: 'player', intent: `Ajouter ${addedName} au dialogue`, effects,
+  }) };
+}
+
+function dialogueDossier(state: WorldState, dialogue: DiplomaticDialogue, title: string, summary: string, entryTitle: string, entrySummary: string, commitments: string[] = []): StrategicDossier {
+  const entry: DossierEntry = {
+    id: `dialogue-dossier-entry-${dialogue.id}-${state.sequence + 1}`, date: state.currentDate, title: entryTitle, summary: entrySummary,
+    importance: 'moderate', actorIds: dialogue.participantIds, requiresDecision: false, visibility: 'player',
+  };
+  return {
+    id: `diplomatic-dialogue-${dialogue.id}`, title, kind: 'cooperation', status: 'active', importance: 'moderate',
+    actorIds: dialogue.participantIds, regionTags: [], startedAt: state.currentDate, updatedAt: state.currentDate,
+    phase: title.startsWith('Procédure') ? 'Procédure d’accord' : 'Accord conclu', trend: 'stable', publicSummary: summary,
+    followed: true, autoTracked: true, commitments, pendingDecisions: [], relatedCurrentIds: [], relatedActionIds: [], entries: [entry],
+  };
 }
 
 /** Ouvre un dialogue depuis une décision de dossier et consomme cette décision. */
@@ -215,6 +262,16 @@ export function resolveDiplomaticDialogueResponse(
     kind: 'relation_delta' as const, from: state.playerCountryId, to: targetId, relation: relationEffect.relation, trust: relationEffect.trust,
     reason: decision === 'accept' ? 'L’acceptation d’un engagement diplomatique renforce la relation.' : 'Le refus d’une position diplomatique dégrade la relation.', visibility: 'player' as const,
   })));
+  const formalAgreement = decision === 'accept' && (response.kind === 'accept' || response.kind === 'counter');
+  const agreementDossierId = `diplomatic-dialogue-${dialogue.id}`;
+  if (!dialogue.linkedDossierId && (formalAgreement || decision === 'request_revision')) {
+    const names = dialogue.participantIds.map((id) => state.countries[id]?.name ?? id).join(', ');
+    const agreementLabel = response.agreementType.replaceAll('_', ' ');
+    const dossier = formalAgreement
+      ? dialogueDossier(state, dialogue, `Accord diplomatique · ${names}`, `Un accord de ${agreementLabel} est conclu avec ${names} et doit désormais être suivi dans le temps.`, 'Accord diplomatique conclu', response.position, [`Engagement diplomatique : ${response.position}`])
+      : dialogueDossier(state, dialogue, `Procédure d’accord · ${names}`, `Une procédure de négociation est ouverte avec ${names} ; les garanties et conditions restent à préciser.`, 'Procédure d’accord ouverte', messages.request_revision);
+    effects.push({ kind: 'dossier_add', dossier, reason: formalAgreement ? 'L’accord conclu devient un dossier de suivi.' : 'La demande de révision ouvre une procédure d’accord suivie.', visibility: 'player' });
+  }
   if (dialogue.linkedDossierId && state.strategicDossiers[dialogue.linkedDossierId]) {
     const dossier = state.strategicDossiers[dialogue.linkedDossierId];
     effects.push(
@@ -229,7 +286,7 @@ export function resolveDiplomaticDialogueResponse(
   return { ok: true as const, state: commitWorldAction(state, { kind: 'diplomatic', actorId: state.playerCountryId, targetIds: dialogue.participantIds.filter((id) => id !== state.playerCountryId), origin: 'player', visibility: 'player', intent: labels[decision], effects }), decision };
 }
 
-/** Crée une tâche IA seulement après l’accord explicite du joueur. */
+/** Crée la tâche IA qui produit la réponse de l’interlocuteur. */
 export function requestDiplomaticDialogueAI(state: WorldState, dialogueId: string) {
   const dialogue = state.diplomaticDialogues?.[dialogueId];
   if (!dialogue || dialogue.status !== 'awaiting_ai') return { ok: false as const, state, error: 'Aucune réponse IA n’est en attente pour ce dialogue.' };

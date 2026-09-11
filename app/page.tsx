@@ -26,7 +26,7 @@ import {
   nodeAvailableExport, nodeBookedVolume, nodeExpansionPotential,
   reactivateDossier, resolveDossierDecision, resolveDiplomaticDialogueResponse, sendEnergyOffer, startEnergyNegotiationAI, visibleLedger, visibleStakeholderReactions,
   loadWorldFromBrowser, saveWorldToBrowser,
-  openDiplomaticDialogue, openDiplomaticDialogueForDossier, sendDiplomaticDialogueMessage, requestDiplomaticDialogueAI,
+  openDiplomaticDialogue, openDiplomaticDialogueForDossier, sendDiplomaticDialogueMessage, requestDiplomaticDialogueAI, addDiplomaticDialogueParticipant,
   structuralDiagnosisGroups,
   classifyAdvisorQuestion,
   createWorldPulseRequest, executeWorldPulse, rankStrategicDossierReviews,
@@ -51,7 +51,7 @@ import {
 } from '@/lib/ai/contracts';
 import type { WorldPulseResponse } from '@/lib/ai/world-pulse-contracts';
 
-type Panel = 'world' | 'map' | 'economy' | 'energy' | 'industry' | 'reforms' | 'dossiers' | 'diplomacy' | 'advisor' | 'ledger';
+type Panel = 'world' | 'map' | 'economy' | 'energy' | 'industry' | 'reforms' | 'military' | 'dossiers' | 'diplomacy' | 'advisor' | 'ledger';
 
 type AdvisorAIAuditEntry = {
   id: string;
@@ -99,6 +99,7 @@ const panels: Array<{ id: Panel; label: string; icon: typeof Activity }> = [
   { id: 'energy', label: 'Énergie', icon: Fuel },
   { id: 'industry', label: 'Industrie', icon: Factory },
   { id: 'reforms', label: 'Réformes', icon: SlidersHorizontal },
+  { id: 'military', label: 'Défense', icon: Shield },
   { id: 'dossiers', label: 'Dossiers', icon: Swords },
   { id: 'diplomacy', label: 'Diplomatie', icon: Send },
   { id: 'advisor', label: 'Conseiller', icon: BrainCircuit },
@@ -279,19 +280,34 @@ type EventFeedItem = { id: string; date: string; title: string; summary: string;
 function buildEventFeed(world: WorldState): EventFeedItem[] {
   const items: EventFeedItem[] = [];
   for (const dossier of Object.values(world.strategicDossiers ?? {})) {
+    const debtCountryId = dossier.id.startsWith('sovereign-debt-') ? dossier.actorIds.find((id) => Boolean(world.macroEconomies[id])) : undefined;
+    const debtDefaultRecorded = dossier.entries.some((entry) => /défaut souverain/i.test(entry.title));
+    const debtRelevant = !debtCountryId || debtCountryId === world.playerCountryId || world.macroEconomies[debtCountryId]?.sovereignDebt.status === 'default' || debtDefaultRecorded;
+    if (!debtRelevant) continue;
     for (const entry of dossier.entries) {
       if (!['public', 'player'].includes(entry.visibility)) continue;
+      const sourceAction = entry.sourceActionId ? world.actions.find((action) => action.id === entry.sourceActionId) : undefined;
+      const playerMessage = sourceAction?.origin === 'player'
+        || entry.id.startsWith('dialogue-player-')
+        || entry.id.startsWith('dialogue-resolution-')
+        || entry.id.startsWith('decision-')
+        || entry.title === 'Message du gouvernement';
+      const historicalEvent = dossier.kind === 'historical'
+        || sourceAction?.origin === 'historical'
+        || entry.id.startsWith('historical-');
+      if (!playerMessage && !historicalEvent) continue;
       const importance = entry.importance === 'critical' || entry.importance === 'major' ? 'major' : entry.importance === 'moderate' ? 'moderate' : 'minor';
-      items.push({ id: `dossier:${entry.id}`, date: entry.date, title: entry.title, summary: entry.summary, importance, source: dossier.title, dossierId: dossier.id });
+      items.push({ id: `dossier:${entry.id}`, date: entry.date, title: entry.title, summary: entry.summary, importance, source: historicalEvent ? `Histoire · ${dossier.title}` : 'Message du joueur', dossierId: dossier.id });
     }
   }
   for (const change of visibleLedger(world).slice(-160)) {
     if (change.path.startsWith('strategicDossiers.')) continue;
     const sourceAction = world.actions.find((action) => action.id === change.actionId);
+    if (sourceAction?.origin !== 'player' && sourceAction?.origin !== 'historical') continue;
     const importance = sourceAction?.metadata?.minorEvent === true
       ? 'minor'
       : change.origin === 'ai' || change.path.includes('relations') || change.path.includes('worldEconomy') || change.path.includes('macroEconomies') ? 'moderate' : 'minor';
-    items.push({ id: `change:${change.id}`, date: change.date, title: change.path.split('.').at(-1) ?? 'Modification du monde', summary: change.reason, importance, source: change.origin === 'time' ? 'Évolution autonome' : change.origin === 'player' ? 'Action du joueur' : `Origine ${change.origin}` });
+    items.push({ id: `change:${change.id}`, date: change.date, title: change.path.split('.').at(-1) ?? 'Modification du monde', summary: change.reason, importance, source: sourceAction.origin === 'historical' ? 'Événement historique' : 'Action du joueur' });
   }
   return items.sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id)).slice(0, 120);
 }
@@ -393,6 +409,7 @@ function MapPanel({ world }: { world: WorldState }) {
             <Stat label="Stocks gaz" value={sheet?.energy ? `${sheet.energy.gasStocksMonths.toFixed(1)} mois` : '—'} />
           </div>
           {sheet?.defense && <div className="text-xs"><b>Posture militaire</b><p className="mt-1 text-muted-foreground">{sheet.defense.posture} · {sheet.defense.capabilities.join(' · ')}{sheet.defense.modelingLevel === 'aggregate' ? ' · ordre de grandeur ORDO à affiner' : ''}</p></div>}
+          {sheet?.securityActors?.length ? <div className="mt-4 border-t border-border pt-3"><div className="font-mono text-[10px] uppercase tracking-wider text-amber-300">Acteurs non étatiques · référentiel 2000</div><div className="mt-2 space-y-2">{sheet.securityActors.map((actor) => <div key={actor.id} className="border border-border/70 bg-background/30 p-2 text-xs"><div className="flex items-start justify-between gap-2"><b>{actor.name}</b><span className={actor.threatLevel === 'high' || actor.threatLevel === 'critical' ? 'text-red-300' : 'text-amber-300'}>{actor.category === 'organized_crime' ? 'crime organisé' : actor.category === 'terrorist' ? 'terroriste' : 'paramilitaire'}</span></div><p className="mt-1 text-muted-foreground">{actor.activity} · zones : {actor.zones.join(', ')}</p><p className="mt-1 text-muted-foreground">Effectif estimé : {actor.estimatedStrength}. {actor.notes}</p></div>)}</div></div> : null}
           <div className="text-xs"><b>Priorité immédiate</b><p className="mt-1 text-muted-foreground">{selected.strategy.goals[0]?.label ?? 'Aucune priorité encore formalisée.'}</p></div>
           <div className="mt-4 text-xs"><b>Vulnérabilités connues</b><ul className="mt-1 space-y-1 text-muted-foreground">{selected.strategy.vulnerabilities.length ? selected.strategy.vulnerabilities.map((item) => <li key={item}>— {item}</li>) : <li>— Aucune vulnérabilité formalisée.</li>}</ul></div>
         </> : <>
@@ -448,6 +465,62 @@ function StructuralDiagnosisCard({ diagnosis }: { diagnosis: StructuralDiagnosis
       <div><b>Leviers possibles</b><div className="mt-1 flex flex-wrap gap-1">{diagnosis.availableLevers.map((item) => <span key={item} className="border border-border bg-muted/30 px-2 py-1">{item}</span>)}</div></div>
     </div>
   </details>;
+}
+
+function MilitaryPanel({ world, onNotice }: { world: WorldState; onNotice: (message: string) => void }) {
+  const countries = useMemo(() => Object.values(world.countries).sort((a, b) => a.name.localeCompare(b.name, 'fr')), [world.countries]);
+  const [selectedId, setSelectedId] = useState(world.playerCountryId);
+  const [theaterAI, setTheaterAI] = useState<Record<string, string>>({});
+  const [theaterAILoading, setTheaterAILoading] = useState<string | null>(null);
+  const [selectedTheaterLocation, setSelectedTheaterLocation] = useState<string | null>(null);
+  useEffect(() => { if (!world.countries[selectedId]) setSelectedId(world.playerCountryId); }, [selectedId, world.countries, world.playerCountryId]);
+  useEffect(() => { setSelectedTheaterLocation(null); setTheaterAILoading(null); }, [selectedId]);
+  const selected = world.countries[selectedId] ?? world.countries[world.playerCountryId];
+  const sheet = selected ? countrySheet(world, selected.id) : null;
+  const defense = sheet?.defense;
+  const unitTotal = defense?.unitTypes?.reduce((total, unit) => total + unit.personnelThousands, 0) ?? defense?.activePersonnelThousands ?? 0;
+  const deploymentTotal = defense?.deployments?.reduce((total, deployment) => total + deployment.personnelThousands, 0) ?? 0;
+  const theaterDeployments = defense?.deployments?.filter((deployment) => !/métropole|réserve|rotation/i.test(deployment.location)) ?? [];
+  const theaterTotal = theaterDeployments.reduce((total, deployment) => total + deployment.personnelThousands, 0);
+  const combatAvailable = defense ? defense.activePersonnelThousands * (defense.combatAvailabilityPct ?? 35) / 100 : 0;
+  const sustainableProjection = defense ? defense.activePersonnelThousands * (defense.sustainableProjectionPct ?? 20) / 100 : 0;
+  const askTheaterAI = async (deployment: { location: string; personnelThousands: number; mission: string }) => {
+    if (!selected || theaterAILoading) return;
+    const question = `Théâtre d’opérations « ${deployment.location} » de ${selected.name} en ${world.currentDate}. ${deployment.personnelThousands} milliers de personnels y sont recensés pour la mission suivante : ${deployment.mission}. Explique pourquoi cette présence existe, quels objectifs politiques et militaires sont plausibles, puis propose trois options concrètes pour le gouvernement français avec leurs risques et conditions. Distingue les faits du référentiel 2000 des recommandations et n’invente aucune opération précise.`;
+    setSelectedTheaterLocation(deployment.location);
+    setTheaterAILoading(deployment.location);
+    try {
+      const local = answerAdvisorQuestion(world, question, { questionKind: 'strategy' });
+      const request = createAdvisorAIRequest(world, question, local, worldPulseSessionId());
+      const response = await fetch('/api/ai/advisor', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request) });
+      const payload = await response.json() as AdvisorAIResponse;
+      if (!payload.ok) { onNotice(`Appel IA indisponible : ${payload.message}`); return; }
+      const answer = payload.answer;
+      if (!answer || !Array.isArray(answer.options)) {
+        onNotice('Réponse IA incomplète : le théâtre reste inchangé.');
+        return;
+      }
+      setTheaterAI((current) => ({ ...current, [deployment.location]: `${answer.headline}\n${answer.keyJudgment}\n\n${answer.options.map((option) => `• ${option.title} — ${option.proposal} (${option.whyPlausible})`).join('\n')}` }));
+      onNotice(`Analyse IA reçue pour le théâtre « ${deployment.location} ».`);
+    } catch { onNotice('Le serveur IA est inaccessible ; aucune recommandation n’a été appliquée.'); }
+    finally { setTheaterAILoading(null); }
+  };
+  return <div className="space-y-4">
+    <section className="border border-border bg-card/70 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex items-center gap-2 font-semibold"><Shield className="size-4 text-primary" /> Dossier militaire</div><p className="mt-1 text-xs text-muted-foreground">Effectifs par type d’unité, qualité estimée et projection géographique. Les données sont un référentiel jouable de l’année 2000.</p></div><select aria-label="Pays du dossier militaire" value={selected?.id ?? world.playerCountryId} onChange={(event) => setSelectedId(event.target.value)} className="border border-border bg-background px-2 py-1.5 text-sm">{countries.map((country) => <option key={country.id} value={country.id}>{country.flag} {country.name}</option>)}</select></div>
+      {!defense ? <p className="mt-4 text-sm text-muted-foreground">Aucune donnée militaire pour ce pays.</p> : <>
+        <div className="mt-4 grid gap-2 sm:grid-cols-3"><Stat label="Budget défense" value={`${defense.budgetBillionUsd.toFixed(1)} Md$`} /><Stat label="Effectifs actifs" value={`${defense.activePersonnelThousands.toFixed(0)} k`} detail={unitTotal ? `inventaire ${unitTotal.toFixed(0)} k` : undefined} /><Stat label="Posture" value={defense.posture} /></div>
+        <div className="mt-4 grid gap-2 sm:grid-cols-3"><Stat label="Aptes au combat" value={`${combatAvailable.toFixed(0)} k`} detail={`${defense.combatAvailabilityPct ?? 35}% des actifs`} /><Stat label="Projection durable" value={`${sustainableProjection.toFixed(0)} k`} detail={`${defense.sustainableProjectionPct ?? 20}% des actifs`} /><Stat label="Sur théâtres" value={`${theaterTotal.toFixed(0)} k`} detail={`${(theaterTotal / Math.max(1, defense.activePersonnelThousands) * 100).toFixed(0)}% des actifs`} /></div>
+        <div className="mt-4 grid gap-px bg-border lg:grid-cols-2">
+          <section className="bg-card p-4"><div className="font-mono text-[10px] uppercase tracking-wider text-primary">Effectifs par type d’unité</div><div className="mt-3 space-y-2">{defense.unitTypes?.map((unit) => <div key={unit.id} className="border-b border-border/70 pb-2 last:border-0"><div className="flex items-center justify-between gap-3 text-sm"><span>{unit.label}</span><b>{unit.personnelThousands.toFixed(0)} k</b></div><div className="mt-1 flex items-center justify-between gap-2 text-[11px] text-muted-foreground"><span>Qualité {unit.quality}/100</span><span>{unit.qualityLabel}</span></div><div className="mt-1 h-1 bg-muted"><div className="h-full bg-primary" style={{ width: `${Math.max(0, Math.min(100, unit.quality))}%` }} /></div></div>) ?? <p className="text-xs text-muted-foreground">Inventaire détaillé non documenté.</p>}</div></section>
+          <section className="bg-card p-4"><div className="font-mono text-[10px] uppercase tracking-wider text-primary">Projection et stationnement</div><div className="mt-3 space-y-2">{defense.deployments?.map((deployment) => <div key={deployment.location} className={`border-b border-border/70 pb-2 last:border-0 ${selectedTheaterLocation === deployment.location ? 'bg-primary/5' : ''}`}><div className="flex items-center justify-between gap-3 text-sm"><span>{deployment.location}</span><div className="flex items-center gap-2"><b>{deployment.personnelThousands.toFixed(0)} k</b>{!/métropole|réserve|rotation/i.test(deployment.location) && <Button type="button" size="sm" variant="outline" onClick={() => void askTheaterAI(deployment)} disabled={theaterAILoading !== null}>{theaterAILoading === deployment.location ? 'Analyse…' : 'Appel IA'}</Button>}</div></div><p className="mt-1 text-[11px] text-muted-foreground">{deployment.mission}</p></div>) ?? <p className="text-xs text-muted-foreground">Répartition géographique non documentée.</p>}</div><div className="mt-3 border-t border-border pt-2 text-xs text-muted-foreground">Total recensé : <b className="text-foreground">{deploymentTotal.toFixed(0)} k</b> · théâtres extérieurs : <b className="text-foreground">{theaterTotal.toFixed(0)} k</b>. Les appels IA donnent une lecture stratégique et ne modifient pas la partie.</div></section>
+        </div>
+        <section className="border border-primary/30 bg-card/70 p-4"><div className="font-mono text-[10px] uppercase tracking-wider text-primary">Appel IA · théâtre d’opération</div>{!selectedTheaterLocation && <p className="mt-2 text-xs text-muted-foreground">Sélectionnez « Appel IA » sur un théâtre extérieur pour obtenir une explication de la présence, des objectifs et des options possibles.</p>}{selectedTheaterLocation && theaterAILoading === selectedTheaterLocation && <p className="mt-2 text-xs text-muted-foreground">Analyse du théâtre « {selectedTheaterLocation} » en cours…</p>}{selectedTheaterLocation && theaterAILoading !== selectedTheaterLocation && theaterAI[selectedTheaterLocation] && <div className="mt-2 whitespace-pre-line border-l-2 border-primary bg-primary/5 p-3 text-[11px] leading-5 text-muted-foreground">{theaterAI[selectedTheaterLocation]}</div>}</section>
+        <p className="mt-3 border-l-2 border-primary bg-primary/5 p-3 text-[11px] leading-5 text-muted-foreground"><b className="text-foreground">Pourquoi 353 k ne signifie pas 353 k combattants projetables :</b> les effectifs comprennent le soutien, les états-majors, la maintenance, la formation, la gendarmerie et les relèves. Le taux « aptes au combat » retire les absences et indisponibilités ; la « projection durable » réserve les forces nécessaires à la défense du territoire et aux rotations. Les théâtres extérieurs sont donc comparés à ces deux plafonds, pas au seul total administratif.</p>
+        <p className="mt-3 text-[11px] text-muted-foreground">Capacités structurantes : {defense.capabilities.join(' · ')}. La qualité combine entraînement, disponibilité et cohérence des équipements.</p>
+      </>}
+    </section>
+  </div>;
 }
 
 function EconomyPanel({ world }: { world: WorldState }) {
@@ -1233,7 +1306,7 @@ function DossiersPanel({ world, selectedId, onSelect, onWorldChange, onNotice, o
       const opened = openDiplomaticDialogueForDossier(world, selected.id, undefined, decision);
       if (!opened.ok) { onNotice(opened.error); return; }
       onWorldChange(opened.state); onOpenDiplomacy?.(opened.dialogueId);
-      onNotice(`Dialogue ouvert depuis « ${selected.title} » : la première réponse est locale et gratuite.`);
+      onNotice(`Dialogue ouvert depuis « ${selected.title} » : l’IA prépare directement la première réponse.`);
       return;
     }
     if (channel === 'delegation') {
@@ -1349,7 +1422,13 @@ function DiplomacyPanel({ world, onWorldChange, onNotice, initialDialogueId }: {
   const player = world.countries[world.playerCountryId];
   const countries = useMemo(() => Object.values(world.countries)
     .filter((country) => country.id !== world.playerCountryId)
-    .sort((a, b) => (b.weight - a.weight) || a.name.localeCompare(b.name)), [world.countries, world.playerCountryId]);
+    .sort((a, b) => a.name.localeCompare(b.name, 'fr')), [world.countries, world.playerCountryId]);
+  const [countrySearch, setCountrySearch] = useState('');
+  const filteredCountries = useMemo(() => {
+    const query = countrySearch.trim().toLocaleLowerCase('fr').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    if (!query) return countries;
+    return countries.filter((country) => country.name.toLocaleLowerCase('fr').normalize('NFD').replace(/[\u0300-\u036f]/g, '').startsWith(query));
+  }, [countries, countrySearch]);
   const [selectedId, setSelectedId] = useState(countries[0]?.id ?? '');
   const [participants, setParticipants] = useState<string[]>(countries[0]?.id ? [countries[0].id] : []);
   const [dialogueId, setDialogueId] = useState<string | null>(null);
@@ -1357,6 +1436,7 @@ function DiplomacyPanel({ world, onWorldChange, onNotice, initialDialogueId }: {
   const [draft, setDraft] = useState('');
   const [isThinking, setIsThinking] = useState(false);
   const [lastAIUsage, setLastAIUsage] = useState<string | undefined>();
+  const autoStartedDialogueIds = useRef(new Set<string>());
   const dialogue = dialogueId ? world.diplomaticDialogues?.[dialogueId] : undefined;
   useEffect(() => {
     if (!initialDialogueId || !world.diplomaticDialogues?.[initialDialogueId]) return;
@@ -1366,7 +1446,7 @@ function DiplomacyPanel({ world, onWorldChange, onNotice, initialDialogueId }: {
     setOpen(true);
   }, [initialDialogueId, world.diplomaticDialogues, player.id]);
   const recentDialogues = Object.values(world.diplomaticDialogues ?? {}).slice().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-  const sheetCountries = countries.map((country) => {
+  const sheetCountries = filteredCountries.map((country) => {
     const relation = world.relations[`${player.id}:${country.id}`] ?? world.relations[`${country.id}:${player.id}`];
     const sheet = countrySheet(world, country.id);
     return {
@@ -1380,6 +1460,7 @@ function DiplomacyPanel({ world, onWorldChange, onNotice, initialDialogueId }: {
   const selectedSheetCountry = sheetCountries.find((item) => item.id === selectedId) ?? sheetCountries[0] ?? {
     id: player.id, name: player.name, flag: player.flag, role: player.politics.governmentLabel, posture: 'Canal national', relation: 50, trust: 50, interests: [], redLines: [],
   };
+  const participantOptions = sheetCountries.filter((country) => !dialogue?.participantIds.includes(country.id));
   const messages = dialogue?.turns.map((turn, index) => ({
     id: index, author: turn.speakerId === player.id ? 'player' as const : 'foreign' as const,
     text: turn.publicMessage, meta: `${world.countries[turn.speakerId]?.name ?? turn.speakerId} · ${turn.date}`,
@@ -1395,6 +1476,15 @@ function DiplomacyPanel({ world, onWorldChange, onNotice, initialDialogueId }: {
     if (!ids.length) { onNotice('Sélectionnez au moins un interlocuteur.'); return; }
     setDialogueId(null); setSelectedId(ids[0]); setDraft(''); setOpen(true);
   };
+  const openIndependentDialogue = () => {
+    const targetId = selectedId || countries[0]?.id;
+    if (!targetId) { onNotice('Sélectionnez un interlocuteur.'); return; }
+    setParticipants([targetId]);
+    setDialogueId(null);
+    setSelectedId(targetId);
+    setDraft('');
+    setOpen(true);
+  };
   const send = () => {
     if (!draft.trim()) return;
     const currentWorld = worldRef.current;
@@ -1408,7 +1498,22 @@ function DiplomacyPanel({ world, onWorldChange, onNotice, initialDialogueId }: {
     const result = openDiplomaticDialogue(currentWorld, participants.length ? participants : [selectedId], draft);
     if (!result.ok) { onNotice(result.error); return; }
     onWorldChange(result.state); setDialogueId(result.dialogueId); setDraft('');
-    onNotice('Dialogue ouvert : la première réponse a été produite localement, sans appel IA.');
+    setIsThinking(true);
+    setLastAIUsage(undefined);
+    onNotice('Dialogue ouvert : l’IA prépare la première réponse…');
+    const request = requestDiplomaticDialogueAI(result.state, result.dialogueId);
+    if (!request.ok) { setIsThinking(false); onNotice(request.error); return; }
+    onWorldChange(request.state);
+    void executeAIJob(request.state, request.jobId, worldPulseSessionId()).then((aiResult) => {
+      if (!aiResult.ok) { onNotice(`Première réponse IA indisponible : ${aiResult.response.message}`); return; }
+      onWorldChange(aiResult.state);
+      const usage = aiResult.response.usage;
+      setLastAIUsage(`${usage.inputTokens} entrées · ${usage.outputTokens} sorties · $${usage.estimatedCostUsd.toFixed(4)}`);
+      const updated = aiResult.state.diplomaticDialogues[result.dialogueId];
+      if (updated) setSelectedId(updated.activeSpeakerId);
+      onNotice('Première réponse diplomatique IA reçue.');
+    }).catch(() => onNotice('Le serveur IA est inaccessible ; le dialogue reste en attente.'))
+      .finally(() => setIsThinking(false));
   };
   const askAI = async () => {
     if (!dialogue || dialogue.status !== 'awaiting_ai' || isThinking) return;
@@ -1428,12 +1533,46 @@ function DiplomacyPanel({ world, onWorldChange, onNotice, initialDialogueId }: {
     } catch { onNotice('Le serveur IA est inaccessible ; aucun effet diplomatique n’a été appliqué.'); }
     finally { setIsThinking(false); }
   };
+  useEffect(() => {
+    if (!initialDialogueId || !dialogue || dialogue.id !== initialDialogueId || dialogue.status !== 'awaiting_ai' || autoStartedDialogueIds.current.has(initialDialogueId)) return;
+    autoStartedDialogueIds.current.add(initialDialogueId);
+    const currentWorld = worldRef.current;
+    const request = requestDiplomaticDialogueAI(currentWorld, initialDialogueId);
+    if (!request.ok) { onNotice(request.error); return; }
+    onWorldChange(request.state);
+    setIsThinking(true);
+    setLastAIUsage(undefined);
+    void executeAIJob(request.state, request.jobId, worldPulseSessionId()).then((result) => {
+      if (!result.ok) { onNotice(`Première réponse IA indisponible : ${result.response.message}`); return; }
+      onWorldChange(result.state);
+      const usage = result.response.usage;
+      setLastAIUsage(`${usage.inputTokens} entrées · ${usage.outputTokens} sorties · $${usage.estimatedCostUsd.toFixed(4)}`);
+      const updated = result.state.diplomaticDialogues[initialDialogueId];
+      if (updated) setSelectedId(updated.activeSpeakerId);
+      onNotice('Première réponse diplomatique IA reçue.');
+    }).catch(() => onNotice('Le serveur IA est inaccessible ; le dialogue reste en attente.'))
+      .finally(() => setIsThinking(false));
+  }, [dialogue, initialDialogueId, onNotice, onWorldChange]);
   const resolveResponse = (decision: 'accept' | 'refuse' | 'request_revision' | 'acknowledge') => {
     if (!dialogue) return;
     const result = resolveDiplomaticDialogueResponse(worldRef.current, dialogue.id, decision);
     if (!result.ok) { onNotice(result.error); return; }
     onWorldChange(result.state);
     onNotice(decision === 'accept' ? 'Engagement diplomatique inscrit dans le moteur et le registre.' : decision === 'refuse' ? 'Position refusée : le canal est fermé.' : decision === 'acknowledge' ? 'Position reçue : aucun engagement formel n’a été créé.' : 'Révision demandée : confirmez ensuite l’appel IA pour obtenir une nouvelle réponse.');
+  };
+  const addParticipant = (countryId: string) => {
+    if (!dialogue) return;
+    const result = addDiplomaticDialogueParticipant(worldRef.current, dialogue.id, countryId);
+    if (!result.ok) { onNotice(result.error); return; }
+    onWorldChange(result.state); setSelectedId(countryId);
+    onNotice(`${world.countries[countryId]?.name ?? countryId} a rejoint le canal diplomatique.`);
+  };
+  const selectDialogue = (id: string) => {
+    const target = worldRef.current.diplomaticDialogues?.[id];
+    if (!target) return;
+    setDialogueId(id);
+    setSelectedId(target.activeSpeakerId === player.id ? target.participantIds.find((participantId) => participantId !== player.id) ?? target.activeSpeakerId : target.activeSpeakerId);
+    setOpen(true);
   };
   const memories = selectedId ? [
     ...(world.relations[`${player.id}:${selectedId}`]?.memories ?? world.relations[`${selectedId}:${player.id}`]?.memories ?? []).slice(-4),
@@ -1445,16 +1584,17 @@ function DiplomacyPanel({ world, onWorldChange, onNotice, initialDialogueId }: {
     .slice(-6) : [];
   return <div className="space-y-4">
     <section className="border border-border bg-card/70 p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex items-center gap-2 font-semibold"><Send className="size-4 text-primary" /> Centre diplomatique</div><p className="mt-1 text-xs text-muted-foreground">Ouvrez un canal avec n’importe quel pays. Le premier retour est local ; chaque réponse IA ultérieure est explicitement confirmée et facturée.</p></div><Button onClick={openNewDialogue}>Nouveau dialogue</Button></div>
+      <div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex items-center gap-2 font-semibold"><Send className="size-4 text-primary" /> Centre diplomatique</div><p className="mt-1 text-xs text-muted-foreground">Ouvrez un canal avec n’importe quel pays. La première réponse est générée par IA ; les suivantes restent lancées explicitement.</p></div><Button onClick={openNewDialogue}>Nouveau dialogue</Button></div>
       <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_1fr]">
         <label className="text-xs text-muted-foreground">Pays participants (Ctrl/Cmd pour un groupe)
-          <select multiple value={participants} onChange={(event) => setParticipants(Array.from(event.target.selectedOptions, (option) => option.value))} className="mt-1 min-h-28 w-full border border-border bg-background p-2 text-sm">{countries.map((country) => <option key={country.id} value={country.id}>{country.flag} {country.name}</option>)}</select>
+          <input value={countrySearch} onChange={(event) => setCountrySearch(event.target.value)} placeholder="Rechercher par début du nom…" aria-label="Rechercher un pays" className="mt-1 w-full border border-border bg-background px-2 py-1.5 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-primary" />
+          <select multiple value={participants} onChange={(event) => setParticipants(Array.from(event.target.selectedOptions, (option) => option.value))} className="mt-1 min-h-28 w-full border border-border bg-background p-2 text-sm">{filteredCountries.map((country) => <option key={country.id} value={country.id}>{country.flag} {country.name}</option>)}</select>
         </label>
-        <div><div className="text-xs text-muted-foreground">Dialogues mémorisés</div><div className="mt-1 max-h-28 space-y-1 overflow-y-auto">{recentDialogues.length ? recentDialogues.slice(0, 8).map((item) => <button key={item.id} onClick={() => { setDialogueId(item.id); setSelectedId(item.activeSpeakerId === player.id ? item.participantIds.find((id) => id !== player.id) ?? item.activeSpeakerId : item.activeSpeakerId); setOpen(true); }} className={`block w-full border px-2 py-1 text-left text-xs ${dialogueId === item.id ? 'border-primary bg-primary/10' : 'border-border hover:bg-muted/30'}`}>{item.kind === 'multilateral_dialogue' ? 'Groupe' : 'Bilatéral'} · {item.participantIds.filter((id) => id !== player.id).map((id) => world.countries[id]?.name ?? id).join(', ')} · {item.status}</button>) : <p className="border border-dashed border-border p-3 text-xs text-muted-foreground">Aucun dialogue ouvert.</p>}</div></div>
+        <div><div className="text-xs text-muted-foreground">Dialogues mémorisés</div><div className="mt-1 max-h-28 space-y-1 overflow-y-auto">{recentDialogues.length ? recentDialogues.slice(0, 8).map((item) => <button key={item.id} onClick={() => selectDialogue(item.id)} className={`block w-full border px-2 py-1 text-left text-xs ${dialogueId === item.id ? 'border-primary bg-primary/10' : 'border-border hover:bg-muted/30'}`}>{item.kind === 'multilateral_dialogue' ? 'Groupe' : 'Bilatéral'} · {item.participantIds.filter((id) => id !== player.id).map((id) => world.countries[id]?.name ?? id).join(', ')} · {item.status}</button>) : <p className="border border-dashed border-border p-3 text-xs text-muted-foreground">Aucun dialogue ouvert.</p>}</div></div>
       </div>
       {lastAIUsage && <div className="mt-3 font-mono text-[10px] text-muted-foreground">Dernier appel : {lastAIUsage}</div>}
     </section>
-    <DiplomacySheet open={open} onOpenChange={setOpen} countries={sheetCountries} selectedId={selectedSheetCountry.id} onSelectCountry={(id) => { setSelectedId(id); if (dialogue && !dialogue.participantIds.includes(id)) setDialogueId(null); }} selectedCountry={selectedSheetCountry} messages={messages} structuredResponse={dialogue?.lastResponse} responseResolution={dialogue?.resolution} onResolveResponse={dialogue?.status === 'awaiting_player' && dialogue?.lastResponse && !dialogue?.resolution ? resolveResponse : undefined} draft={draft} onDraftChange={setDraft} onSend={send} isThinking={isThinking} playerCountryName={player.name} participantCount={dialogue?.participantIds.length ?? (participants.length + 1)} activeSpeakerLabel={dialogue ? (world.countries[dialogue.activeSpeakerId]?.name ?? dialogue.activeSpeakerId) : undefined} statusLabel={!dialogue ? 'Aucun canal ouvert — rédigez le premier message' : dialogue.status === 'awaiting_ai' ? 'Réponse IA disponible — validation explicite nécessaire' : dialogue.status === 'awaiting_player' ? 'Votre tour — vous pouvez répondre ou demander une option structurée' : 'Canal fermé'} quickReplies={dialogue?.status === 'awaiting_player' ? quickReplies : []} onQuickReply={(value) => setDraft(value)} canRequestAI={Boolean(dialogue && dialogue.status === 'awaiting_ai')} onRequestAI={askAI} memories={memories} agreements={agreements} onResolveEvent={() => undefined} />
+    <DiplomacySheet open={open} onOpenChange={setOpen} countries={sheetCountries} selectedId={selectedSheetCountry.id} participantIds={dialogue?.participantIds} participantOptions={dialogue ? participantOptions : []} onAddParticipant={dialogue ? addParticipant : undefined} dialogues={recentDialogues.slice(0, 8).map((item) => ({ id: item.id, kind: item.kind, participantIds: item.participantIds, status: item.status, label: item.participantIds.filter((id) => id !== player.id).map((id) => world.countries[id]?.name ?? id).join(', ') }))} selectedDialogueId={dialogueId} onSelectDialogue={selectDialogue} onNewDialogue={openIndependentDialogue} onSelectCountry={(id) => { if (dialogue && !dialogue.participantIds.includes(id)) return; setSelectedId(id); }} selectedCountry={selectedSheetCountry} messages={messages} structuredResponse={dialogue?.lastResponse} responseResolution={dialogue?.resolution} onResolveResponse={dialogue?.status === 'awaiting_player' && dialogue?.lastResponse && !dialogue?.resolution ? resolveResponse : undefined} draft={draft} onDraftChange={setDraft} onSend={send} isThinking={isThinking} playerCountryName={player.name} participantCount={dialogue?.participantIds.length ?? (participants.length + 1)} activeSpeakerLabel={dialogue ? (world.countries[dialogue.activeSpeakerId]?.name ?? dialogue.activeSpeakerId) : undefined} statusLabel={!dialogue ? 'Aucun canal ouvert — rédigez le premier message' : dialogue.status === 'awaiting_ai' ? 'Réponse IA disponible — validation explicite nécessaire' : dialogue.status === 'awaiting_player' ? 'Votre tour — vous pouvez répondre ou demander une option structurée' : 'Canal fermé'} quickReplies={dialogue?.status === 'awaiting_player' ? quickReplies : []} onQuickReply={(value) => setDraft(value)} canRequestAI={Boolean(dialogue && dialogue.status === 'awaiting_ai')} onRequestAI={askAI} memories={memories} agreements={agreements} onResolveEvent={() => undefined} />
   </div>;
 }
 
@@ -1493,7 +1633,7 @@ export default function Home() {
   const [world, setWorld] = useState<WorldState>(() => createWorld2000('FRA'));
   const [startingCountryId, setStartingCountryId] = useState<string>('FRA');
   const [pulseAudit, setPulseAudit] = useState<WorldPulseAIAuditEntry[]>(readWorldPulseAudit);
-  const [panel, setPanel] = useState<Panel>('world');
+  const [panel, setPanel] = useState<Panel>('map');
   const [selectedDossierId, setSelectedDossierId] = useState<string | null>(null);
   const [selectedDialogueId, setSelectedDialogueId] = useState<string | null>(null);
   const [notice, setNotice] = useState('Scénario France · 1er janvier 2000 chargé.');
@@ -1572,7 +1712,7 @@ export default function Home() {
   const reset = () => { setWorld(createWorld2000(world.playerCountryId)); setLastBriefing(null); setNotice(`Scénario ${player.name} · 2000 réinitialisé.`); };
   const startCountryGame = () => {
     const next = createWorld2000(startingCountryId);
-    setWorld(next); setLastBriefing(null); setSelectedDossierId(null); setSelectedDialogueId(null); setPanel('world');
+    setWorld(next); setLastBriefing(null); setSelectedDossierId(null); setSelectedDialogueId(null); setPanel('map');
     setNotice(`Nouvelle partie ${next.countries[next.playerCountryId].name} · 1er janvier 2000 chargée.`);
   };
   const clearPulseAudit = () => { localStorage.removeItem(worldPulseAuditStorageKey); setPulseAudit([]); };
@@ -1597,6 +1737,7 @@ export default function Home() {
       {panel === 'energy' && <EnergyPanel world={world} />}
       {panel === 'industry' && <IndustryPanel world={world} onWorldChange={setWorld} onNotice={setNotice} />}
       {panel === 'reforms' && <ReformsPanel world={world} onWorldChange={setWorld} onNotice={setNotice} />}
+      {panel === 'military' && <MilitaryPanel world={world} onNotice={setNotice} />}
       {panel === 'dossiers' && <DossiersPanel world={world} selectedId={selectedDossierId} onSelect={setSelectedDossierId} onWorldChange={setWorld} onNotice={setNotice} onOpenDiplomacy={(dialogueId) => { setSelectedDialogueId(dialogueId); setPanel('diplomacy'); }} />}
       {panel === 'diplomacy' && <DiplomacyPanel world={world} onWorldChange={setWorld} onNotice={setNotice} initialDialogueId={selectedDialogueId} />}
       {panel === 'advisor' && <AdvisorPanel world={world} onWorldChange={setWorld} onNotice={setNotice} />}

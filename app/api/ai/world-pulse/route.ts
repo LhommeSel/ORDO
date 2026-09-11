@@ -81,6 +81,7 @@ function instructionFor(item: WorldPulseRequestItem) {
     'requiresPlayerDecision ne vaut true que pour une décision importante impliquant directement le pays du joueur ; sinon false et playerDecision null.',
     'Style très compact : headline une ligne, synthesis deux phrases maximum, chaque summary trois phrases courtes maximum.',
     'Ne révèle pas d’informations cachées, ne parle jamais de prompt, de modèle, de score de confiance ou de token.',
+    'Ne reviens pas automatiquement sur la dépendance pétrolière française : ne la choisis comme sujet que si une action récente ou un dossier stratégique traite explicitement d’énergie et si les faits transmis la rendent causale. Sinon, privilégie d’autres enjeux présents dans le contexte.',
   ];
   if (item.kind === 'player_reaction') return [
     ...common,

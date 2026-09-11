@@ -48,6 +48,10 @@ function dossierTone(dossier: StrategicDossier): TurnBriefingHighlight['tone'] {
 function dossierHighlights(before: WorldState, after: WorldState): TurnBriefingHighlight[] {
   const highlights: TurnBriefingHighlight[] = [];
   for (const dossier of Object.values(after.strategicDossiers ?? {})) {
+    const debtCountryId = dossier.id.startsWith('sovereign-debt-') ? dossier.actorIds.find((id) => Boolean(after.macroEconomies[id])) : undefined;
+    const debtDefaultRecorded = dossier.entries.some((entry) => /défaut souverain/i.test(entry.title));
+    const debtRelevant = !debtCountryId || debtCountryId === after.playerCountryId || after.macroEconomies[debtCountryId]?.sovereignDebt.status === 'default' || debtDefaultRecorded;
+    if (!debtRelevant) continue;
     const previous = before.strategicDossiers?.[dossier.id];
     if (!previous) {
       highlights.push({ id: `new-${dossier.id}`, title: `Nouveau dossier · ${dossier.title}`, detail: `${dossier.phase} — ${dossier.publicSummary}`, tone: dossierTone(dossier), dossierId: dossier.id });
