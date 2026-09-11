@@ -1326,6 +1326,10 @@ export type StrategicDossier = {
   lastAutonomousReviewAt?: ISODate;
   /** Position de l'action de pouls dans le journal, pour distinguer deux faits du même mois. */
   lastAutonomousReviewActionCount?: number;
+  /** Dernière revue locale d'un dossier modéré ou mineur, sans appel IA. */
+  lastLocalReviewAt?: ISODate;
+  /** Position de la revue locale dans le journal pour ne pas la recompter comme un signal. */
+  lastLocalReviewActionCount?: number;
   lastViewedEntryId?: string;
   playerStance?: string;
   commitments: string[];

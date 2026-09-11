@@ -28,7 +28,7 @@ import {
 } from './power-struggles';
 import { interpretPlayerIntent, rankEnergySuppliers } from './intent';
 import {
-  advanceDossierEscalation, advanceDossierLifecycle, assessDossierResolution, dossierUnreadCount, dossiersRequiringAttention, markDossierViewed, reactivateDossier, resolveDossierDecision, setDossierFollowed,
+  advanceDossierEscalation, advanceDossierLifecycle, advanceDossierReviewQueue, assessDossierResolution, dossierUnreadCount, dossiersRequiringAttention, markDossierViewed, reactivateDossier, resolveDossierDecision, setDossierFollowed,
 } from './dossiers';
 import { advanceDossierEffects, dossierPressureProfile, selectDossiersForEffects } from './dossier-effects';
 import { applyWorldPulseAnswer, createWorldPulseRequest, executeWorldPulse } from './ai/world-pulse';
@@ -722,6 +722,24 @@ test('les voies de suivi des dossiers ont des cadences indépendantes', () => {
   assert.equal(state.currentDate, '2001-01-01');
   assert.equal(new Set(state.actions.map((action) => action.id)).size, state.actions.length);
   assert.equal(new Set(state.ledger.map((change) => change.id)).size, state.ledger.length);
+});
+
+test('une revue locale secondaire attend son échéance puis reste silencieuse', () => {
+  const initial = createFrance2000World();
+  const moderate = initial.strategicDossiers['current-lisbon-convergence'];
+  assert.ok(moderate);
+  if (!moderate) return;
+  const june = { ...initial, currentDate: '2000-06-01' as ISODate };
+  const juneState = advanceDossierReviewQueue(june);
+  assert.equal(juneState.strategicDossiers[moderate.id]?.lastLocalReviewAt, undefined);
+  const july = { ...june, currentDate: '2000-07-01' as ISODate };
+  const reviewed = advanceDossierReviewQueue(july);
+  const localReviews = reviewed.actions.filter((action) => action.metadata?.dossierReview === true && action.metadata.dossierReviewLane === 'moderate');
+  assert.ok(localReviews.length >= 1);
+  assert.equal(reviewed.strategicDossiers[moderate.id]?.lastLocalReviewAt, '2000-07-01');
+  const august = { ...reviewed, currentDate: '2000-08-01' as ISODate };
+  const after = advanceDossierReviewQueue(august);
+  assert.equal(after.actions.filter((action) => action.metadata?.dossierReview === true && action.metadata.dossierReviewLane === 'moderate').length, localReviews.length);
 });
 
 test('un choix lié à un dossier est détecté même s’il est produit au même mois que la précédente revue', () => {

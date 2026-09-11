@@ -1,6 +1,7 @@
 import { commitWorldAction } from './ledger';
 import { historicalAnchorChannelEffects } from './history';
 import { makeDossierDecision } from './dossier-decisions';
+import { rankDossierReviews } from './ai/dossier-scheduler';
 import type {
   ActionOrigin, CountryId, DossierDecision, DossierDecisionChannel, DossierEntry, StrategicDossier, Visibility, WorldState,
 } from './types';
@@ -269,6 +270,60 @@ export function advanceDossierLifecycle(state: WorldState) {
             importance: dossier.importance, actorIds: dossier.actorIds, requiresDecision: false, visibility: 'player',
           },
           reason: 'La clôture est conservée comme une étape explicite de la chronologie.', visibility: 'player',
+        },
+      ],
+    });
+  }
+  return next;
+}
+
+/**
+ * Résout la file locale des dossiers secondaires. Une revue ne fait pas
+ * avancer artificiellement la situation : elle produit seulement un point de
+ * situation traçable et décale la prochaine échéance. Les dossiers majeurs
+ * restent exclusivement dans la file stratégique/pouls IA.
+ */
+export function advanceDossierReviewQueue(state: WorldState, limit = 4) {
+  const schedules = rankDossierReviews(state, 64)
+    .filter((review) => review.due && (review.lane === 'moderate' || review.lane === 'minor'))
+    .slice(0, limit);
+  let next = state;
+  for (const schedule of schedules) {
+    const dossier = next.strategicDossiers[schedule.dossierId];
+    if (!dossier || dossier.status === 'resolved' || dossier.sleepingAt) continue;
+    const signalText = schedule.signalScore > 0
+      ? ` ${schedule.signalScore} points de signaux récents justifient ce contrôle.`
+      : ' Aucun signal causal nouveau n’impose une escalade.';
+    next = commitWorldAction(next, {
+      kind: 'political', actorId: next.playerCountryId,
+      targetIds: dossier.actorIds.filter((id) => id !== next.playerCountryId),
+      origin: 'local_rule', visibility: 'player',
+      intent: `Revue locale du dossier « ${dossier.title} »`,
+      metadata: { dossierReview: true, dossierReviewLane: schedule.lane },
+      effects: [
+        {
+          kind: 'dossier_patch', dossierId: dossier.id,
+          patch: {
+            updatedAt: next.currentDate,
+            lastLocalReviewAt: next.currentDate,
+            // L'action de revue est ajoutée juste après l'état courant.
+            lastLocalReviewActionCount: next.actions.length + 1,
+          },
+          reason: `Le calendrier ${schedule.lane} déclenche une revue locale sans modifier la trajectoire.`, visibility: 'player',
+        },
+        {
+          kind: 'dossier_entry_add', dossierId: dossier.id,
+          entry: {
+            id: `dossier-local-review-${dossier.id}-${next.currentDate}`,
+            date: next.currentDate,
+            title: `Revue locale · ${schedule.lane}`,
+            summary: `Le moteur reprend le dossier à son échéance.${signalText} La situation reste consultable ; aucune décision n’est imposée par cette revue.`,
+            importance: dossier.importance,
+            actorIds: dossier.actorIds,
+            requiresDecision: false,
+            visibility: 'player',
+          },
+          reason: 'Le point de situation est conservé dans la chronologie du dossier.', visibility: 'player',
         },
       ],
     });

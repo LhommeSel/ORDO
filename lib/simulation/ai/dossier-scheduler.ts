@@ -41,9 +41,29 @@ function addMonths(date: ISODate, months: number): ISODate {
   return value.toISOString().slice(0, 10) as ISODate;
 }
 
+function latestReviewAt(dossier: StrategicDossier): ISODate {
+  return [dossier.updatedAt, dossier.lastAutonomousReviewAt, dossier.lastLocalReviewAt]
+    .filter((value): value is ISODate => Boolean(value))
+    .sort()
+    .at(-1) ?? dossier.updatedAt;
+}
+
+function latestReviewActionCount(dossier: StrategicDossier): number | undefined {
+  const counts = [dossier.lastAutonomousReviewActionCount, dossier.lastLocalReviewActionCount]
+    .filter((value): value is number => typeof value === 'number');
+  return counts.length ? Math.max(...counts) : undefined;
+}
+
 function touchesDossier(action: WorldAction, dossier: StrategicDossier) {
   const actors = new Set(dossier.actorIds);
-  return actors.has(action.actorId) || (action.targetIds ?? []).some((id) => actors.has(id));
+  const metadata = action.metadata as Record<string, unknown> | undefined;
+  if (metadata?.dossierId === dossier.id || metadata?.linkedDossierId === dossier.id) return true;
+  if (metadata?.historicalAnchorId && metadata.historicalAnchorId === dossier.relatedAnchorId) return true;
+  if ((action.targetIds ?? []).some((id) => actors.has(id))) return true;
+  // Une action du joueur sans cible explicite peut néanmoins concerner son
+  // propre dossier ; les écritures autonomes restent ciblées par leurs
+  // destinataires pour ne pas réveiller tous les dossiers partageant un acteur.
+  return action.origin === 'player' && actors.has(action.actorId);
 }
 
 /**
@@ -54,6 +74,7 @@ function touchesDossier(action: WorldAction, dossier: StrategicDossier) {
 function actionSignal(action: WorldAction, dossier: StrategicDossier): number {
   if (!touchesDossier(action, dossier) || action.kind === 'time_advance' || action.metadata?.minorEvent === true) return 0;
   if (action.metadata?.worldPulse === true) return 0;
+  if (action.metadata?.dossierReview === true) return 0;
   if (action.origin === 'player') return 34;
   if (action.origin === 'historical' || action.kind === 'historical') return 28;
   if (['diplomatic', 'energy', 'defense', 'intelligence', 'industrial'].includes(action.kind)) return 14;
@@ -61,8 +82,9 @@ function actionSignal(action: WorldAction, dossier: StrategicDossier): number {
 }
 
 function meaningfulSignalsSince(state: WorldState, dossier: StrategicDossier, since: ISODate) {
-  const actions = typeof dossier.lastAutonomousReviewActionCount === 'number'
-    ? state.actions.slice(Math.max(0, dossier.lastAutonomousReviewActionCount))
+  const reviewActionCount = latestReviewActionCount(dossier);
+  const actions = reviewActionCount !== undefined
+    ? state.actions.slice(Math.min(state.actions.length, reviewActionCount))
     : state.actions.filter((action) => hasDateAfter(action.createdAt, since));
   return actions
     .map((action) => actionSignal(action, dossier))
@@ -70,7 +92,7 @@ function meaningfulSignalsSince(state: WorldState, dossier: StrategicDossier, si
 }
 
 function reviewScheduleFor(state: WorldState, dossier: StrategicDossier): DossierReviewSchedule {
-  const lastReview = dossier.lastAutonomousReviewAt ?? dossier.updatedAt;
+  const lastReview = latestReviewAt(dossier);
   const signals = meaningfulSignalsSince(state, dossier, lastReview);
   const signalScore = signals.reduce((sum, signal) => sum + signal, 0);
   const strongestSignal = Math.max(0, ...signals);
@@ -87,12 +109,15 @@ function reviewScheduleFor(state: WorldState, dossier: StrategicDossier): Dossie
       : lane === 'moderate' ? (signalScore > 0 ? 3 : 6)
         : (signalScore > 0 ? 6 : 12);
   const nextReviewAt = requiresImmediateReview ? state.currentDate : addMonths(lastReview, intervalMonths);
-  const due = !dossier.lastAutonomousReviewAt || requiresImmediateReview || state.currentDate >= nextReviewAt;
+  // Une première revue secondaire reste planifiée : l'absence d'historique ne
+  // doit pas la rendre due dès qu'un ancien état est consulté à une date
+  // ultérieure. Seule une décision/signal urgent ou l'échéance la libère.
+  const due = requiresImmediateReview || state.currentDate >= nextReviewAt;
   const reasons = [
     ...(hasPendingDecision ? ['décision en attente'] : []),
     ...(strongestSignal >= 28 ? ['action ou choc directement lié'] : []),
     ...(strongestSignal > 0 && strongestSignal < 28 ? ['mouvement concret des acteurs'] : []),
-    ...(!requiresImmediateReview && !dossier.lastAutonomousReviewAt ? ['première revue à planifier'] : []),
+    ...(!requiresImmediateReview && !dossier.lastAutonomousReviewAt && !dossier.lastLocalReviewAt ? ['première revue à planifier'] : []),
     ...(!requiresImmediateReview && !signals.length ? [`cadence calme : ${intervalMonths} mois`] : []),
   ];
   return { dossierId: dossier.id, importance: dossier.importance, lane, nextReviewAt, intervalMonths, due, requiresImmediateReview, signalScore, reasons };

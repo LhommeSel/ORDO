@@ -9,7 +9,7 @@ import { advanceMacroeconomy } from './macro-economy';
 import { advancePowerStruggles, detectPowerStruggleOpportunities } from './power-struggles';
 import { advanceStakeholderReactions } from './stakeholders';
 import { runMinorEventCycle } from './minor-events';
-import { advanceDossierEscalation, advanceDossierLifecycle } from './dossiers';
+import { advanceDossierEscalation, advanceDossierLifecycle, advanceDossierReviewQueue } from './dossiers';
 import { reactivateDossiersOnWorldSignals } from './dossiers';
 import { advanceDossierEffects } from './dossier-effects';
 import { compactWorldForSave } from './persistence';
@@ -127,6 +127,7 @@ function simulationPhases(
     { id: 'political-cycles', advance: (state, context) => context.reachedMonthBoundary ? advancePoliticalCycles(state) : state },
     { id: 'dossier-escalation', advance: (state, context) => context.reachedMonthBoundary ? advanceDossierEscalation(state) : state },
     { id: 'dossier-lifecycle', advance: (state, context) => context.reachedMonthBoundary ? advanceDossierLifecycle(state) : state },
+    { id: 'dossier-review-queue', advance: (state, context) => context.reachedMonthBoundary ? advanceDossierReviewQueue(state) : state },
     { id: 'stakeholders', advance: (state, context) => advanceStakeholderReactions(state, context.elapsedMonths) },
     { id: 'power-opportunities', advance: (state) => detectPowerStruggleOpportunities(state) },
     { id: 'power-struggles', advance: (state, context) => advancePowerStruggles(state, context.elapsedMonths) },
