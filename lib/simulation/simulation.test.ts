@@ -602,6 +602,46 @@ test('un rejet du pouls IA est isolé et conserve le tour local en secours', asy
   assert.equal(result.state.currentDate, launched.state.currentDate);
 });
 
+test('un pouls IA valide traverse toute la boucle et matérialise une initiative autonome bornée', async () => {
+  const initial = createFrance2000World();
+  const request = createWorldPulseRequest(initial, initial.actions.length, 1, 'test-world-pulse-e2e');
+  const autonomy = request.pulses.find((item) => item.kind === 'world_autonomy');
+  assert.ok(autonomy);
+  if (!autonomy) return;
+  const fact = autonomy.context.facts.find((item) => item.id === 'dossier:current-dotcom-exuberance');
+  assert.ok(fact);
+  if (!fact) return;
+  const fakeFetcher = async () => new Response(JSON.stringify({
+    ok: true,
+    results: [{
+      id: autonomy.id, kind: autonomy.kind, ok: true,
+      answer: {
+        headline: 'Consultations financières ciblées',
+        synthesis: 'Les partenaires ouvrent un canal limité sur le risque technologique.',
+        requestedFactIds: [fact.id],
+        proposals: [{
+          dossierId: 'current-dotcom-exuberance', historicalAnchorId: null,
+          title: 'Consultation transatlantique', kind: 'economic', importance: 'major',
+          actorIds: ['USA', 'FRA'], regionTags: ['Atlantique'], phase: 'Consultations', trend: 'stable',
+          summary: 'Washington propose une consultation technique avec Paris.',
+          requiresPlayerDecision: false, playerDecision: null, factIds: [fact.id], relationEffects: [],
+          autonomousAction: {
+            actorId: 'USA', targetIds: ['FRA'], category: 'diplomacy',
+            objective: 'Ouvrir un canal de consultation financière.', operation: 'contact',
+          },
+        }],
+      },
+      usage: { model: 'gpt-5.6-luna', inputTokens: 10, cachedInputTokens: 0, outputTokens: 10, estimatedCostUsd: 0, latencyMs: 1 },
+    }],
+    usage: { model: 'gpt-5.6-luna', inputTokens: 10, cachedInputTokens: 0, outputTokens: 10, estimatedCostUsd: 0, latencyMs: 1, remainingSessionRequestsToday: 19 },
+  }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  const result = await executeWorldPulse(initial, request, fakeFetcher as typeof fetch);
+  assert.equal(result.ok, true);
+  assert.ok(result.updatedDossierIds.includes('current-dotcom-exuberance'));
+  assert.equal(result.queuedAutonomousPrograms, 1);
+  assert.ok(Object.values(result.state.actionPrograms).some((program) => program.actorId === 'USA' && program.linkedDossierId === 'current-dotcom-exuberance'));
+});
+
 test('une réponse tardive du pouls conserve les actions faites pendant son calcul', async () => {
   const initial = createFrance2000World();
   const request = createWorldPulseRequest(initial, initial.actions.length, 1, 'test-world-pulse-rebase');

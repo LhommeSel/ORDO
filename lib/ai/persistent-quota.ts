@@ -26,6 +26,8 @@ type D1Like = {
   };
 };
 
+type D1RunResult = { meta?: { changes?: number } };
+
 let warnedUnavailable = false;
 
 /**
@@ -69,16 +71,25 @@ async function readBudget(database: D1Like, windowStart: string) {
 async function claimWindow(database: D1Like, scope: 'ip_day' | 'session_day', subjectKey: string, windowStart: string, resetAt: number, limit: number) {
   // Une clause WHERE sur l'UPSERT empêche de compter une tentative déjà
   // refusée. La clé est un hash, jamais une adresse IP ou un identifiant brut.
-  return database.prepare(
+  const result = await database.prepare(
     `INSERT INTO ai_quota_windows
        (scope, subject_key, window_start, reset_at, request_count, estimated_usd, updated_at)
      VALUES (?, ?, ?, ?, 1, 0, ?)
      ON CONFLICT(scope, subject_key, window_start) DO UPDATE SET
        request_count = request_count + 1,
        updated_at = excluded.updated_at
-     WHERE request_count < ?
-     RETURNING request_count, reset_at`,
-  ).bind(scope, subjectKey, windowStart, resetAt, Date.now(), limit).first<QuotaRow>();
+     WHERE request_count < ?`,
+  ).bind(scope, subjectKey, windowStart, resetAt, Date.now(), limit).run<D1RunResult>();
+  // D1 ne garantit pas un résultat fiable pour RETURNING sur un UPSERT
+  // conditionnel. `meta.changes` indique atomiquement si cette réservation a
+  // réellement été consommée, y compris lorsque plusieurs requêtes arrivent
+  // simultanément sur le dernier jeton disponible.
+  if (result.meta?.changes !== 1) return null;
+  return database.prepare(
+    `SELECT request_count, reset_at
+     FROM ai_quota_windows
+     WHERE scope = ? AND subject_key = ? AND window_start = ?`,
+  ).bind(scope, subjectKey, windowStart).first<QuotaRow>();
 }
 
 /**
