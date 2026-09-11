@@ -2,12 +2,14 @@ import { commitWorldAction, relationBetween } from './ledger';
 import { makeDossierDecision } from './dossiers';
 import { seededUnit } from './random';
 import { actionIntentFromProgram } from './action-intents';
+import { historicalAnchorResolutionEffects } from './history';
 import type {
   ActionKind,
   ActionProgram,
   CapacityDomainId,
   CommonActionCategory,
   CountryId,
+  HistoricalInterventionDirection,
   ISODate,
   WorldEffect,
   WorldState,
@@ -28,6 +30,8 @@ export type CommonActionPreparationOptions = {
   linkedDossierId?: string;
   /** Catégorie imposée par une interface structurée ; sinon le texte est interprété localement. */
   category?: CommonActionCategory;
+  /** Posture explicite appliquée à un ancrage historique lié au programme. */
+  historicalIntent?: HistoricalInterventionDirection;
 };
 
 const clamp = (value: number, minimum = 0, maximum = 100) => Math.min(maximum, Math.max(minimum, value));
@@ -293,6 +297,9 @@ export function prepareCommonAction(
     return { ok: false, error: 'Cette action doit nommer un pays modélisé : le moteur refuse de simuler un interlocuteur indéterminé.' };
   }
   const player = state.countries[state.playerCountryId];
+  const linkedHistoricalAnchorId = options.linkedDossierId
+    ? state.strategicDossiers[options.linkedDossierId]?.relatedAnchorId
+    : undefined;
   const requiredCapacities = defaultCommitments(category);
   const overloaded = requiredCapacities.some(({ domain, commitment }) => player.capacities[domain].committed + commitment > player.capacities[domain].maximum);
   const relation = targetId ? relationBetween(state, player.id, targetId) : undefined;
@@ -317,6 +324,7 @@ export function prepareCommonAction(
       actorId: player.id,
       targetIds: targetId ? [targetId] : [],
       ...(options.linkedDossierId ? { linkedDossierId: options.linkedDossierId } : {}),
+      ...(linkedHistoricalAnchorId ? { historicalIntent: options.historicalIntent ?? 'contain' } : {}),
       title: `${categoryLabels[category]}${targetId ? ` avec ${state.countries[targetId]?.name}` : ''}`,
       intent,
       durationMonths: durationFor(category),
@@ -404,6 +412,7 @@ export function advanceCommonActionPrograms(state: WorldState, elapsedMonths: nu
           { kind: 'action_program_patch', programId: program.id, patch: { progressMonths: program.durationMonths, status: outcome, resolution }, reason: resolution },
         ...releaseEffects, ...resultEffects, ...failureEffects,
         ...linkedDossierResolutionEffects(next, program, outcome, resolution),
+        ...historicalAnchorResolutionEffects(next, program, outcome),
         ...(program.linkedDossierId ? [] : diplomaticResolutionEffects(next, program, outcome, resolution)),
       ],
     });

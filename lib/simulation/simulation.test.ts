@@ -66,7 +66,7 @@ test('les ancrages historiques ouvrent un dossier sur signal sans imposer imméd
 
 test('un ancrage historique peut être concrétisé par l IA uniquement dans sa fenêtre', () => {
   const initial = createFrance2000World();
-  const prepared = advanceWorld(initial, '2001-03-01').state;
+  const prepared = advanceWorld(initial, '2001-12-01').state;
   const item = createWorldPulseRequest(prepared, prepared.actions.length, 1, 'historical-anchor-test').pulses.find((pulse) => pulse.kind === 'world_autonomy');
   assert.ok(item);
   if (!item) return;
@@ -79,7 +79,9 @@ test('un ancrage historique peut être concrétisé par l IA uniquement dans sa 
     synthesis: 'Une manifestation concrète est désormais observée dans la fenêtre historique.',
     requestedFactIds: [],
     proposals: [{
-      dossierId: dossier.id,
+      // Même si l’IA oublie le dossier existant, le moteur doit rattacher la
+      // manifestation au dossier de l’ancrage au lieu d’en créer un second.
+      dossierId: null,
       historicalAnchorId: 'mass-casualty-terrorism',
       title: 'Attaque coordonnée contre une infrastructure stratégique',
       kind: 'security', importance: 'critical', actorIds: ['USA', 'GBR', 'FRA'], regionTags: ['Monde'],
@@ -89,6 +91,49 @@ test('un ancrage historique peut être concrétisé par l IA uniquement dans sa 
   });
   assert.equal(applied.manifestedAnchorIds[0], 'mass-casualty-terrorism');
   assert.equal(applied.state.historicalAnchors['mass-casualty-terrorism']?.status, 'manifested');
+  assert.deepEqual(applied.createdDossierIds, []);
+  assert.ok(applied.updatedDossierIds.includes(dossier.id));
+});
+
+test('un ancrage seulement proposé ne peut pas être matérialisé avant son seuil actif', () => {
+  const early = advanceWorld(createFrance2000World(), '2001-03-01').state;
+  const item = createWorldPulseRequest(early, early.actions.length, 1, 'historical-anchor-early-test').pulses.find((pulse) => pulse.kind === 'world_autonomy');
+  const dossier = early.strategicDossiers['historical-mass-casualty-terrorism'];
+  const fact = item?.context.facts.find((candidate) => candidate.id === 'history-anchor:mass-casualty-terrorism');
+  assert.ok(item && dossier && fact);
+  if (!item || !dossier || !fact) return;
+  const applied = applyWorldPulseAnswer(early, item, {
+    headline: 'Risque terroriste accru', synthesis: 'La tendance existe, sans manifestation validée à ce stade.', requestedFactIds: [],
+    proposals: [{
+      dossierId: dossier.id, historicalAnchorId: 'mass-casualty-terrorism', title: 'Attaque prématurée refusée par le moteur',
+      kind: 'security', importance: 'critical', actorIds: ['USA', 'GBR', 'FRA'], regionTags: ['Monde'], phase: 'Signal', trend: 'escalating',
+      summary: 'Le modèle ne peut pas matérialiser un ancrage avant son seuil actif.', requiresPlayerDecision: false, playerDecision: null, factIds: [fact.id], relationEffects: [],
+    }],
+  });
+  assert.equal(applied.manifestedAnchorIds.length, 0);
+  assert.equal(applied.state.historicalAnchors['mass-casualty-terrorism']?.status, 'proposed');
+});
+
+test('un programme lié à un dossier historique modifie sa pression et laisse une trace causale', () => {
+  const active = advanceWorld(createFrance2000World(), '2001-12-01').state;
+  const dossierId = 'historical-mass-casualty-terrorism';
+  const prepared = prepareCommonAction(
+    active,
+    'Lancer une opération de renseignement avec les États-Unis pour protéger les infrastructures stratégiques.',
+    { source: 'player', linkedDossierId: dossierId, category: 'intelligence', historicalIntent: 'contain' },
+  );
+  assert.ok(prepared.ok);
+  if (!prepared.ok) return;
+  const launched = launchCommonAction(active, { ...prepared.action, durationMonths: 1, successProbability: 100 });
+  assert.ok(launched.ok);
+  if (!launched.ok) return;
+  const after = advanceWorld(launched.state, '2002-02-01').state;
+  const anchor = after.historicalAnchors['mass-casualty-terrorism'];
+  assert.ok(anchor?.lastIntervention);
+  assert.equal(anchor?.lastIntervention?.direction, 'contain');
+  assert.ok((anchor?.lastIntervention?.pressureDelta ?? 0) < 0);
+  assert.ok((anchor?.interventionBalance ?? 0) < 0);
+  assert.ok(after.strategicDossiers[dossierId]?.entries.some((entry) => entry.id.endsWith('-historical-impact')));
 });
 
 test('le pouls mondial IA ne peut créer que des mises à jour de dossiers citées et relationnelles bornées', () => {

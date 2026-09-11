@@ -221,7 +221,7 @@ export function applyWorldPulseAnswer(
   answer.proposals.forEach((proposal, index) => {
     const actorIds = unique(proposal.actorIds).filter((id) => Boolean(state.countries[id]));
     const citedFacts = unique(proposal.factIds).filter((id) => knownFactIds.has(id));
-    const requestedDossierId = normalizeWorldPulseDossierId(proposal.dossierId);
+    let requestedDossierId = normalizeWorldPulseDossierId(proposal.dossierId);
     const requestedAnchorId = proposal.historicalAnchorId?.trim() || null;
     if (actorIds.length === 0 || citedFacts.length === 0
       || (requestedDossierId !== null && !knownFactIds.has(`dossier:${requestedDossierId}`))) return;
@@ -229,7 +229,17 @@ export function applyWorldPulseAnswer(
     const validHistoricalAnchor = Boolean(historicalAnchor
       && citedFacts.includes(`history-anchor:${requestedAnchorId}`)
       && actorIds.some((id) => historicalAnchor.affectedActors.includes(id))
-      && historicalAnchor.status !== 'manifested');
+      && historicalAnchor.status === 'active');
+    // Un ancrage historique déjà proposé possède son propre dossier. L’IA ne
+    // peut pas contourner cette continuité en créant un second dossier au
+    // moment de la manifestation.
+    if (validHistoricalAnchor && historicalAnchor) {
+      const linkedDossierId = historicalAnchor.dossierId ?? `historical-${historicalAnchor.id}`;
+      if (state.strategicDossiers[linkedDossierId]) {
+        if (requestedDossierId !== null && requestedDossierId !== linkedDossierId) return;
+        requestedDossierId = linkedDossierId;
+      }
+    }
     const existing = requestedDossierId ? state.strategicDossiers[requestedDossierId] : undefined;
     // Une mise à jour déclarée ne doit jamais devenir un nouveau dossier si le
     // monde a changé depuis la compilation du contexte IA.

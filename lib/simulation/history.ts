@@ -1,7 +1,7 @@
 import { commitWorldAction } from './ledger';
 import { pickSeeded } from './random';
 import type {
-  ActionDraft, DossierImportance, HistoricalAnchor, ISODate, StrategicDossier, WorldEffect, WorldState,
+  ActionDraft, ActionProgram, DossierImportance, HistoricalAnchor, HistoricalInterventionDirection, ISODate, StrategicDossier, WorldEffect, WorldState,
 } from './types';
 
 export type HistoricalManifestation = {
@@ -39,6 +39,106 @@ function monthsBetween(start: ISODate, end: ISODate) {
   const [startYear, startMonth] = start.slice(0, 7).split('-').map(Number);
   const [endYear, endMonth] = end.slice(0, 7).split('-').map(Number);
   return Math.max(0, (endYear - startYear) * 12 + endMonth - startMonth);
+}
+
+const clamp = (value: number, minimum = 0, maximum = 100) => Math.min(maximum, Math.max(minimum, value));
+
+const interventionLabels: Record<HistoricalInterventionDirection, string> = {
+  contain: 'réduction de la pression',
+  redirect: 'redirection de la trajectoire',
+  accelerate: 'accélération de la trajectoire',
+};
+
+function interventionMagnitude(anchor: HistoricalAnchor, outcome: ActionProgram['status']) {
+  const base = { none: 0, low: 3, medium: 5, high: 8 }[anchor.playerInfluence];
+  const outcomeFactor = outcome === 'succeeded' ? 1 : outcome === 'partially_succeeded' ? 0.45 : -0.25;
+  return Number((base * outcomeFactor).toFixed(2));
+}
+
+/**
+ * Les actions ne réécrivent jamais librement l'histoire. Elles ne peuvent
+ * influencer un ancrage que si elles sont rattachées à son dossier, et leur
+ * poids dépend à la fois de l'influence plausible du joueur et de l'issue du
+ * programme. Plusieurs réussites cohérentes sont nécessaires pour installer
+ * une bifurcation durable.
+ */
+export function historicalAnchorResolutionEffects(
+  state: WorldState,
+  program: Pick<ActionProgram, 'id' | 'title' | 'linkedDossierId' | 'historicalIntent' | 'status'>,
+  outcome: Extract<ActionProgram['status'], 'succeeded' | 'partially_succeeded' | 'failed'>,
+): WorldEffect[] {
+  const dossier = program.linkedDossierId ? state.strategicDossiers[program.linkedDossierId] : undefined;
+  const anchorId = dossier?.relatedAnchorId;
+  const anchor = anchorId ? state.historicalAnchors[anchorId] : undefined;
+  if (!dossier || !anchor || ['manifested', 'disrupted', 'expired'].includes(anchor.status)) return [];
+
+  const direction = program.historicalIntent ?? 'contain';
+  const magnitude = interventionMagnitude(anchor, outcome);
+  if (magnitude === 0) return [];
+  const directionFactor = direction === 'redirect' ? 0.75 : 1;
+  const pressureDelta = Number(((direction === 'accelerate' ? 1 : -1) * magnitude * directionFactor).toFixed(2));
+  const nextPressure = Number(clamp(anchor.pressure + pressureDelta).toFixed(2));
+  const nextBalance = Number(clamp((anchor.interventionBalance ?? 0) + pressureDelta, -100, 100).toFixed(2));
+  const divergenceThreshold = Math.max(8, Math.round(anchor.historicalWeight / 7));
+  const successful = outcome !== 'failed';
+  const contained = direction === 'contain' && successful && nextBalance <= -divergenceThreshold;
+  const redirected = direction === 'redirect' && successful && nextBalance <= -(divergenceThreshold * 0.75);
+  const accelerated = direction === 'accelerate' && successful && nextBalance >= divergenceThreshold * 0.75;
+  const divergence = contained
+    ? { kind: 'contained' as const, date: state.currentDate, programId: program.id, summary: 'Les interventions cumulées ont rendu la manifestation historique initialement attendue insuffisamment probable.' }
+    : redirected
+      ? { kind: 'redirected' as const, date: state.currentDate, programId: program.id, summary: 'Les interventions cumulées orientent le dossier vers une manifestation différente, sans effacer les tensions de fond.' }
+      : accelerated
+        ? { kind: 'accelerated' as const, date: state.currentDate, programId: program.id, summary: 'Les interventions cumulées augmentent la probabilité d’une manifestation plus rapide ou plus dure.' }
+        : anchor.divergence;
+  const nextStatus: HistoricalAnchor['status'] = contained
+    ? 'disrupted'
+    : direction === 'accelerate' && nextPressure >= anchor.activationThreshold
+      ? 'active'
+      : anchor.status;
+  const outcomeLabel = outcome === 'succeeded' ? 'achevé' : outcome === 'partially_succeeded' ? 'partiellement achevé' : 'insuffisant';
+  const summary = `Le programme « ${program.title} » est ${outcomeLabel}. Pression ${anchor.pressure.toFixed(0)} → ${nextPressure.toFixed(0)}/100 ; bilan cumulé ${nextBalance.toFixed(1)}. ${divergence?.summary ?? 'La tendance de fond demeure ouverte.'}`;
+  const phase = contained
+    ? 'Divergence historique consolidée'
+    : redirected
+      ? 'Trajectoire historique redirigée'
+      : accelerated
+        ? 'Trajectoire historique accélérée'
+        : `Influence en cours : ${interventionLabels[direction]}`;
+
+  return [
+    {
+      kind: 'historical_anchor_patch', anchorId: anchor.id,
+      patch: {
+        pressure: nextPressure,
+        status: nextStatus,
+        interventionBalance: nextBalance,
+        lastIntervention: { programId: program.id, date: state.currentDate, direction, outcome, pressureDelta, summary },
+        ...(divergence ? { divergence } : {}),
+      },
+      reason: `Le programme lié au dossier exerce une ${interventionLabels[direction]} sur l’ancrage historique.`, visibility: 'player',
+    },
+    {
+      kind: 'dossier_patch', dossierId: dossier.id,
+      patch: {
+        relatedActionIds: [...new Set([...dossier.relatedActionIds, program.id])].slice(-12),
+        phase,
+        trend: pressureDelta > 0 ? 'escalating' : 'deescalating',
+        ...(contained ? { status: 'resolved' as const, autoTracked: false, publicSummary: `${anchor.trendSummary} La trajectoire historique initiale est désormais considérée comme déviée.` } : {}),
+      },
+      reason: 'La conséquence historique du programme reste consultable dans le dossier.', visibility: 'player',
+    },
+    {
+      kind: 'dossier_entry_add', dossierId: dossier.id,
+      entry: {
+        id: `${program.id}-historical-impact`, date: state.currentDate,
+        title: contained ? 'Divergence historique consolidée' : `Influence historique : ${interventionLabels[direction]}`,
+        summary, importance: anchor.importance, actorIds: anchor.affectedActors,
+        requiresDecision: false, visibility: 'player',
+      },
+      reason: 'Le programme laisse une trace causale de son effet sur la trajectoire historique.', visibility: 'player',
+    },
+  ];
 }
 
 function anchorDossier(anchor: HistoricalAnchor, date: ISODate, pressure: number): StrategicDossier {

@@ -181,6 +181,24 @@ export type HistoricalCurrent = {
  * calculée localement ; l'IA peut ensuite proposer une manifestation bornée
  * et la rattacher au dossier correspondant.
  */
+export type HistoricalInterventionDirection = 'contain' | 'redirect' | 'accelerate';
+
+export type HistoricalIntervention = {
+  programId: string;
+  date: ISODate;
+  direction: HistoricalInterventionDirection;
+  outcome: Extract<ActionProgramStatus, 'succeeded' | 'partially_succeeded' | 'failed'>;
+  pressureDelta: number;
+  summary: string;
+};
+
+export type HistoricalDivergence = {
+  kind: 'contained' | 'redirected' | 'accelerated';
+  date: ISODate;
+  programId: string;
+  summary: string;
+};
+
 export type HistoricalAnchor = {
   id: string;
   title: string;
@@ -208,6 +226,11 @@ export type HistoricalAnchor = {
   activatedAt?: ISODate;
   manifestedAt?: ISODate;
   manifestation?: string;
+  /** Effet cumulé des programmes explicitement rattachés à ce dossier. */
+  interventionBalance?: number;
+  lastIntervention?: HistoricalIntervention;
+  /** Trace durable d’une bifurcation, sans prétendre reconstituer une autre histoire complète. */
+  divergence?: HistoricalDivergence;
 };
 
 export type LatentProcess = {
@@ -1004,6 +1027,8 @@ export type ActionProgram = {
   targetIds: EntityId[];
   /** Dossier stratégique à l'origine du programme, lorsqu'il existe. */
   linkedDossierId?: string;
+  /** Posture choisie par le joueur quand le dossier est un ancrage historique. */
+  historicalIntent?: HistoricalInterventionDirection;
   title: string;
   intent: string;
   startedAt: ISODate;
