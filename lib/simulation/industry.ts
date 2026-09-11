@@ -7,6 +7,7 @@ const clamp = (value: number, minimum = 0, maximum = 100) => Math.min(maximum, M
 export function advanceIndustrySystem(state: WorldState, elapsedMonths: number) {
   let next = state;
   for (const sector of Object.values(state.sectors)) {
+    if (sector.modelingLevel === 'aggregate') continue;
     const workloadMonths = Math.max(0, sector.workloadMonths - elapsedMonths);
     const targetUtilization = workloadMonths >= 18 ? 92 : workloadMonths >= 6 ? 70 : workloadMonths > 0 ? 48 : 28;
     const maxMove = elapsedMonths * (targetUtilization > sector.utilization ? 2.2 : 1.4);

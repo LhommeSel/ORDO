@@ -7,6 +7,7 @@ export type DefenseReference = {
   activePersonnelThousands: number;
   posture: string;
   capabilities: string[];
+  modelingLevel?: 'documented' | 'aggregate';
 };
 
 /**
@@ -35,6 +36,50 @@ export const defenseReference2000: Record<CountryId, DefenseReference> = {
   TUR: { budgetBillionUsd: 8, activePersonnelThousands: 640, posture: 'puissance-pivot régionale', capabilities: ['forces terrestres', 'OTAN', 'détroits'] },
   VNM: { budgetBillionUsd: 1, activePersonnelThousands: 480, posture: 'défense territoriale', capabilities: ['forces terrestres', 'défense côtière'] },
 };
+
+const clamp = (value: number, minimum: number, maximum: number) => Math.min(maximum, Math.max(minimum, value));
+
+/**
+ * Produit un ordre de grandeur militaire pour les pays sans inventaire dédié.
+ * Le budget et les effectifs sont cohérents avec l'économie, la population et
+ * la posture du régime, sans prétendre documenter une armée unité par unité.
+ */
+export function defenseReferenceForCountry(state: WorldState, countryId: CountryId): DefenseReference | null {
+  const documented = defenseReference2000[countryId];
+  if (documented) return { ...documented, modelingLevel: 'documented' };
+  const country = state.countries[countryId];
+  const economy = state.macroEconomies[countryId];
+  if (!country || !economy) return null;
+  const coerciveRegime = /autoritaire|junte|parti unique|militaire|absolue/i.test(country.politics.regime);
+  const spendingShare = clamp(
+    1.05 + country.weight / 70 + Math.max(0, 58 - country.metrics.security) / 38 + (coerciveRegime ? 0.65 : 0),
+    0.7,
+    7.5,
+  );
+  const personnelShare = clamp(
+    0.22 + country.weight / 95 + Math.max(0, 55 - country.metrics.security) / 42 + (coerciveRegime ? 0.38 : 0),
+    0.12,
+    2.8,
+  );
+  const posture = country.weight >= 75
+    ? 'projection et influence internationale'
+    : country.weight >= 45
+      ? 'défense régionale et protection des intérêts nationaux'
+      : coerciveRegime
+        ? 'sécurité du régime et défense territoriale'
+        : 'défense territoriale et coopération régionale';
+  const capabilities = [
+    country.metrics.industry >= 65 ? 'base industrielle nationale' : 'capacités conventionnelles',
+    country.weight >= 65 ? 'projection régionale' : 'défense territoriale',
+  ];
+  return {
+    budgetBillionUsd: Number((economy.realGdpBillion2000Usd * spendingShare / 100).toFixed(2)),
+    activePersonnelThousands: Number((economy.populationMillions * personnelShare * 10).toFixed(0)),
+    posture,
+    capabilities,
+    modelingLevel: 'aggregate',
+  };
+}
 
 const normalize = (value: string) => value
   .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
@@ -88,7 +133,7 @@ export function countrySheet(state: WorldState, countryId: CountryId): CountrySh
       inflation: macro.inflationAnnualPct, unemployment: macro.unemploymentPct, debt: macro.publicDebtPctGdp, fiscalBalance: macro.fiscalBalancePctGdp,
     } : null,
     energy: oil && gas ? { oilImports: oil.imports, gasImports: gas.imports, oilStocksMonths: oil.coverageMonths, gasStocksMonths: gas.coverageMonths } : null,
-    defense: defenseReference2000[countryId] ?? null,
+    defense: defenseReferenceForCountry(state, countryId),
     relation: relation ? { value: relation.relation, trust: relation.trust } : undefined,
     topGoal: country.strategy.goals.slice().sort((a, b) => b.priority - a.priority)[0]?.label,
     vulnerabilities: country.strategy.vulnerabilities,

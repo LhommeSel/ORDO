@@ -1006,6 +1006,12 @@ export type StrategicSectorState = {
   technology: number;
   expansionLeadMonths: number;
   vulnerability?: string;
+  /**
+   * Une filière documentée possède un inventaire national propre. Une filière
+   * agrégée est une projection du socle macroéconomique : elle complète la
+   * jouabilité mondiale sans inventer d'entreprise ou d'usine précise.
+   */
+  modelingLevel?: 'documented' | 'aggregate';
 };
 
 export type ArmamentMaturity =

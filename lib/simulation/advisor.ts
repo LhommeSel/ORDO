@@ -4,7 +4,7 @@ import { productEvidenceSummary } from './industry';
 import { interpretPlayerIntent, rankEnergySuppliers, type PlayerIntent } from './intent';
 import { relationBetween } from './ledger';
 import type { AdvisorQuestionDimension, AdvisorQuestionKind, AdvisorResponseMode } from '../ai/contracts';
-import { countryIdsMentionedInText, countryMentionedInText, countrySheet, defenseReference2000 } from './country-sheet';
+import { countryIdsMentionedInText, countryMentionedInText, countrySheet } from './country-sheet';
 import type {
   AiBudgetPolicy,
   CapacityDomainId,
@@ -120,10 +120,10 @@ function collectCountryFacts(state: WorldState, countryId: CountryId, prefix: st
     { id: `${prefix}-oil`, label: `${labelPrefix}Pétrole`, value: `${sheet.energy.oilImports.toFixed(1)} unités/an importées · ${monthLabel(sheet.energy.oilStocksMonths)} de stocks`, confidence: 100, sourcePath: `countryEnergy.${countryId}.oil` },
     { id: `${prefix}-gas`, label: `${labelPrefix}Gaz`, value: `${sheet.energy.gasImports.toFixed(1)} unités/an importées · ${monthLabel(sheet.energy.gasStocksMonths)} de stocks`, confidence: 100, sourcePath: `countryEnergy.${countryId}.gas` },
   );
-  const defense = defenseReference2000[countryId];
+  const defense = sheet.defense;
   if (defense) facts.push(
-    { id: `${prefix}-defense-budget`, label: `${labelPrefix}Budget de défense`, value: `${defense.budgetBillionUsd.toFixed(1)} Md$`, confidence: 100, sourcePath: `defenseReference2000.${countryId}.budgetBillionUsd` },
-    { id: `${prefix}-defense-personnel`, label: `${labelPrefix}Effectifs actifs`, value: `${defense.activePersonnelThousands.toFixed(0)} milliers · ${defense.posture}`, confidence: 100, sourcePath: `defenseReference2000.${countryId}.activePersonnelThousands` },
+    { id: `${prefix}-defense-budget`, label: `${labelPrefix}Budget de défense`, value: `${defense.budgetBillionUsd.toFixed(1)} Md$${defense.modelingLevel === 'aggregate' ? ' · ordre de grandeur ORDO' : ''}`, confidence: 100, sourcePath: defense.modelingLevel === 'aggregate' ? `macroEconomies.${countryId}.realGdpBillion2000Usd` : `defenseReference2000.${countryId}.budgetBillionUsd` },
+    { id: `${prefix}-defense-personnel`, label: `${labelPrefix}Effectifs actifs`, value: `${defense.activePersonnelThousands.toFixed(0)} milliers · ${defense.posture}${defense.modelingLevel === 'aggregate' ? ' · ordre de grandeur ORDO' : ''}`, confidence: 100, sourcePath: defense.modelingLevel === 'aggregate' ? `countries.${countryId}.metrics.security` : `defenseReference2000.${countryId}.activePersonnelThousands` },
   );
   return facts;
 }

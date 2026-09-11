@@ -342,7 +342,7 @@ function MapPanel({ world }: { world: WorldState }) {
             <Stat label="Stocks pétrole" value={sheet?.energy ? `${sheet.energy.oilStocksMonths.toFixed(1)} mois` : '—'} />
             <Stat label="Stocks gaz" value={sheet?.energy ? `${sheet.energy.gasStocksMonths.toFixed(1)} mois` : '—'} />
           </div>
-          {sheet?.defense && <div className="text-xs"><b>Posture militaire</b><p className="mt-1 text-muted-foreground">{sheet.defense.posture} · {sheet.defense.capabilities.join(' · ')}</p></div>}
+          {sheet?.defense && <div className="text-xs"><b>Posture militaire</b><p className="mt-1 text-muted-foreground">{sheet.defense.posture} · {sheet.defense.capabilities.join(' · ')}{sheet.defense.modelingLevel === 'aggregate' ? ' · ordre de grandeur ORDO à affiner' : ''}</p></div>}
           <div className="text-xs"><b>Priorité immédiate</b><p className="mt-1 text-muted-foreground">{selected.strategy.goals[0]?.label ?? 'Aucune priorité encore formalisée.'}</p></div>
           <div className="mt-4 text-xs"><b>Vulnérabilités connues</b><ul className="mt-1 space-y-1 text-muted-foreground">{selected.strategy.vulnerabilities.length ? selected.strategy.vulnerabilities.map((item) => <li key={item}>— {item}</li>) : <li>— Aucune vulnérabilité formalisée.</li>}</ul></div>
         </> : <>
@@ -500,7 +500,7 @@ function EnergyPanel({ world }: { world: WorldState }) {
       <div className="overflow-x-auto"><table className="w-full min-w-[900px] text-left text-sm"><thead className="border-b border-border bg-muted/30 font-mono text-[10px] uppercase tracking-wider text-muted-foreground"><tr><th className="p-3">Système</th><th>Production</th><th>Capacité max.</th><th>Usage local</th><th>Réservé</th><th>Libre</th><th>À déployer</th></tr></thead><tbody>{nodes.map((node) => <tr key={node.id} className="border-b border-border/60"><td className="p-3"><div className="font-medium">{node.label}</div><div className="text-xs text-muted-foreground">{world.countries[node.countryId]?.flag} {world.countries[node.countryId]?.name} · {node.resource === 'oil' ? 'pétrole' : 'gaz'}</div></td><td>{node.annualProduction.toFixed(1)}</td><td>{node.annualCapacity.toFixed(1)}</td><td>{node.domesticConsumption.toFixed(1)}</td><td>{nodeBookedVolume(world, node.id).toFixed(1)}</td><td className={nodeAvailableExport(world, node.id) > 0 ? 'text-emerald-300' : 'text-muted-foreground'}>{nodeAvailableExport(world, node.id).toFixed(1)}</td><td>{nodeExpansionPotential(world, node.id).toFixed(1)}</td></tr>)}</tbody></table></div>
     </section>
     <section className="border border-border bg-card/70">
-      <div className="border-b border-border p-4"><div className="font-semibold">Flux énergétiques enregistrés</div><p className="mt-1 text-xs text-muted-foreground">{baselineFlows.length} flux initiaux et {activeContracts.length} contrat(s) signé(s). Les flux hors périmètre expliquent les importations provenant de pays pas encore jouables, sans offrir une ressource infinie au joueur.</p></div>
+      <div className="border-b border-border p-4"><div className="font-semibold">Flux énergétiques enregistrés</div><p className="mt-1 text-xs text-muted-foreground">{baselineFlows.length} flux initiaux et {activeContracts.length} contrat(s) signé(s). Les flux hors registre détaillé expliquent les importations dont le corridor historique n’est pas encore individualisé, sans offrir une ressource infinie au joueur.</p></div>
       <div className="max-h-80 overflow-auto divide-y divide-border/60">{[...baselineFlows, ...activeContracts].map((flow) => {
         const isContract = 'sellerId' in flow;
         const nodeId = isContract ? flow.nodeId : flow.sourceNodeId;
@@ -527,7 +527,7 @@ function IndustryPanel({ world, onWorldChange, onNotice }: { world: WorldState; 
   };
   return <div className="space-y-4">
     <div className="grid gap-3 lg:grid-cols-3">{nationalSectors.map((sector) => <div key={sector.id} className="border border-border bg-card/70 p-4">
-      <div className="font-medium capitalize">{sector.countryId} · {sector.sector.replaceAll('_', ' ')}</div>
+      <div className="flex items-start justify-between gap-2"><div className="font-medium capitalize">{sector.countryId} · {sector.sector.replaceAll('_', ' ')}</div><span className="font-mono text-[9px] uppercase text-muted-foreground">{sector.modelingLevel === 'aggregate' ? 'socle agrégé' : 'inventaire détaillé'}</span></div>
       <div className="mt-3 grid grid-cols-2 gap-2 text-xs"><div>Capacité <b>{sector.capacity}</b></div><div>Utilisation <b>{sector.utilization.toFixed(0)}%</b></div><div>Santé <b>{sector.health.toFixed(0)}</b></div><div>Dépendance <b>{sector.foreignDependency}</b></div></div>
       <div className="mt-3 text-xs text-muted-foreground">Charge : {sector.workloadMonths.toFixed(1)} mois · inertie {sector.expansionLeadMonths} mois</div>
     </div>)}{nationalSectors.length === 0 && <div className="border border-dashed border-border bg-card/50 p-4 text-sm text-muted-foreground">Aucune filière industrielle détaillée n’est encore inventoriée pour {player.name}. Les indicateurs macroéconomiques nationaux restent actifs.</div>}</div>

@@ -67,6 +67,30 @@ test('une nouvelle partie peut attribuer au joueur n’importe quel pays du regi
   assert.equal(createWorld2000('PAYS_INCONNU').playerCountryId, 'FRA');
 });
 
+test('chaque pays possède un socle industriel et militaire minimal sans faux inventaire détaillé', () => {
+  const state = createFrance2000World();
+  for (const country of Object.values(state.countries)) {
+    const sectors = Object.values(state.sectors).filter((sector) => sector.countryId === country.id);
+    assert.ok(sectors.length >= 3, `${country.id} doit posséder au moins trois filières`);
+    assert.ok(sectors.some((sector) => sector.sector === 'defense'));
+    assert.ok(sectors.some((sector) => sector.sector === 'telecoms'));
+    assert.ok(sectors.some((sector) => sector.sector === 'strategic_agriculture'));
+    assert.ok(countrySheet(state, country.id)?.defense, `${country.id} doit posséder une référence militaire`);
+  }
+  assert.equal(state.sectors['FRA-defense'].modelingLevel, 'documented');
+  assert.equal(state.sectors['AGO-defense'].modelingLevel, 'aggregate');
+  assert.equal(countrySheet(state, 'FRA')?.defense?.modelingLevel, 'documented');
+  assert.equal(countrySheet(state, 'AGO')?.defense?.modelingLevel, 'aggregate');
+});
+
+test('une ancienne sauvegarde reçoit les socles sectoriels manquants à son chargement', () => {
+  const legacy = createFrance2000World();
+  legacy.sectors = { 'FRA-defense': { ...legacy.sectors['FRA-defense'], modelingLevel: undefined } };
+  const restored = deserializeWorld(serializeWorld(legacy));
+  assert.equal(restored.sectors['FRA-defense'].modelingLevel, 'documented');
+  assert.equal(restored.sectors['AGO-defense'].modelingLevel, 'aggregate');
+});
+
 test('les échéances politiques sont réparties et ouvrent un dossier avant les scrutins majeurs', () => {
   const initial = createFrance2000World();
   const atCampaign = { ...initial, currentDate: '2000-06-01' as const };

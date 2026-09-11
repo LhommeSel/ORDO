@@ -8,6 +8,7 @@ import { createDecisionProfiles2000 } from './decision-data-2000';
 import { createLeadership2000, createPoliticalApparatus2000 } from './political-identity-data-2000';
 import { createPoliticalCycles2000 } from './political-cycles';
 import { createHistoricalAnchors2000 } from './historical-anchors-2000';
+import { createStrategicSectors2000 } from './strategic-sector-data-2000';
 
 export type SaveEnvelope = {
   format: 'ordo-world';
@@ -223,6 +224,12 @@ export function deserializeWorld(raw: string): WorldState {
     },
     activeShocks: restored.worldEconomy?.activeShocks ?? [],
   };
+  const sectors = createStrategicSectors2000(
+    restored.countries,
+    structuralProfiles,
+    macroEconomies,
+    restored.sectors ?? {},
+  );
   const countryEnergy = Object.fromEntries(Object.entries(restored.countryEnergy).map(([countryId, energy]) => [countryId, {
     ...energy,
     legacyImports: energy.legacyImports ?? {
@@ -242,6 +249,7 @@ export function deserializeWorld(raw: string): WorldState {
     strategicDossiers: restored.strategicDossiers ?? {},
     historicalAnchors: restored.historicalAnchors ?? createHistoricalAnchors2000(),
     macroEconomies,
+    sectors,
     worldEconomy,
     tradeFlows: restored.tradeFlows ?? createTradeFlows2000(),
     decisionProfiles: restored.decisionProfiles ?? createDecisionProfiles2000(restored.countries),

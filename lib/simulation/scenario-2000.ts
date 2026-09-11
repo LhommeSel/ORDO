@@ -12,6 +12,7 @@ import type {
   StrategicSectorState,
   WorldState,
 } from './types';
+import { createStrategicSectors2000 } from './strategic-sector-data-2000';
 import { createMacroEconomies2000, worldEconomy2000 } from './macro-data-2000';
 import { createTerritorialState } from './territories';
 import { createStructuralProfiles2000 } from './structural-data-2000';
@@ -591,7 +592,7 @@ export function createWorld2000(requestedPlayerCountryId: CountryId = 'FRA'): Wo
     actionPrograms: {},
     diplomaticSessions: {},
     diplomaticDialogues: {},
-    sectors: structuredClone(sectors),
+    sectors: createStrategicSectors2000(allCountries, structuralProfiles, macroEconomies, sectors),
     armamentProducts: structuredClone(armamentProducts),
     strategicDossiers: dossiers,
     actions: [], ledger: [], processedStopIds: [],
