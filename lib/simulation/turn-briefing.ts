@@ -49,7 +49,8 @@ function dossierHighlights(before: WorldState, after: WorldState): TurnBriefingH
   const highlights: TurnBriefingHighlight[] = [];
   for (const dossier of Object.values(after.strategicDossiers ?? {})) {
     const debtCountryId = dossier.id.startsWith('sovereign-debt-') ? dossier.actorIds.find((id) => Boolean(after.macroEconomies[id])) : undefined;
-    const debtRelevant = !debtCountryId || debtCountryId === after.playerCountryId || after.macroEconomies[debtCountryId]?.sovereignDebt.status === 'default';
+    const debtDefaultRecorded = dossier.entries.some((entry) => /défaut souverain/i.test(entry.title));
+    const debtRelevant = !debtCountryId || debtCountryId === after.playerCountryId || after.macroEconomies[debtCountryId]?.sovereignDebt.status === 'default' || debtDefaultRecorded;
     if (!debtRelevant) continue;
     const previous = before.strategicDossiers?.[dossier.id];
     if (!previous) {

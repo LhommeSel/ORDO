@@ -279,7 +279,8 @@ function buildEventFeed(world: WorldState): EventFeedItem[] {
   const items: EventFeedItem[] = [];
   for (const dossier of Object.values(world.strategicDossiers ?? {})) {
     const debtCountryId = dossier.id.startsWith('sovereign-debt-') ? dossier.actorIds.find((id) => Boolean(world.macroEconomies[id])) : undefined;
-    const debtRelevant = !debtCountryId || debtCountryId === world.playerCountryId || world.macroEconomies[debtCountryId]?.sovereignDebt.status === 'default';
+    const debtDefaultRecorded = dossier.entries.some((entry) => /défaut souverain/i.test(entry.title));
+    const debtRelevant = !debtCountryId || debtCountryId === world.playerCountryId || world.macroEconomies[debtCountryId]?.sovereignDebt.status === 'default' || debtDefaultRecorded;
     if (!debtRelevant) continue;
     for (const entry of dossier.entries) {
       if (!['public', 'player'].includes(entry.visibility)) continue;
