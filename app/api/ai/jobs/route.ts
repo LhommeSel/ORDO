@@ -144,6 +144,9 @@ export async function POST(request: Request) {
       parsed.job.kind === 'diplomacy'
         ? 'Réponds directement en tant que pays interlocuteur : ne répète pas, ne cite pas et ne reformule pas le premier message du joueur. Commence par la position, la réaction ou la demande de l’interlocuteur, puis avance une réponse concrète.'
         : '',
+      parsed.job.kind === 'diplomacy' && typeof parsed.job.domainContext.respondingCountryId === 'string'
+        ? `Le seul interlocuteur autorisé à répondre est ${parsed.job.domainContext.respondingCountryId}. Dans un groupe, les autres participants ne parlent pas à sa place ; privateDecision.actorId doit reprendre exactement cet identifiant.`
+        : '',
       parsed.job.kind === 'diplomacy'
         ? 'Pour un dialogue, reste exploitable en jeu : publicMessage doit faire moins de 900 caractères et se terminer par une phrase complète ; assessment doit faire moins de 700 caractères ; diplomaticMove doit rester précis ; limite les proposals à une ou deux options réellement distinctes. Ne remplis pas les champs avec des répétitions.'
         : '',
@@ -280,6 +283,15 @@ export async function POST(request: Request) {
     if (!isAIJobAIModelAnswer(answer, parsed.job.kind)) {
       console.error('ORDO AI job invalid output', { requestId: parsed.requestId, kind: parsed.job.kind });
       return json({ ok: false, code: 'upstream_error', message: 'La réponse du modèle IA a été rejetée par le contrôle de cohérence.', usage: usageSummary() }, 502);
+    }
+    if (parsed.job.kind === 'diplomacy' && typeof parsed.job.domainContext.respondingCountryId === 'string'
+      && answer.privateDecision?.actorId !== parsed.job.domainContext.respondingCountryId) {
+      console.error('ORDO AI diplomacy identity mismatch', {
+        requestId: parsed.requestId,
+        expectedActorId: parsed.job.domainContext.respondingCountryId,
+        receivedActorId: answer.privateDecision?.actorId,
+      });
+      return json({ ok: false, code: 'upstream_error', message: 'La réponse IA a été attribuée au mauvais interlocuteur. Aucun effet n’a été appliqué.', usage: usageSummary() }, 502);
     }
     return json({
       ok: true,
