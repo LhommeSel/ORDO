@@ -1,4 +1,5 @@
 import { commitWorldAction } from './ledger';
+import { makeDossierDecision } from './dossiers';
 import { pickSeeded } from './random';
 import type {
   ActionDraft, ActionProgram, DossierImportance, HistoricalAnchor, HistoricalInterventionDirection, ISODate, StrategicDossier, WorldEffect, WorldState,
@@ -141,10 +142,41 @@ export function historicalAnchorResolutionEffects(
   ];
 }
 
-function anchorDossier(anchor: HistoricalAnchor, date: ISODate, pressure: number): StrategicDossier {
+/**
+ * Un signal historique ne doit pas devenir une corvée mensuelle. Le joueur
+ * reçoit donc un premier arbitrage seulement si son État est réellement
+ * concerné, puis éventuellement un second lorsque le seuil d'activation est
+ * franchi après qu'il a déjà pris position.
+ */
+function historicalDossierDecision(
+  state: WorldState,
+  anchor: HistoricalAnchor,
+  date: ISODate,
+  importance: DossierImportance,
+  stage: 'signal' | 'activation',
+) {
+  if (anchor.playerInfluence === 'none' || !anchor.affectedActors.includes(state.playerCountryId)) return undefined;
+  const playerName = state.countries[state.playerCountryId]?.name ?? state.playerCountryId;
+  const prompt = stage === 'signal'
+    ? `Choisir la posture de ${playerName} face aux signaux de « ${anchor.trendTitle} » avant que la trajectoire ne se fige.`
+    : `Le seuil d'activation de « ${anchor.trendTitle} » est atteint : ${playerName} doit-il tenter d'infléchir la trajectoire, l'accompagner ou assumer le silence ?`;
+  return makeDossierDecision({
+    id: `historical-decision-${anchor.id}-${stage}`,
+    prompt,
+    createdAt: date,
+    importance,
+    actorIds: anchor.affectedActors,
+    sourceKind: 'historical',
+    sourceId: `${anchor.id}:${stage}`,
+    sourceLabel: stage === 'signal' ? 'Signal historique' : 'Seuil historique',
+  });
+}
+
+function anchorDossier(state: WorldState, anchor: HistoricalAnchor, date: ISODate, pressure: number): StrategicDossier {
   const dossierId = `historical-${anchor.id}`;
   const early = pressure < anchor.activationThreshold;
   const dossierImportance: DossierImportance = early && anchor.importance !== 'minor' ? 'moderate' : anchor.importance;
+  const openingDecision = historicalDossierDecision(state, anchor, date, dossierImportance, 'signal');
   return {
     id: dossierId,
     title: anchor.trendTitle,
@@ -163,7 +195,8 @@ function anchorDossier(anchor: HistoricalAnchor, date: ISODate, pressure: number
     // n’est pas encore un dossier majeur suivi en continu.
     autoTracked: true,
     commitments: [],
-    pendingDecisions: [],
+    pendingDecisions: openingDecision ? [openingDecision.prompt] : [],
+    ...(openingDecision ? { decisionRecords: [openingDecision] } : {}),
     relatedCurrentIds: anchor.trendId ? [anchor.trendId] : [],
     relatedAnchorId: anchor.id,
     relatedActionIds: [],
@@ -173,7 +206,7 @@ function anchorDossier(anchor: HistoricalAnchor, date: ISODate, pressure: number
       summary: `${anchor.trendSummary} Manifestations admissibles : ${anchor.possibleManifestations.join('; ')}.`,
       importance: dossierImportance,
       actorIds: anchor.affectedActors,
-      requiresDecision: false,
+      requiresDecision: Boolean(openingDecision),
       visibility: anchor.playerVisibility === 'known' ? 'public' : 'player',
     }],
   };
@@ -223,7 +256,7 @@ function updateHistoricalAnchors(
     const shouldCreateDossier = crossedProposal && anchor.playerVisibility !== 'hidden';
     const existing = next.strategicDossiers[dossierId];
     if (shouldCreateDossier && !existing) {
-      const dossier = anchorDossier({ ...anchor, pressure, status: nextStatus, dossierId }, reachedDate, pressure);
+      const dossier = anchorDossier(next, { ...anchor, pressure, status: nextStatus, dossierId }, reachedDate, pressure);
       patch.dossierId = dossier.id;
       next = commitWorldAction(next, {
         kind: 'historical', actorId: next.playerCountryId, origin: 'historical', visibility: 'player',
@@ -258,14 +291,30 @@ function updateHistoricalAnchors(
     }
 
     if (nextStatus === 'active' && existing && crossedActivation) {
+      const hasPendingDecision = existing.pendingDecisions.length > 0;
+      const alreadyReceivedActivationDecision = (existing.decisionRecords ?? [])
+        .some((decision) => decision.sourceId === `${anchor.id}:activation`);
+      const activationDecision = !hasPendingDecision && !alreadyReceivedActivationDecision
+        ? historicalDossierDecision(next, anchor, reachedDate, anchor.importance, 'activation')
+        : undefined;
       next = commitWorldAction(next, {
         kind: 'historical', actorId: next.playerCountryId, origin: 'historical', visibility: 'player',
         intent: `Activer l’ancrage historique « ${anchor.trendTitle} »`,
         metadata: { historicalAnchor: true, historicalAnchorId: anchor.id },
         effects: [
           { kind: 'historical_anchor_patch', anchorId: anchor.id, patch, reason: 'La pression historique franchit le seuil d’activation.', visibility: 'player' },
-          { kind: 'dossier_patch', dossierId, patch: { importance: anchor.importance, status: 'active', trend: 'escalating', phase: 'Seuil d’activation atteint', publicSummary: anchor.trendSummary }, reason: 'Le dossier historique devient actif lorsque la pression atteint son seuil.', visibility: 'player' },
-          { kind: 'dossier_entry_add', dossierId, entry: { id: `${dossierId}-activation-${reachedDate}`, date: reachedDate, title: 'Seuil d’activation atteint', summary: `La pression atteint ${pressure.toFixed(0)}/100. L’IA peut maintenant proposer une manifestation parmi les formes admissibles.`, importance: anchor.importance, actorIds: anchor.affectedActors, requiresDecision: false, visibility: 'player' }, reason: 'Le passage au seuil actif est conservé dans la chronologie.', visibility: 'player' },
+          {
+            kind: 'dossier_patch', dossierId,
+            patch: {
+              importance: anchor.importance, status: 'active', trend: 'escalating', phase: 'Seuil d’activation atteint', publicSummary: anchor.trendSummary,
+              ...(activationDecision ? {
+                pendingDecisions: [...existing.pendingDecisions, activationDecision.prompt],
+                decisionRecords: [...(existing.decisionRecords ?? []), activationDecision],
+              } : {}),
+            },
+            reason: 'Le dossier historique devient actif lorsque la pression atteint son seuil.', visibility: 'player',
+          },
+          { kind: 'dossier_entry_add', dossierId, entry: { id: `${dossierId}-activation-${reachedDate}`, date: reachedDate, title: 'Seuil d’activation atteint', summary: activationDecision ? `La pression atteint ${pressure.toFixed(0)}/100. Une nouvelle posture est demandée, car le premier arbitrage n'a pas suffi à écarter la trajectoire.` : `La pression atteint ${pressure.toFixed(0)}/100. Le dossier devient actif ; l'IA peut maintenant proposer une manifestation parmi les formes admissibles.`, importance: anchor.importance, actorIds: anchor.affectedActors, requiresDecision: Boolean(activationDecision), visibility: 'player' }, reason: 'Le passage au seuil actif est conservé dans la chronologie.', visibility: 'player' },
         ],
       });
     }

@@ -61,7 +61,31 @@ test('les ancrages historiques ouvrent un dossier sur signal sans imposer imméd
   assert.notEqual(china?.status, 'dormant');
   assert.ok(afterTwoMonths.strategicDossiers['historical-russia-recentralization']);
   assert.ok(afterTwoMonths.strategicDossiers['historical-china-wto-integration']);
+  const russiaDossier = afterTwoMonths.strategicDossiers['historical-russia-recentralization'];
+  assert.equal(russiaDossier.pendingDecisions.length, 1);
+  assert.equal(russiaDossier.decisionRecords?.[0]?.sourceKind, 'historical');
+  assert.equal(russiaDossier.decisionRecords?.[0]?.sourceId, 'russia-recentralization:signal');
   assert.equal(afterTwoMonths.historicalAnchors['mass-casualty-terrorism']?.status, 'dormant');
+});
+
+test('un ancrage historique ne redemande un arbitrage qu’au franchissement d’un seuil après une première position', () => {
+  const signalled = advanceWorld(createFrance2000World(), '2001-03-01').state;
+  const dossierId = 'historical-mass-casualty-terrorism';
+  const signalDecision = signalled.strategicDossiers[dossierId]?.pendingDecisions[0];
+  assert.ok(signalDecision);
+  if (!signalDecision) return;
+
+  const positioned = resolveDossierDecision(signalled, dossierId, signalDecision, 'delegation');
+  const activated = advanceWorld(positioned, '2001-12-01').state;
+  const dossier = activated.strategicDossiers[dossierId];
+  const activationDecisions = dossier.decisionRecords?.filter((decision) => decision.sourceId === 'mass-casualty-terrorism:activation') ?? [];
+  assert.equal(activationDecisions.length, 1);
+  assert.equal(dossier.pendingDecisions.length, 1);
+  assert.equal(dossier.pendingDecisions[0], activationDecisions[0].prompt);
+
+  const nextMonth = advanceWorld(activated, '2002-01-01').state;
+  const repeated = nextMonth.strategicDossiers[dossierId].decisionRecords?.filter((decision) => decision.sourceId === 'mass-casualty-terrorism:activation') ?? [];
+  assert.equal(repeated.length, 1);
 });
 
 test('un ancrage historique peut être concrétisé par l IA uniquement dans sa fenêtre', () => {
