@@ -867,6 +867,7 @@ function AdvisorAIAuditPanel({ entries, onClear }: { entries: AdvisorAIAuditEntr
           <div className="font-mono text-[10px] uppercase tracking-wider text-emerald-300">Reçu et contrôlé</div>
           {entry.result.ok ? <>
             <div className="mt-2 text-xs"><b>Validation :</b> réponse structurée conforme au contrat ORDO.</div>
+            {entry.result.diagnostics && (entry.result.diagnostics.removedFactIds.length > 0 || entry.result.diagnostics.removedClaims.length > 0) && <div className="mt-2 text-xs text-amber-200"><b>Contrôle de provenance :</b> {entry.result.diagnostics.removedClaims.length > 0 ? `${entry.result.diagnostics.removedClaims.length} affirmation(s) factuelle(s) sans citation valide écartée(s)` : 'aucune affirmation supprimée'}{entry.result.diagnostics.removedFactIds.length > 0 ? ` · ${entry.result.diagnostics.removedFactIds.length} citation(s) inconnue(s) retirée(s)` : ''}.</div>}
             <div className="mt-2 text-xs"><b>Usage :</b> {entry.result.usage.inputTokens} entrants · {entry.result.usage.outputTokens} sortants{entry.result.usage.cachedInputTokens > 0 ? ` · ${entry.result.usage.cachedInputTokens} relus depuis le cache` : ''}{entry.result.usage.cacheWriteTokens ? ` · ${entry.result.usage.cacheWriteTokens} écrits dans le cache` : ''} · {entry.result.usage.latencyMs / 1000}s · {entry.result.usage.remainingSessionRequestsToday} appel(s) restant(s).</div>
             {entry.result.usage.cacheDiagnostics && entry.result.usage.cacheDiagnostics.type !== 'not_reported' && <div className="mt-1 font-mono text-[10px] text-muted-foreground">Cache IA : {entry.result.usage.cacheDiagnostics.type === 'cache_hit' ? 'préfixe réutilisé' : 'préfixe non réutilisé'}{entry.result.usage.cacheDiagnostics.reason ? ` · ${entry.result.usage.cacheDiagnostics.reason}` : ''}{entry.result.usage.cacheDiagnostics.comparisonReusableTokens != null ? ` · ${entry.result.usage.cacheDiagnostics.comparisonReusableTokens} jetons comparables` : ''}.</div>}
             <details className="mt-3 border border-border bg-background/30 p-2"><summary className="cursor-pointer text-xs font-semibold">Voir la réponse structurée exacte</summary><pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-words font-mono text-[10px] text-muted-foreground">{JSON.stringify(entry.result.answer, null, 2)}</pre></details>
@@ -981,9 +982,10 @@ function AdvisorPanel({ world, onWorldChange, onNotice }: { world: WorldState; o
         setAiStatus('unavailable'); setAiMessage(payload.message);
         return;
       }
-      appendAudit({ id: aiRequest.requestId, createdAt: new Date().toISOString(), request: auditRequest, result: { ok: true, answer: payload.answer, usage: payload.usage, source: payload.source } });
+      appendAudit({ id: aiRequest.requestId, createdAt: new Date().toISOString(), request: auditRequest, result: { ok: true, answer: payload.answer, usage: payload.usage, source: payload.source, diagnostics: payload.diagnostics } });
       setAiAnswer(payload.answer); setAiUsage(payload.usage); setAiStatus('ready');
-      setAiMessage(`${payload.source === 'local_fallback' ? 'Réponse locale de secours (sortie IA invalide)' : 'Réponse IA validée'} · ${payload.usage.remainingSessionRequestsToday} requête(s) restantes aujourd’hui.`);
+      const filteredClaims = payload.diagnostics?.removedClaims.length ?? 0;
+      setAiMessage(`${payload.source === 'local_fallback' ? 'Réponse locale de secours (sortie IA invalide)' : 'Réponse IA validée'}${filteredClaims ? ` · ${filteredClaims} affirmation(s) écartée(s) par le contrôle` : ''} · ${payload.usage.remainingSessionRequestsToday} requête(s) restantes aujourd’hui.`);
     } catch {
       // L'entrée n'est créée ici que si la requête a pu être préparée, afin d'éviter un faux audit vide.
       setAiStatus('unavailable');

@@ -109,3 +109,49 @@ test('la route conseiller rejette une sortie qui cite un fait absent', async () 
     Object.assign(process.env, previousEnv);
   }
 });
+
+test('la route conseiller conserve les options quand un claim factuel isolé est sans provenance', async () => {
+  const previousFetch = globalThis.fetch;
+  const previousEnv = { ...process.env };
+  try {
+    process.env.AI_ENABLED = 'true';
+    process.env.OPENAI_API_KEY = 'mock-key';
+    process.env.AI_MODEL = 'gpt-5.6-luna';
+    process.env.AI_RATE_LIMIT_SALT = 'mock-test-isolated-claim';
+    const world = createFrance2000World();
+    const local = answerAdvisorQuestion(world, 'Quelle stratégie économique est possible ?', { questionKind: 'strategy' });
+    const factId = local.facts[0]?.id ?? 'date';
+    const answer = {
+      headline: 'Réponse exploitable malgré un claim écarté',
+      synthesis: 'Les options restent fondées sur les faits transmis.',
+      keyJudgment: 'Conserver une trajectoire graduelle.',
+      options: [1, 2, 3].map((index) => ({
+        title: `Option ${index}`,
+        proposal: `Préparer une étape ${index}.`,
+        whyPlausible: 'Cette option s’appuie sur un fait transmis.',
+        whyRefused: 'Elle mobilise des moyens.',
+        estimatedConsequences: ['Effet progressif.'],
+        risks: ['Retard possible.'],
+        factIds: [factId],
+      })),
+      blindSpots: ['Les réactions non documentées restent inconnues.'],
+      claims: [
+        { text: 'Le fait transmis est exploitable.', status: 'fact', factIds: [factId] },
+        { text: 'Ce fait n’existe pas dans le contexte.', status: 'fact', factIds: ['fact-inexistant'] },
+        { text: 'Une trajectoire graduelle est envisageable.', status: 'proposal', factIds: [] },
+      ],
+    };
+    const { request, upstream } = makeRequest('mock-route-isolated-claim', answer);
+    globalThis.fetch = (async (input, init) => requestUrl(input).includes('api.openai.com') ? upstream : previousFetch(input, init)) as typeof fetch;
+    const response = await advisorPOST(request);
+    const body = await response.json() as { ok: boolean; answer?: { claims: unknown[] }; diagnostics?: { removedFactIds: string[]; removedClaims: number[] } };
+    assert.equal(response.status, 200);
+    assert.equal(body.ok, true);
+    assert.equal(body.answer?.claims.length, 2);
+    assert.deepEqual(body.diagnostics, { removedFactIds: ['fact-inexistant'], removedClaims: [1] });
+  } finally {
+    globalThis.fetch = previousFetch;
+    for (const key of Object.keys(process.env)) if (!(key in previousEnv)) delete process.env[key];
+    Object.assign(process.env, previousEnv);
+  }
+});

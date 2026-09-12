@@ -6,7 +6,13 @@ export type AdvisorAIAuditEntry = {
   id: string;
   createdAt: string;
   request: Pick<AdvisorAIRequest, 'requestId' | 'question' | 'context'>;
-  result: { ok: true; answer: AdvisorAIAnswer; usage: AdvisorAIUsage; source?: 'llm' | 'local_fallback' } | { ok: false; message: string; usage?: AdvisorAIUsage; diagnostics?: { issues: string[]; truncated: boolean } };
+  result: {
+    ok: true;
+    answer: AdvisorAIAnswer;
+    usage: AdvisorAIUsage;
+    source?: 'llm' | 'local_fallback';
+    diagnostics?: { removedFactIds: string[]; removedClaims: number[] };
+  } | { ok: false; message: string; usage?: AdvisorAIUsage; diagnostics?: { issues: string[]; truncated: boolean } };
 };
 
 export type WorldPulseAIAuditEntry = {

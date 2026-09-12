@@ -95,7 +95,14 @@ export type AdvisorAIUsage = {
 };
 
 export type AdvisorAIResponse =
-  | { ok: true; answer: AdvisorAIAnswer; usage: AdvisorAIUsage; source?: 'llm' | 'local_fallback' }
+  | {
+      ok: true;
+      answer: AdvisorAIAnswer;
+      usage: AdvisorAIUsage;
+      source?: 'llm' | 'local_fallback';
+      /** Éléments écartés par le contrôle de provenance sans invalider toute la réponse. */
+      diagnostics?: { removedFactIds: string[]; removedClaims: number[] };
+    }
   | {
       ok: false;
       code: 'not_configured' | 'invalid_request' | 'rate_limited' | 'budget_exhausted' | 'upstream_error';
@@ -360,8 +367,11 @@ const normalizeFactId = (value: string) => value
 
 /** Nettoie les citations avant validation sans toucher au texte généré par le modèle. */
 export function sanitizeAdvisorAnswerFactIds(value: unknown, factIds: ReadonlySet<string>) {
-  if (!isRecord(value) || !Array.isArray(value.options)) return { answer: value, removed: [] as string[] };
+  if (!isRecord(value) || !Array.isArray(value.options)) {
+    return { answer: value, removed: [] as string[], removedClaims: [] as number[] };
+  }
   const removed: string[] = [];
+  const removedClaims: number[] = [];
   const options = value.options.map((option) => {
     if (!isRecord(option) || !Array.isArray(option.factIds)) return option;
     const cleaned = option.factIds
@@ -374,15 +384,22 @@ export function sanitizeAdvisorAnswerFactIds(value: unknown, factIds: ReadonlySe
       });
     return { ...option, factIds: cleaned };
   });
-  const claims = Array.isArray(value.claims) ? value.claims.map((claim) => {
+  const claims = Array.isArray(value.claims) ? value.claims.map((claim, index) => {
     if (!isRecord(claim) || !Array.isArray(claim.factIds)) return claim;
     const cleaned = claim.factIds.filter((id): id is string => typeof id === 'string').map(normalizeFactId).filter((id) => {
       if (factIds.has(id)) return true;
       removed.push(id); return false;
     });
+    // Une affirmation présentée comme un fait sans provenance ne doit pas
+    // contaminer toute la réponse. On l'écarte seulement ; les options et
+    // les autres claims restent consultables et auditables.
+    if (claim.status === 'fact' && cleaned.length === 0) {
+      removedClaims.push(index);
+      return null;
+    }
     return { ...claim, factIds: cleaned };
-  }) : value.claims;
-  return { answer: { ...value, options, claims }, removed };
+  }).filter((claim): claim is Exclude<typeof claim, null> => claim !== null) : value.claims;
+  return { answer: { ...value, options, claims }, removed, removedClaims };
 }
 
 /**

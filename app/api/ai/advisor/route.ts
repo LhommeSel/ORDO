@@ -281,7 +281,11 @@ export async function POST(request: Request) {
     const actorIds = new Set(parsed.context.actors.map((actor) => actor.id));
     const factSanitized = sanitizeAdvisorAnswerFactIds(answer, factIds);
     const intentSanitized = sanitizeAdvisorAnswerActionIntents(factSanitized.answer, actorIds);
-    const sanitized = { answer: intentSanitized.answer, removed: [...factSanitized.removed, ...intentSanitized.removed] };
+    const sanitized = {
+      answer: intentSanitized.answer,
+      removed: [...factSanitized.removed, ...intentSanitized.removed],
+      removedClaims: factSanitized.removedClaims,
+    };
     const validationIssues = [
       ...advisorAnswerValidationIssues(sanitized.answer, parsed.context.questionKind, parsed.context.responseMode),
       ...advisorAnswerGroundingIssues(sanitized.answer, factIds, actorIds),
@@ -304,6 +308,12 @@ export async function POST(request: Request) {
       ok: true,
       answer: sanitized.answer,
       usage: usageSummary,
+      ...(sanitized.removed.length > 0 || sanitized.removedClaims.length > 0 ? {
+        diagnostics: {
+          removedFactIds: sanitized.removed,
+          removedClaims: sanitized.removedClaims,
+        },
+      } : {}),
     });
   } catch (error) {
     const timeout = error instanceof Error && error.name === 'TimeoutError';
