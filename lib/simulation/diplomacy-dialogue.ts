@@ -3,6 +3,7 @@ import { commitWorldAction } from './ledger';
 import { relationBetween } from './ledger';
 import { resolveDossierDecision } from './dossiers';
 import { historicalAnchorChannelEffects } from './history';
+import { enforceDiplomaticMove } from './diplomatic-feasibility';
 import type { DiplomaticAgreementType, DiplomaticDialogue, DiplomaticDialogueResponse, DiplomaticTurn, GeneralAIJob, CountryId, WorldState, WorldEffect, AIJobOutcome, DossierEntry, StrategicDossier, TreatyImplementation } from './types';
 import type { AIDiplomaticMove } from '../ai/job-contracts';
 
@@ -505,35 +506,45 @@ export function applyDiplomaticDialogueAIAnswer(state: WorldState, jobId: string
   const nextSpeakerId = nextSpeaker(state, dialogue, [state.playerCountryId, speaker]);
   const response = outcome.publicMessage.trim();
   const normalizedMove = move ? normalizeDialogueMove(move, response) : null;
-  const isEnergyFramework = normalizedMove?.scope === 'general_dialogue' && normalizedMove.agreementType === 'energy_cooperation';
-  const relationEffect = normalizedMove?.kind === 'accept'
+  const constrained = normalizedMove
+    // Seule l'intention du tour courant déclenche une ligne rouge : les
+    // anciens messages sont déjà de la mémoire, pas une nouvelle demande.
+    ? enforceDiplomaticMove(state, speaker, dialogue.participantIds, job.inputText ?? '', normalizedMove, response)
+    : null;
+  const effectiveMove = constrained?.move ?? normalizedMove;
+  const effectiveResponse = constrained?.publicMessage ?? response;
+  const isEnergyFramework = effectiveMove?.scope === 'general_dialogue' && effectiveMove.agreementType === 'energy_cooperation';
+  const relationEffect = effectiveMove?.kind === 'accept'
     ? { relation: isEnergyFramework ? 1 : 5, trust: isEnergyFramework ? 0 : 3 }
-    : normalizedMove?.kind === 'refuse' ? { relation: -5, trust: -3 }
-      : normalizedMove?.kind === 'counter' ? { relation: isEnergyFramework ? 1 : 2, trust: isEnergyFramework ? 0 : 1 }
+    : effectiveMove?.kind === 'refuse' ? { relation: -5, trust: -3 }
+      : effectiveMove?.kind === 'counter' ? { relation: isEnergyFramework ? 1 : 2, trust: isEnergyFramework ? 0 : 1 }
         : null;
-  const structuredResponse = normalizedMove?.scope === 'general_dialogue' ? {
-    kind: normalizedMove.kind,
-    agreementType: normalizedMove.agreementType,
-    position: normalizedMove.position,
-    concessions: normalizedMove.concessions,
-    guaranteesRequested: normalizedMove.guaranteesRequested,
-    conditions: normalizedMove.conditions,
-    redLines: normalizedMove.redLines,
-    timeline: normalizedMove.timeline,
+  const structuredResponse = effectiveMove?.scope === 'general_dialogue' ? {
+    kind: effectiveMove.kind,
+    agreementType: effectiveMove.agreementType,
+    position: effectiveMove.position,
+    concessions: effectiveMove.concessions,
+    guaranteesRequested: effectiveMove.guaranteesRequested,
+    conditions: effectiveMove.conditions,
+    redLines: effectiveMove.redLines,
+    timeline: effectiveMove.timeline,
   } : dialogue.lastResponse;
   const nextDialogue: DiplomaticDialogue = {
     ...dialogue, status: 'awaiting_player', aiMode: 'ai', activeSpeakerId: nextSpeakerId, updatedAt: state.currentDate,
     resolution: undefined,
     lastResponse: structuredResponse,
-    turns: [...dialogue.turns, turn(`${dialogue.id}-${speaker}-${dialogue.turns.length + 1}`, state.currentDate, speaker, 'message', response || outcome.assessment.slice(0, 600))],
+    turns: [...dialogue.turns, turn(`${dialogue.id}-${speaker}-${dialogue.turns.length + 1}`, state.currentDate, speaker, 'message', effectiveResponse || outcome.assessment.slice(0, 600))],
   };
+  const effectiveOutcome: AIJobOutcome = constrained
+    ? { ...outcome, publicMessage: effectiveResponse, assessment: constrained.overridden ? `${outcome.assessment} Garde-fou moteur : la position a été ramenée à une contre-proposition compatible avec la chronologie et les lignes rouges.` : outcome.assessment }
+    : outcome;
   return { ok: true as const, state: commitWorldAction(state, {
     kind: 'diplomatic', actorId: speaker, targetIds: dialogue.participantIds.filter((id) => id !== speaker), origin: 'ai', visibility: 'player',
     intent: `Réponse diplomatique de ${speaker} dans « ${dialogue.id} »`, effects: [
       { kind: 'diplomatic_dialogue_patch', dialogueId: dialogue.id, patch: nextDialogue, reason: 'La réponse IA est ajoutée à la mémoire du canal diplomatique.', visibility: 'player' },
-      ...(relationEffect ? dialogue.participantIds.filter((id) => id !== speaker).map((targetId) => ({ kind: 'relation_delta' as const, from: speaker, to: targetId, relation: relationEffect.relation, trust: relationEffect.trust, reason: `Position diplomatique ${move?.kind === 'accept' ? 'favorable' : move?.kind === 'refuse' ? 'refusée' : 'contre-proposée'} dans le dialogue.`, visibility: 'player' as const })) : []),
-      ...(dialogue.linkedDossierId && state.strategicDossiers[dialogue.linkedDossierId] ? [{ kind: 'dossier_entry_add' as const, dossierId: dialogue.linkedDossierId, entry: { id: `dialogue-entry-${dialogue.id}-${dialogue.turns.length + 1}`, date: state.currentDate, title: `Réponse de ${state.countries[speaker]?.name ?? speaker}`, summary: response || outcome.assessment.slice(0, 600), importance: state.strategicDossiers[dialogue.linkedDossierId].importance, actorIds: dialogue.participantIds, requiresDecision: false, visibility: 'player' as const }, reason: 'Le dialogue associé actualise directement le dossier suivi.', visibility: 'player' as const }] : []),
-      { kind: 'ai_job_patch', jobId, patch: { status: 'resolved', resolvedAt: state.currentDate, attempts: job.attempts + 1, outcome }, reason: 'La réponse diplomatique IA est conservée dans la tâche.', visibility: 'debug' },
+      ...(relationEffect ? dialogue.participantIds.filter((id) => id !== speaker).map((targetId) => ({ kind: 'relation_delta' as const, from: speaker, to: targetId, relation: relationEffect.relation, trust: relationEffect.trust, reason: `Position diplomatique ${effectiveMove?.kind === 'accept' ? 'favorable' : effectiveMove?.kind === 'refuse' ? 'refusée' : 'contre-proposée'} dans le dialogue.`, visibility: 'player' as const })) : []),
+      ...(dialogue.linkedDossierId && state.strategicDossiers[dialogue.linkedDossierId] ? [{ kind: 'dossier_entry_add' as const, dossierId: dialogue.linkedDossierId, entry: { id: `dialogue-entry-${dialogue.id}-${dialogue.turns.length + 1}`, date: state.currentDate, title: `Réponse de ${state.countries[speaker]?.name ?? speaker}`, summary: effectiveResponse || outcome.assessment.slice(0, 600), importance: state.strategicDossiers[dialogue.linkedDossierId].importance, actorIds: dialogue.participantIds, requiresDecision: false, visibility: 'player' as const }, reason: 'Le dialogue associé actualise directement le dossier suivi.', visibility: 'player' as const }] : []),
+      { kind: 'ai_job_patch', jobId, patch: { status: 'resolved', resolvedAt: state.currentDate, attempts: job.attempts + 1, outcome: effectiveOutcome }, reason: 'La réponse diplomatique IA est conservée dans la tâche.', visibility: 'debug' },
     ],
   }) };
 }

@@ -162,6 +162,9 @@ export async function POST(request: Request) {
       'N’invente aucun indicateur chiffré absent. Utilise request_world_facts au maximum une fois si une donnée indispensable manque dans le premier contexte.',
       'Après le complément, place dans requestedFacts uniquement les données encore absentes.',
       'Distingue les faits des inférences et fais agir chaque entité selon ses intérêts, sa doctrine, ses contraintes et sa personnalité.',
+      parsed.job.kind === 'diplomacy'
+        ? 'Le contexte peut contenir un fait privé « derived.diplomaticFeasibility ». Il s’agit d’un garde-fou moteur obligatoire : respecte les problèmes de chronologie et les lignes rouges signalées. Si un terme est bloquant, diplomaticMove.kind ne peut pas être accept ; formule une contre-proposition qui rejette explicitement le terme et propose une voie compatible. Une acceptation de dialogue ne vaut jamais acceptation du fond.'
+        : '',
       'Les effectHints sont des suggestions qualitatives. Ne prétends jamais avoir modifié le monde, signé un accord ou exécuté une action.',
       parsed.job.kind === 'power_struggle'
         ? `powerStrugglePlan doit être renseigné. L'acteur vaut null uniquement si la finalité n'est pas materialize_actor.`

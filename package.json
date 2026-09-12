@@ -11,7 +11,7 @@
     "start": "wrangler dev --config dist/server/wrangler.json",
     "test:ai": "tsx --test lib/ai/contracts.test.ts",
     "test:ai:mock": "tsx --test lib/ai/contracts.test.ts lib/ai/routes.mock.test.ts",
-    "test:simulation": "tsx --test lib/simulation/simulation.test.ts",
+    "test:simulation": "tsx --test lib/simulation/simulation.test.ts lib/simulation/diplomatic-feasibility.test.ts",
     "audit:world": "tsx scripts/audit-world-invariants.ts",
     "lint": "oxlint",
     "format": "oxfmt"

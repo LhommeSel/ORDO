@@ -9,6 +9,7 @@ import type {
 } from '../types';
 import { militaryBasesForCountry, militaryTheatersForCountry } from '../military-theaters';
 import { warZonesForCountry } from '../war-zones';
+import { deriveDiplomaticFeasibility, diplomaticPostureStatement } from '../diplomatic-feasibility';
 
 export type AIContextDomain =
   | 'overview'
@@ -208,6 +209,7 @@ export function collectFacts(state: WorldState): AIContextFact[] {
     add({ id: `country:${country.id}:identity`, domain: 'overview', entityIds: [country.id], topicTags: ['pays', 'gouvernement'], importance: 96, confidence: country.statisticalReliability, visibility: 'public', sourcePath: `countries.${country.id}`, statement: `${country.name} — ${country.politics.regime}; gouvernement ${country.politics.governmentLabel}; approbation publique ${country.politics.publicApproval.toFixed(0)}/100.` });
     add({ id: `country:${country.id}:doctrine`, domain: 'politics', entityIds: [country.id], topicTags: ['doctrine', 'ideologie', 'gouvernement'], importance: 84, confidence: 90, visibility: 'public', sourcePath: `countries.${country.id}.politics.doctrine`, statement: `Doctrine du gouvernement de ${country.name}: économie ${country.politics.doctrine.economic}, social ${country.politics.doctrine.social}, souveraineté ${country.politics.doctrine.sovereignty}, sécurité ${country.politics.doctrine.security}.` });
     add({ id: `country:${country.id}:strategy`, domain: 'politics', entityIds: [country.id, ...country.strategy.partners, ...country.strategy.rivals], topicTags: ['strategie', 'objectifs', 'lignes rouges'], importance: 88, confidence: 100, visibility: 'secret', ownerCountryId: country.id, sourcePath: `countries.${country.id}.strategy`, statement: `Stratégie de ${country.name}: objectifs ${country.strategy.goals.filter((goal) => goal.status === 'active').map((goal) => goal.label).join(', ') || 'aucun'}; vulnérabilités ${country.strategy.vulnerabilities.join(', ') || 'non documentées'}; lignes rouges ${country.strategy.redLines.join(', ') || 'non documentées'}.` });
+    add({ id: `country:${country.id}:diplomatic-posture`, domain: 'diplomacy', entityIds: [country.id, ...country.strategy.partners, ...country.strategy.rivals], topicTags: ['diplomatie', 'posture', 'lignes rouges', 'compatibilite'], importance: 90, confidence: 96, visibility: 'secret', ownerCountryId: country.id, sourcePath: `countries.${country.id}.diplomaticPosture`, statement: diplomaticPostureStatement(state, country.id) });
     const leadership = state.leadership?.[country.id];
     if (leadership) add({ id: `country:${country.id}:leadership`, domain: 'politics', entityIds: [country.id, ...leadership.figures.map((figure) => figure.id)], topicTags: ['dirigeant', 'personnalite', 'gouvernement'], importance: 91, confidence: 78, visibility: 'public', sourcePath: `leadership.${country.id}`, statement: `Direction effective de ${country.name}: ${leadership.figures.map((figure) => `${figure.name} (${figure.role}, autorité ${figure.authorityShare} %; ${figure.ideologyTags.join(', ')})`).join(' ; ')}. Coordination exécutive ${leadership.executiveCoordination}/100.` });
     const politicalCycle = state.politicalCycles?.[country.id];
@@ -390,7 +392,24 @@ export function queryForAIJob(state: WorldState, job: AIJob): AIContextQuery {
 
 /** Compile la vérité utile du moteur avant tout appel réseau. */
 export function compileAIContext(state: WorldState, query: AIContextQuery): AIContextPacket {
-  const allFacts = collectFacts(state);
+  const baseFacts = collectFacts(state);
+  const allFacts = query.jobKind === 'diplomacy'
+    ? [...baseFacts, (() => {
+      const feasibility = deriveDiplomaticFeasibility(state, query.decisionCountryId, query.targetIds, query.playerIntent);
+      return fact(state, {
+        id: `diplomacy:guardrails:${query.decisionCountryId}:${state.currentDate}`,
+        domain: 'diplomacy',
+        entityIds: [query.decisionCountryId, ...query.targetIds],
+        topicTags: ['diplomatie', 'chronologie', 'lignes rouges', 'compatibilite'],
+        importance: 100,
+        confidence: 100,
+        visibility: 'secret',
+        ownerCountryId: query.decisionCountryId,
+        sourcePath: `derived.diplomaticFeasibility.${query.decisionCountryId}`,
+        statement: feasibility.instruction,
+      });
+    })()]
+    : baseFacts;
   const scoped = allFacts.flatMap((item): AIContextReserveFact[] => {
     if (canCountrySeeFact(state, query.requestingCountryId, item)) return [{ ...item, accessScope: 'known' }];
     if (item.ownerCountryId === query.decisionCountryId && item.visibility !== 'public') return [{ ...item, accessScope: 'private' }];
@@ -402,8 +421,10 @@ export function compileAIContext(state: WorldState, query: AIContextQuery): AICo
     `country:${query.requestingCountryId}:strategy`,
     `country:${query.decisionCountryId}:identity`,
     `country:${query.decisionCountryId}:strategy`,
+    `country:${query.decisionCountryId}:diplomatic-posture`,
     `country:${query.decisionCountryId}:leadership`,
     `country:${query.decisionCountryId}:apparatus`,
+    ...(query.jobKind === 'diplomacy' ? [`diplomacy:guardrails:${query.decisionCountryId}:${state.currentDate}`] : []),
     ...query.targetIds.map((id) => `country:${id}:identity`),
   ]);
   const ranked = scoped
@@ -412,8 +433,14 @@ export function compileAIContext(state: WorldState, query: AIContextQuery): AICo
     .sort((a, b) => b.score - a.score || a.item.id.localeCompare(b.item.id));
   const selected: AIContextReserveFact[] = [];
   let used = approximateTokens({ query: { ...query, playerIntent: undefined }, overview: state.currentDate });
+  const guardrailId = `diplomacy:guardrails:${query.decisionCountryId}:${state.currentDate}`;
+  const orderedAnchors = ranked.filter(({ item }) => anchorIds.has(item.id)).sort((a, b) => {
+    if (a.item.id === guardrailId) return -1;
+    if (b.item.id === guardrailId) return 1;
+    return b.score - a.score || a.item.id.localeCompare(b.item.id);
+  });
   const ordered = [
-    ...ranked.filter(({ item }) => anchorIds.has(item.id)),
+    ...orderedAnchors,
     ...ranked.filter(({ item }) => !anchorIds.has(item.id)),
   ];
   for (const candidate of ordered) {
