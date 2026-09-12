@@ -45,7 +45,7 @@ import {
   activeWarZones,
   prepareMilitaryTheaterAction,
   saveDiplomaticBrief,
-  proposeDiplomaticMeeting,
+  proposeDiplomaticMeeting, reviseDiplomaticAgreementDraft, signDiplomaticAgreementDraft,
   nationalReformOptions, reformPositionLabel, reformStateKey,
   type AdvisorAnswer, type AdvisorQuestionKind, type EnergyAdministrativeOffer, type EnergyCounterpartResponse,
   type CommonActionCategory, type CountryId, type EnergyOfferAdjustment, type HistoricalInterventionDirection, type ISODate, type StrategicDossier, type StrategicPlan,
@@ -1618,6 +1618,20 @@ function DiplomacyPanel({ world, onWorldChange, onNotice, initialDialogueId }: {
     onWorldChange(result.state);
     onNotice(`Rencontre ${mode === 'official' ? 'officielle' : mode === 'discreet' ? 'discrète' : 'technique'} programmée : un projet d’accord est prêt à être révisé.`);
   };
+  const reviseAgreement = (unresolvedConditions: string[]) => {
+    if (!diplomaticAgreementDraft) return;
+    const result = reviseDiplomaticAgreementDraft(worldRef.current, diplomaticAgreementDraft.id, { unresolvedConditions });
+    if (!result.ok) { onNotice(result.error); return; }
+    onWorldChange(result.state);
+    onNotice(unresolvedConditions.length > 0 ? `${unresolvedConditions.length} point(s) restent ouverts dans le projet.` : 'Tous les points ouverts sont marqués comme réglés ; la signature est désormais possible.');
+  };
+  const signAgreement = () => {
+    if (!diplomaticAgreementDraft) return;
+    const result = signDiplomaticAgreementDraft(worldRef.current, diplomaticAgreementDraft.id);
+    if (!result.ok) { onNotice(result.error); return; }
+    onWorldChange(result.state);
+    onNotice('Accord diplomatique signé : ses effets sont maintenant actifs dans le moteur.');
+  };
   useEffect(() => {
     if (!initialDialogueId || !dialogue || dialogue.id !== initialDialogueId || dialogue.status !== 'awaiting_ai' || autoStartedDialogueIds.current.has(initialDialogueId)) return;
     autoStartedDialogueIds.current.add(initialDialogueId);
@@ -1696,7 +1710,7 @@ function DiplomacyPanel({ world, onWorldChange, onNotice, initialDialogueId }: {
       </div>
       {lastAIUsage && <div className="mt-3 font-mono text-[10px] text-muted-foreground">Dernier appel : {lastAIUsage}</div>}
     </section>
-    <DeferredPanel fallback={<div className="border border-border p-4 text-sm text-muted-foreground">Chargement du centre diplomatique…</div>}><DiplomacySheet open={open} onOpenChange={setOpen} countries={sheetCountries} selectedId={selectedSheetCountry.id} participantIds={dialogue?.participantIds} participantOptions={dialogue ? participantOptions : []} onAddParticipant={dialogue ? addParticipant : undefined} dialogues={recentDialogues.slice(0, 8).map((item) => ({ id: item.id, kind: item.kind, participantIds: item.participantIds, status: item.status, label: item.participantIds.filter((id) => id !== player.id).map((id) => world.countries[id]?.name ?? id).join(', ') }))} selectedDialogueId={dialogueId} onSelectDialogue={selectDialogue} onNewDialogue={openIndependentDialogue} onSelectCountry={(id) => { if (dialogue && !dialogue.participantIds.includes(id)) return; setSelectedId(id); }} selectedCountry={selectedSheetCountry} messages={messages} structuredResponse={dialogue?.lastResponse} responseResolution={dialogue?.resolution} brief={diplomaticBrief} briefLoading={briefLoading} onRequestBrief={dialogue ? requestBrief : undefined} onProposeMeeting={dialogue ? proposeMeeting : undefined} meeting={diplomaticMeeting} agreementDraft={diplomaticAgreementDraft} onResolveResponse={dialogue?.status === 'awaiting_player' && dialogue?.lastResponse && !dialogue?.resolution ? resolveResponse : undefined} draft={draft} onDraftChange={setDraft} onSend={send} isThinking={isThinking} playerCountryName={player.name} participantCount={dialogue?.participantIds.length ?? (participants.length + 1)} activeSpeakerLabel={dialogue ? (world.countries[dialogue.activeSpeakerId]?.name ?? dialogue.activeSpeakerId) : undefined} statusLabel={dialogueStatusLabel} quickReplies={dialogue?.status === 'awaiting_player' ? quickReplies : []} onQuickReply={(value) => setDraft(value)} canRequestAI={Boolean(dialogue && dialogue.status === 'awaiting_ai')} onRequestAI={askAI} aiRequestLabel={aiRequestLabel} memories={memories} agreements={agreements} onResolveEvent={() => undefined} /></DeferredPanel>
+    <DeferredPanel fallback={<div className="border border-border p-4 text-sm text-muted-foreground">Chargement du centre diplomatique…</div>}><DiplomacySheet open={open} onOpenChange={setOpen} countries={sheetCountries} selectedId={selectedSheetCountry.id} participantIds={dialogue?.participantIds} participantOptions={dialogue ? participantOptions : []} onAddParticipant={dialogue ? addParticipant : undefined} dialogues={recentDialogues.slice(0, 8).map((item) => ({ id: item.id, kind: item.kind, participantIds: item.participantIds, status: item.status, label: item.participantIds.filter((id) => id !== player.id).map((id) => world.countries[id]?.name ?? id).join(', ') }))} selectedDialogueId={dialogueId} onSelectDialogue={selectDialogue} onNewDialogue={openIndependentDialogue} onSelectCountry={(id) => { if (dialogue && !dialogue.participantIds.includes(id)) return; setSelectedId(id); }} selectedCountry={selectedSheetCountry} messages={messages} structuredResponse={dialogue?.lastResponse} responseResolution={dialogue?.resolution} brief={diplomaticBrief} briefLoading={briefLoading} onRequestBrief={dialogue ? requestBrief : undefined} onProposeMeeting={dialogue ? proposeMeeting : undefined} meeting={diplomaticMeeting} agreementDraft={diplomaticAgreementDraft ? { id: diplomaticAgreementDraft.id, title: diplomaticAgreementDraft.title, domain: diplomaticAgreementDraft.domain, stage: diplomaticAgreementDraft.stage, summary: diplomaticAgreementDraft.summary, terms: diplomaticAgreementDraft.terms, unresolvedConditions: diplomaticAgreementDraft.unresolvedConditions } : undefined} onReviseAgreement={diplomaticAgreementDraft?.stage === 'final_proposal' ? reviseAgreement : undefined} onSignAgreement={diplomaticAgreementDraft?.stage === 'final_proposal' ? signAgreement : undefined} onResolveResponse={dialogue?.status === 'awaiting_player' && dialogue?.lastResponse && !dialogue?.resolution ? resolveResponse : undefined} draft={draft} onDraftChange={setDraft} onSend={send} isThinking={isThinking} playerCountryName={player.name} participantCount={dialogue?.participantIds.length ?? (participants.length + 1)} activeSpeakerLabel={dialogue ? (world.countries[dialogue.activeSpeakerId]?.name ?? dialogue.activeSpeakerId) : undefined} statusLabel={dialogueStatusLabel} quickReplies={dialogue?.status === 'awaiting_player' ? quickReplies : []} onQuickReply={(value) => setDraft(value)} canRequestAI={Boolean(dialogue && dialogue.status === 'awaiting_ai')} onRequestAI={askAI} aiRequestLabel={aiRequestLabel} memories={memories} agreements={agreements} onResolveEvent={() => undefined} /></DeferredPanel>
   </div>;
 }
 

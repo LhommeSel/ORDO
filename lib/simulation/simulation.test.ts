@@ -39,7 +39,7 @@ import { rankWorldAttention } from './ai/world-attention';
 import { activeMajorDossierCount, rankDossierReviews, rankStrategicDossierReviews } from './ai/dossier-scheduler';
 import { commitWorldAction } from './ledger';
 import { addDiplomaticDialogueParticipant, applyDiplomaticDialogueAIAnswer, openDiplomaticDialogue, openDiplomaticDialogueForDossier, requestDiplomaticDialogueAI, resolveDiplomaticDialogueResponse, sendDiplomaticDialogueMessage } from './diplomacy-dialogue';
-import { diplomaticBriefFromDialogue, proposeDiplomaticMeeting, reviseDiplomaticAgreementDraft } from './diplomatic-negotiation';
+import { diplomaticBriefFromDialogue, proposeDiplomaticMeeting, reviseDiplomaticAgreementDraft, signDiplomaticAgreementDraft } from './diplomatic-negotiation';
 import { validateCountryRegistry } from './data-validator';
 import { buildTurnBriefing } from './turn-briefing';
 import { queueAutonomousProgram } from './ai/autonomous-programs';
@@ -1872,7 +1872,12 @@ test('la synthèse et la rencontre restent séparées du contrat et sont persist
   assert.equal(answered.ok, true);
   if (!answered.ok) return;
 
-  const brief = diplomaticBriefFromDialogue(answered.state, opened.dialogueId);
+  const acceptedBase = resolveDiplomaticDialogueResponse(answered.state, opened.dialogueId, 'accept');
+  assert.equal(acceptedBase.ok, true);
+  if (!acceptedBase.ok) return;
+  assert.equal(acceptedBase.state.diplomaticDialogues[opened.dialogueId].resolution?.status, 'accepted_conditionally');
+
+  const brief = diplomaticBriefFromDialogue(acceptedBase.state, opened.dialogueId);
   assert.equal(brief.ok, true);
   if (!brief.ok) return;
   assert.equal(brief.brief.source, 'local');
@@ -1898,6 +1903,22 @@ test('la synthèse et la rencontre restent séparées du contrat et sont persist
   assert.equal(revised.ok, true);
   if (!revised.ok) return;
   assert.equal(revised.state.diplomaticAgreementDrafts[draftId].terms.calendrier, 'Phase pilote après validation parlementaire.');
+  const blockedByOpenTerms = signDiplomaticAgreementDraft(revised.state, draftId);
+  assert.equal(blockedByOpenTerms.ok, false);
+  const cleared = reviseDiplomaticAgreementDraft(revised.state, draftId, { unresolvedConditions: [] });
+  assert.equal(cleared.ok, true);
+  if (!cleared.ok) return;
+  const blockedByDate = signDiplomaticAgreementDraft(cleared.state, draftId);
+  assert.equal(blockedByDate.ok, false);
+  const atMeetingDate = advanceWorld(cleared.state, '2000-02-01').state;
+  const signed = signDiplomaticAgreementDraft(atMeetingDate, draftId);
+  assert.equal(signed.ok, true, signed.ok ? undefined : signed.error);
+  if (!signed.ok) return;
+  assert.equal(signed.state.diplomaticAgreementDrafts[draftId].stage, 'signed');
+  assert.equal(signed.state.diplomaticMeetings[meetingId].status, 'completed');
+  assert.equal(signed.state.diplomaticDialogues[opened.dialogueId].resolution?.status, 'accepted');
+  assert.equal(signed.state.treaties[signed.treatyId]?.status, 'active');
+  assert.ok(signed.state.strategicDossiers[`diplomatic-dialogue-${opened.dialogueId}`]?.entries.some((entry) => entry.title === 'Accord diplomatique signé'));
   const restored = deserializeWorld(serializeWorld(revised.state));
   assert.deepEqual(restored.diplomaticBriefs, revised.state.diplomaticBriefs);
   assert.deepEqual(restored.diplomaticMeetings, revised.state.diplomaticMeetings);

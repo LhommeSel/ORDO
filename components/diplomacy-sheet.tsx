@@ -89,6 +89,7 @@ type DiplomaticMeetingView = {
 };
 
 type DiplomaticAgreementDraftView = {
+  id: string;
   title: string;
   domain: string;
   stage: 'framework' | 'final_proposal' | 'signed' | 'rejected';
@@ -128,6 +129,8 @@ type DiplomacySheetProps = {
   briefLoading?: boolean;
   onRequestBrief?: () => void;
   onProposeMeeting?: (mode: 'official' | 'discreet' | 'technical') => void;
+  onReviseAgreement?: (unresolvedConditions: string[]) => void;
+  onSignAgreement?: () => void;
   meeting?: DiplomaticMeetingView;
   agreementDraft?: DiplomaticAgreementDraftView;
   onResolveResponse?: (decision: 'accept' | 'refuse' | 'request_revision' | 'acknowledge') => void;
@@ -219,6 +222,8 @@ export function DiplomacySheet({
   briefLoading = false,
   onRequestBrief,
   onProposeMeeting,
+  onReviseAgreement,
+  onSignAgreement,
   meeting,
   agreementDraft,
   onResolveResponse,
@@ -247,6 +252,8 @@ export function DiplomacySheet({
     structuredResponse.redLines.length > 0
   ));
   const [participantToAdd, setParticipantToAdd] = useState(participantOptions[0]?.id ?? '');
+  const [resolvedConditions, setResolvedConditions] = useState<string[]>([]);
+  useEffect(() => { setResolvedConditions([]); }, [agreementDraft?.id]);
   useEffect(() => {
     if (!participantOptions.some((country) => country.id === participantToAdd)) setParticipantToAdd(participantOptions[0]?.id ?? '');
   }, [participantOptions, participantToAdd]);
@@ -304,7 +311,7 @@ export function DiplomacySheet({
               {brief ? <div className="mt-2 space-y-2 text-xs"><p>{brief.summary}</p><div className="grid gap-2 sm:grid-cols-3"><div><b>Acquis</b><ul>{brief.pointsOfAgreement.map((item) => <li key={item}>— {item}</li>)}</ul></div><div><b>À régler</b><ul>{brief.openPoints.map((item) => <li key={item}>— {item}</li>)}</ul></div><div><b>Ajustements</b><ul>{brief.recommendedChanges.map((item) => <li key={item}>— {item}</li>)}</ul></div></div><p className="text-[10px] text-muted-foreground">Synthèse {brief.source === 'ai' ? 'IA' : 'locale'} · {brief.generatedAt}</p></div> : <p className="mt-2 text-xs text-muted-foreground">La synthèse sépare les lignes rouges du futur projet d’accord. Elle ne signe rien.</p>}
               {brief && onProposeMeeting && !meeting && <div className="mt-3 flex flex-wrap gap-2 border-t border-border/70 pt-2"><span className="flex items-center gap-1 text-[10px] text-muted-foreground"><CalendarDays className="size-3" /> Convoquer une rencontre</span><Button type="button" size="sm" variant="outline" onClick={() => onProposeMeeting(brief.suggestedMeeting ?? 'official')}>Officielle</Button><Button type="button" size="sm" variant="outline" onClick={() => onProposeMeeting('discreet')}>Discrète</Button><Button type="button" size="sm" variant="outline" onClick={() => onProposeMeeting('technical')}>Technique</Button></div>}
               {meeting && <div className="mt-3 border-t border-border/70 pt-2 text-xs"><p className="flex items-center gap-1 font-medium"><Handshake className="size-3.5 text-primary" /> Rencontre {meeting.mode === 'official' ? 'officielle' : meeting.mode === 'discreet' ? 'discrète' : 'technique'} · {meeting.status}</p><p className="mt-1 text-muted-foreground">Prévue le {meeting.scheduledAt ?? 'à confirmer'}. La rencontre produit un projet, pas une signature automatique.</p><ul className="mt-1">{meeting.agenda.map((item) => <li key={item}>— {item}</li>)}</ul></div>}
-              {agreementDraft && <div className="mt-3 border-t border-primary/30 pt-2 text-xs"><p className="font-medium">Projet d’accord · {agreementDraft.domain} · {agreementDraft.stage === 'final_proposal' ? 'proposition finale' : agreementDraft.stage}</p><p className="mt-1">{agreementDraft.summary}</p><dl className="mt-2 grid gap-1 sm:grid-cols-2">{Object.entries(agreementDraft.terms).map(([key, value]) => <div key={key}><dt className="inline text-muted-foreground">{key} : </dt><dd className="inline">{value}</dd></div>)}</dl>{agreementDraft.unresolvedConditions.length > 0 && <p className="mt-2 text-amber-200">Conditions à arbitrer : {agreementDraft.unresolvedConditions.join(' · ')}</p>}</div>}
+              {agreementDraft && <div className="mt-3 border-t border-primary/30 pt-2 text-xs"><p className="font-medium">Projet d’accord · {agreementDraft.domain} · {agreementDraft.stage === 'final_proposal' ? 'proposition finale' : agreementDraft.stage}</p><p className="mt-1">{agreementDraft.summary}</p><dl className="mt-2 grid gap-1 sm:grid-cols-2">{Object.entries(agreementDraft.terms).map(([key, value]) => <div key={key}><dt className="inline text-muted-foreground">{key} : </dt><dd className="inline">{value}</dd></div>)}</dl>{agreementDraft.stage === 'final_proposal' && agreementDraft.unresolvedConditions.length > 0 && <div className="mt-2 space-y-2"><p className="text-amber-200">Points à régler avant signature :</p><div className="space-y-1">{agreementDraft.unresolvedConditions.map((condition) => <label key={condition} className="flex items-start gap-2 text-[11px]"><input type="checkbox" checked={resolvedConditions.includes(condition)} onChange={(event) => setResolvedConditions((current) => event.target.checked ? [...current, condition] : current.filter((item) => item !== condition))} /><span className={resolvedConditions.includes(condition) ? 'text-muted-foreground line-through' : ''}>{condition}</span></label>)}</div>{onReviseAgreement && <Button type="button" size="sm" variant="outline" disabled={resolvedConditions.length === 0} onClick={() => onReviseAgreement(agreementDraft.unresolvedConditions.filter((condition) => !resolvedConditions.includes(condition)))}>Enregistrer les points réglés</Button>}</div>}{agreementDraft.stage === 'final_proposal' && agreementDraft.unresolvedConditions.length === 0 && onSignAgreement && <div className="mt-3 flex items-center justify-between gap-2 border-t border-emerald-400/30 pt-2"><span className="text-emerald-200">Tous les points sont réglés. La signature activera l’accord.</span><Button type="button" size="sm" onClick={onSignAgreement}>Signer l’accord</Button></div>}</div>}
             </section>}
 
             {activeEvent && activeEvent.countryId === selectedId && !activeEvent.resolved && (

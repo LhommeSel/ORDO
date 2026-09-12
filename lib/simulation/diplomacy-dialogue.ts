@@ -3,7 +3,7 @@ import { commitWorldAction } from './ledger';
 import { relationBetween } from './ledger';
 import { resolveDossierDecision } from './dossiers';
 import { historicalAnchorChannelEffects } from './history';
-import type { DiplomaticAgreementType, DiplomaticDialogue, DiplomaticTurn, GeneralAIJob, CountryId, WorldState, AIJobOutcome, DossierEntry, StrategicDossier, TreatyImplementation } from './types';
+import type { DiplomaticAgreementType, DiplomaticDialogue, DiplomaticDialogueResponse, DiplomaticTurn, GeneralAIJob, CountryId, WorldState, WorldEffect, AIJobOutcome, DossierEntry, StrategicDossier, TreatyImplementation } from './types';
 import type { AIDiplomaticMove } from '../ai/job-contracts';
 
 const unique = <T,>(items: T[]) => [...new Set(items)];
@@ -227,6 +227,73 @@ function treatyImplementationFor(
   }
 }
 
+/**
+ * Construit les effets d’un engagement diplomatique déjà formalisé.
+ *
+ * Cette fabrique est partagée par l’acceptation d’une proposition réellement
+ * finale et par la signature ultérieure d’un projet issu d’une acceptation
+ * conditionnelle. Le contrôle de validité reste dans les fonctions appelantes;
+ * ici, on ne fait que produire les effets après leur validation.
+ */
+export function diplomaticCommitmentEffects(
+  state: WorldState,
+  dialogue: DiplomaticDialogue,
+  response: DiplomaticDialogueResponse,
+  treatyId: string,
+  dossierId: string,
+): WorldEffect[] {
+  const durationByType: Record<DiplomaticAgreementType, number> = {
+    industrial_cooperation: 36, energy_cooperation: 24, information_sharing: 24, security_cooperation: 24,
+    political_guarantee: 18, mediation: 12, defense_cooperation: 36,
+  };
+  const monthlyByType: Record<DiplomaticAgreementType, Array<{ countryId: CountryId; metric: 'budget' | 'industry' | 'stability' | 'security'; delta: number }>> = {
+    industrial_cooperation: dialogue.participantIds.map((countryId) => ({ countryId, metric: 'industry', delta: countryId === state.playerCountryId ? 0.05 : 0.035 })),
+    // Un cadre de coopération ne crée pas de croissance ou de fiabilité
+    // « magiques » : les effets matériels passent par les registres dédiés.
+    energy_cooperation: [],
+    information_sharing: [],
+    security_cooperation: dialogue.participantIds.map((countryId) => ({ countryId, metric: 'security', delta: countryId === state.playerCountryId ? 0.05 : 0.035 })),
+    political_guarantee: dialogue.participantIds.map((countryId) => ({ countryId, metric: 'stability', delta: countryId === state.playerCountryId ? 0.035 : 0.025 })),
+    mediation: dialogue.participantIds.map((countryId) => ({ countryId, metric: 'stability', delta: 0.02 })),
+    defense_cooperation: dialogue.participantIds.map((countryId) => ({ countryId, metric: 'security', delta: countryId === state.playerCountryId ? 0.07 : 0.045 })),
+  };
+  const implementation = treatyImplementationFor(
+    state,
+    dialogue,
+    response.agreementType,
+    `${dialogue.turns.at(-1)?.publicMessage ?? ''} ${response.position}`,
+    dossierId,
+  );
+  const effects: WorldEffect[] = [{
+    kind: 'treaty_add',
+    treaty: {
+      id: treatyId,
+      parties: dialogue.participantIds,
+      label: `Engagement diplomatique · ${response.agreementType.replaceAll('_', ' ')}`,
+      status: 'active',
+      startDate: state.currentDate,
+      endDate: addMonths(state.currentDate, durationByType[response.agreementType]),
+      monthlyEffects: monthlyByType[response.agreementType],
+      ...(implementation ? { implementation } : {}),
+    },
+    reason: 'La signature transforme la proposition diplomatique en engagement persistant.',
+    visibility: 'player',
+  }];
+  if (response.agreementType === 'information_sharing') {
+    effects.push(...dialogue.participantIds.filter((id) => id !== state.playerCountryId).map((targetId) => ({
+      kind: 'intelligence_delta' as const, observerId: state.playerCountryId, targetId, delta: 8,
+      reason: 'Un accord d’échange d’informations améliore la connaissance de l’interlocuteur.', visibility: 'player' as const,
+    })));
+  }
+  if (response.agreementType === 'energy_cooperation') {
+    effects.push(...dialogue.participantIds.filter((id) => id !== state.playerCountryId).map((targetId) => ({
+      kind: 'capacity_commitment' as const, countryId: state.playerCountryId, domain: 'economy' as const, delta: 2,
+      reason: `Le cadre énergétique avec ${state.countries[targetId]?.name ?? targetId} mobilise un suivi administratif dédié.`, visibility: 'player' as const,
+    })));
+  }
+  return effects;
+}
+
 /** Ouvre un dialogue depuis une décision de dossier et consomme cette décision. */
 export function openDiplomaticDialogueForDossier(state: WorldState, dossierId: string, openingMessage?: string, decisionPrompt?: string) {
   const dossier = state.strategicDossiers?.[dossierId];
@@ -344,47 +411,7 @@ export function resolveDiplomaticDialogueResponse(
   const dossierId = `diplomatic-dialogue-${dialogue.id}`;
   if (formalAgreement) {
     const treatyId = `dialogue-commitment-${dialogue.id}-${state.sequence + 1}`;
-    const durationByType: Record<DiplomaticAgreementType, number> = {
-      industrial_cooperation: 36, energy_cooperation: 24, information_sharing: 24, security_cooperation: 24,
-      political_guarantee: 18, mediation: 12, defense_cooperation: 36,
-    };
-    const monthlyByType: Record<DiplomaticAgreementType, Array<{ countryId: CountryId; metric: 'budget' | 'industry' | 'stability' | 'security'; delta: number }>> = {
-      industrial_cooperation: dialogue.participantIds.map((countryId) => ({ countryId, metric: 'industry', delta: countryId === state.playerCountryId ? 0.05 : 0.035 })),
-      // Un cadre de coopération ne crée pas de croissance, de stabilité ou de
-      // fiabilité « magiques ». Il organise seulement le canal politique ; les
-      // volumes, infrastructures et effets économiques passent par le registre
-      // énergétique et un contrat explicite.
-      energy_cooperation: [],
-      information_sharing: [],
-      security_cooperation: dialogue.participantIds.map((countryId) => ({ countryId, metric: 'security', delta: countryId === state.playerCountryId ? 0.05 : 0.035 })),
-      political_guarantee: dialogue.participantIds.map((countryId) => ({ countryId, metric: 'stability', delta: countryId === state.playerCountryId ? 0.035 : 0.025 })),
-      mediation: dialogue.participantIds.map((countryId) => ({ countryId, metric: 'stability', delta: 0.02 })),
-      defense_cooperation: dialogue.participantIds.map((countryId) => ({ countryId, metric: 'security', delta: countryId === state.playerCountryId ? 0.07 : 0.045 })),
-    };
-    const implementation = treatyImplementationFor(
-      state,
-      dialogue,
-      response.agreementType,
-      `${dialogue.turns.at(-1)?.publicMessage ?? ''} ${response.position}`,
-      dossierId,
-    );
-    effects.push({
-      kind: 'treaty_add',
-      treaty: { id: treatyId, parties: dialogue.participantIds, label: `Engagement diplomatique · ${response.agreementType.replaceAll('_', ' ')}`, status: 'active', startDate: state.currentDate, endDate: addMonths(state.currentDate, durationByType[response.agreementType]), monthlyEffects: monthlyByType[response.agreementType], ...(implementation ? { implementation } : {}) },
-      reason: 'L’acceptation du joueur transforme la position diplomatique en engagement persistant.', visibility: 'player',
-    });
-    if (response.agreementType === 'information_sharing') {
-      effects.push(...dialogue.participantIds.filter((id) => id !== state.playerCountryId).map((targetId) => ({
-        kind: 'intelligence_delta' as const, observerId: state.playerCountryId, targetId, delta: 8,
-        reason: 'Un accord d’échange d’informations améliore la connaissance de l’interlocuteur.', visibility: 'player' as const,
-      })));
-    }
-    if (response.agreementType === 'energy_cooperation') {
-      effects.push(...dialogue.participantIds.filter((id) => id !== state.playerCountryId).map((targetId) => ({
-        kind: 'capacity_commitment' as const, countryId: state.playerCountryId, domain: 'economy' as const, delta: 2,
-        reason: `Le cadre énergétique avec ${state.countries[targetId]?.name ?? targetId} mobilise un suivi administratif dédié.`, visibility: 'player' as const,
-      })));
-    }
+    effects.push(...diplomaticCommitmentEffects(state, dialogue, response, treatyId, dossierId));
   }
   const isEnergyFramework = response.agreementType === 'energy_cooperation';
   const relationEffect = formalAgreement

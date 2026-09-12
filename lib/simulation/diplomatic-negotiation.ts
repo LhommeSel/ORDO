@@ -1,4 +1,6 @@
 import { commitWorldAction } from './ledger';
+import { diplomaticCommitmentEffects } from './diplomacy-dialogue';
+import { historicalAnchorChannelEffects } from './history';
 import type {
   DiplomaticAgreementDraft,
   DiplomaticAgreementDomain,
@@ -9,6 +11,7 @@ import type {
   DiplomaticMeetingStatus,
   DiplomaticDialogueResponse,
   ISODate,
+  WorldEffect,
   WorldState,
 } from './types';
 
@@ -108,6 +111,7 @@ export function proposeDiplomaticMeeting(state: WorldState, dialogueId: string, 
       'Valider les points d’accord déjà acquis.',
       ...response.conditions.slice(0, 2).map((item) => `Traiter : ${item}`),
       ...response.guaranteesRequested.slice(0, 2).map((item) => `Garantir : ${item}`),
+      ...response.redLines.slice(0, 1).map((item) => `Préserver : ${item}`),
     ]).slice(0, 5),
     draftId,
   };
@@ -121,7 +125,11 @@ export function proposeDiplomaticMeeting(state: WorldState, dialogueId: string, 
       participants: counterpartNames.join(', '),
       garanties: response.guaranteesRequested.slice(0, 3).join(' ; ') || 'À préciser',
     },
-    unresolvedConditions: response.conditions.slice(0, 5),
+    unresolvedConditions: unique([
+      ...response.conditions.map((item) => `Condition : ${item}`),
+      ...response.guaranteesRequested.map((item) => `Garantie : ${item}`),
+      ...response.redLines.map((item) => `Ligne rouge à préserver : ${item}`),
+    ]).slice(0, 8),
     createdAt: state.currentDate,
     updatedAt: state.currentDate,
   };
@@ -159,6 +167,57 @@ export function reviseDiplomaticAgreementDraft(state: WorldState, draftId: strin
       effects: [{ kind: 'diplomatic_agreement_draft_patch', draftId, patch, reason: 'Le joueur ajuste le projet avant de le soumettre.', visibility: 'player' }],
     }),
   };
+}
+
+/**
+ * Signe un projet issu d’une acceptation conditionnelle.
+ *
+ * Le passage est volontairement distinct de l’acceptation initiale : le
+ * projet doit être révisé, ne plus avoir de condition ouverte et attendre la
+ * date de la rencontre. C’est seulement ici que les effets matériels et
+ * historiques d’un accord sont appliqués.
+ */
+export function signDiplomaticAgreementDraft(state: WorldState, draftId: string) {
+  const draft = state.diplomaticAgreementDrafts?.[draftId];
+  if (!draft || draft.stage !== 'final_proposal') return { ok: false as const, state, error: 'Ce projet n’est pas disponible pour signature.' };
+  if (draft.unresolvedConditions.length > 0) return { ok: false as const, state, error: 'Des conditions, garanties ou lignes rouges restent à régler avant la signature.' };
+  const dialogue = state.diplomaticDialogues?.[draft.dialogueId];
+  if (!dialogue || dialogue.resolution?.status !== 'accepted_conditionally') return { ok: false as const, state, error: 'Ce projet ne provient pas d’une acceptation conditionnelle active.' };
+  const meeting = state.diplomaticMeetings?.[draft.meetingId];
+  if (!meeting || meeting.status !== 'scheduled') return { ok: false as const, state, error: 'La rencontre liée à ce projet n’est pas programmée.' };
+  if (meeting.scheduledAt && meeting.scheduledAt > state.currentDate) return { ok: false as const, state, error: `La rencontre est prévue le ${meeting.scheduledAt}.` };
+  const response = dialogue.lastResponse;
+  if (!response || (response.kind !== 'accept' && response.kind !== 'counter')) return { ok: false as const, state, error: 'La dernière position diplomatique ne peut pas être formalisée.' };
+
+  const treatyId = `dialogue-commitment-${dialogue.id}-${state.sequence + 1}`;
+  const dossierId = `diplomatic-dialogue-${dialogue.id}`;
+  const treatyEffects = diplomaticCommitmentEffects(state, dialogue, response, treatyId, dossierId);
+  const names = dialogue.participantIds.filter((id) => id !== state.playerCountryId).map((id) => state.countries[id]?.name ?? id).join(', ');
+  const signedDialogue: DiplomaticDialogue = {
+    ...dialogue,
+    updatedAt: state.currentDate,
+    resolution: dialogue.resolution ? { ...dialogue.resolution, status: 'accepted', decidedAt: state.currentDate, summary: 'Projet diplomatique signé : l’engagement est désormais actif.' } : dialogue.resolution,
+  };
+  const effects: WorldEffect[] = [
+    ...treatyEffects,
+    { kind: 'diplomatic_agreement_draft_patch', draftId, patch: { stage: 'signed', unresolvedConditions: [], summary: `${draft.summary} Accord signé le ${state.currentDate}.` }, reason: 'La proposition finale est signée après règlement des points ouverts.', visibility: 'player' },
+    { kind: 'diplomatic_meeting_patch', meetingId: meeting.id, patch: { status: 'completed', outcomeSummary: `Accord signé entre ${names}.` }, reason: 'La rencontre aboutit à une signature explicite.', visibility: 'player' },
+    { kind: 'diplomatic_dialogue_patch', dialogueId: dialogue.id, patch: signedDialogue, reason: 'La signature clôt la formalisation du dialogue sans effacer son historique.', visibility: 'player' },
+  ];
+  const relation = response.agreementType === 'energy_cooperation' ? { relation: 1, trust: 0 } : { relation: 4, trust: 3 };
+  effects.push(...dialogue.participantIds.filter((id) => id !== state.playerCountryId).map((targetId) => ({
+    kind: 'relation_delta' as const, from: state.playerCountryId, to: targetId, relation: relation.relation, trust: relation.trust,
+    reason: 'La signature d’un engagement diplomatique consolide la relation.', visibility: 'player' as const,
+  })));
+  const dossier = state.strategicDossiers?.[dossierId];
+  if (dossier) {
+    effects.push(
+      { kind: 'dossier_patch', dossierId, patch: { phase: 'Accord signé', trend: 'stable', publicSummary: `Un accord de ${domainLabel[draft.domain]} est désormais actif avec ${names}.`, commitments: [...dossier.commitments.filter((commitment) => !commitment.startsWith('Intention à formaliser')), `Engagement diplomatique : ${response.position}`], playerStance: 'Accord formalisé et suivi dans le temps.' }, reason: 'La signature fait passer le dossier de formalisation à un engagement actif.', visibility: 'player' },
+      { kind: 'dossier_entry_add', dossierId, entry: { id: `diplomatic-signature-${draft.id}`, date: state.currentDate, title: 'Accord diplomatique signé', summary: `La rencontre aboutit à un engagement actif avec ${names}.`, importance: dossier.importance, actorIds: dialogue.participantIds, requiresDecision: false, visibility: 'player' }, reason: 'La signature est ajoutée à la chronologie du dossier.', visibility: 'player' },
+    );
+    if (dossier.relatedAnchorId) effects.push(...historicalAnchorChannelEffects(state, dossierId, { sourceId: draft.id, resolution: 'diplomatic_agreement' }));
+  }
+  return { ok: true as const, state: commitWorldAction(state, { kind: 'diplomatic', actorId: state.playerCountryId, targetIds: dialogue.participantIds.filter((id) => id !== state.playerCountryId), origin: 'player', visibility: 'player', intent: `Signer ${draft.title}`, effects }), treatyId };
 }
 
 export const diplomaticMeetingStatusLabel: Record<DiplomaticMeetingStatus, string> = {
