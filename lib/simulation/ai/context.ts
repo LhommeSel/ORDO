@@ -347,8 +347,13 @@ function decisionCountryForJob(state: WorldState, job: AIJob, targets: CountryId
   return state.countries[job.actorId] ? job.actorId : state.playerCountryId;
 }
 
-function dynamicBudget(tier: AIJobBudgetTier, intentTokens: number, targetCount: number) {
-  const base = budgetTokens[tier];
+function dynamicBudget(tier: AIJobBudgetTier, intentTokens: number, targetCount: number, jobKind?: AIJobKind) {
+  // Les échanges diplomatiques réutilisent leur historique local mais n'ont
+  // pas besoin du même plafond que l'analyse générale. On garde une marge
+  // d'escalade automatique pour une intention réellement longue ou un groupe
+  // multilatéral afin de ne jamais tronquer les lignes rouges importantes.
+  const base = jobKind === 'diplomacy' && tier === 'standard' ? 7_500 : budgetTokens[tier];
+  if (jobKind === 'diplomacy' && base < budgetTokens.standard && (intentTokens >= 4_000 || targetCount >= 4)) return budgetTokens.standard;
   if (base < budgetTokens.standard && (intentTokens >= 4_000 || targetCount >= 3)) return budgetTokens.standard;
   if (base < budgetTokens.deep && intentTokens >= 9_000) return budgetTokens.deep;
   return base;
@@ -379,7 +384,7 @@ export function queryForAIJob(state: WorldState, job: AIJob): AIContextQuery {
     purpose,
     playerIntent,
     approximateIntentTokens,
-    tokenBudget: dynamicBudget(job.budgetTier, approximateIntentTokens, targetIds.length),
+    tokenBudget: dynamicBudget(job.budgetTier, approximateIntentTokens, targetIds.length, job.kind),
   };
 }
 

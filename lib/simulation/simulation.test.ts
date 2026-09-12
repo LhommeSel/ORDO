@@ -31,6 +31,7 @@ import {
   advanceDossierEscalation, advanceDossierLifecycle, advanceDossierReviewQueue, assessDossierResolution, dossierUnreadCount, dossiersRequiringAttention, markDossierViewed, reactivateDossier, resolveDossierDecision, setDossierFollowed,
 } from './dossiers';
 import { advanceDossierEffects, dossierPressureProfile, selectDossiersForEffects } from './dossier-effects';
+import { queryForAIJob } from './ai/context';
 import { applyWorldPulseAnswer, createWorldPulseRequest, executeWorldPulse } from './ai/world-pulse';
 import { parseWorldPulseRequest } from '../ai/world-pulse-contracts';
 import { runMinorEventCycle } from './minor-events';
@@ -1845,6 +1846,65 @@ test('un groupe diplomatique peut accueillir un pays et faire tourner la parole 
   assert.equal(secondRequest.state.diplomaticDialogues[opened.dialogueId].aiMode, 'ai');
   const recentTurns = (secondRequest.state.aiJobs[secondRequest.jobId].context as Record<string, unknown>).recentTurns as unknown[];
   assert.equal(recentTurns.length, 3);
+  assert.equal(queryForAIJob(secondRequest.state, secondRequest.state.aiJobs[secondRequest.jobId]).tokenBudget, 7_500);
+});
+
+test('une position stratégique sans accord formel devient un dossier modéré non majeur', () => {
+  const initial = createFrance2000World();
+  const opened = openDiplomaticDialogue(initial, ['TUR', 'GRC'], 'Explorons un partage des hydrocarbures en mer Égée sans préjuger des souverainetés.');
+  assert.equal(opened.ok, true);
+  if (!opened.ok) return;
+  const queued = requestDiplomaticDialogueAI(opened.state, opened.dialogueId);
+  assert.equal(queued.ok, true);
+  if (!queued.ok) return;
+  const answered = applyDiplomaticDialogueAIAnswer(queued.state, queued.jobId, {
+    headline: 'Lignes rouges concurrentes', assessment: 'Les deux gouvernements souhaitent poursuivre les échanges mais refusent de renoncer à leurs revendications.',
+    publicMessage: 'Nous pouvons poursuivre les discussions, mais les zones disputées et les garanties de souveraineté restent non négociables.', proposals: [], requestedFacts: [], contextFactIds: [], approximateInputTokens: 220,
+  }, {
+    scope: 'general_dialogue', kind: 'counter', agreementType: 'energy_cooperation',
+    position: 'Poursuivre l’exploration sous garanties, sans reconnaître la souveraineté adverse.', concessions: [], guaranteesRequested: ['Mécanisme de déconfliction'], conditions: ['Accord séparé sur les zones disputées'], redLines: ['Aucune reconnaissance de souveraineté', 'Aucun forage unilatéral'], timeline: 'Revue avant la prochaine saison de forage.',
+  });
+  assert.equal(answered.ok, true);
+  if (!answered.ok) return;
+  const acknowledged = resolveDiplomaticDialogueResponse(answered.state, opened.dialogueId, 'acknowledge');
+  assert.equal(acknowledged.ok, true);
+  if (!acknowledged.ok) return;
+  const dossier = Object.values(acknowledged.state.strategicDossiers).find((item) => item.id === `diplomatic-dialogue-${opened.dialogueId}`);
+  assert.equal(dossier?.importance, 'moderate');
+  assert.equal(dossier?.autoTracked, false);
+  assert.match(dossier?.phase ?? '', /suspens/i);
+  assert.ok(dossier?.entries.some((entry) => entry.title.includes('sans accord formel')));
+});
+
+test('un accord formel suit une mise en œuvre et touche un registre existant', () => {
+  const initial = createFrance2000World();
+  const opened = openDiplomaticDialogue(initial, ['DEU'], 'Mettons en place une coopération industrielle sur les machines-outils.');
+  assert.equal(opened.ok, true);
+  if (!opened.ok) return;
+  const queued = requestDiplomaticDialogueAI(opened.state, opened.dialogueId);
+  assert.equal(queued.ok, true);
+  if (!queued.ok) return;
+  const answered = applyDiplomaticDialogueAIAnswer(queued.state, queued.jobId, {
+    headline: 'Accord industriel', assessment: 'L’Allemagne accepte un programme de coopération industrielle progressif.',
+    publicMessage: 'Nous acceptons un programme industriel progressif avec un transfert de compétences encadré.', proposals: [], requestedFacts: [], contextFactIds: [], approximateInputTokens: 180,
+  }, {
+    scope: 'general_dialogue', kind: 'accept', agreementType: 'industrial_cooperation',
+    position: 'Coopération industrielle acceptée sous réserve de validation administrative.', concessions: ['Partager certaines formations'], guaranteesRequested: [], conditions: [], redLines: [], timeline: 'Premiers résultats sous douze mois.',
+  });
+  assert.equal(answered.ok, true);
+  if (!answered.ok) return;
+  const accepted = resolveDiplomaticDialogueResponse(answered.state, opened.dialogueId, 'accept');
+  assert.equal(accepted.ok, true);
+  if (!accepted.ok) return;
+  const treaty = Object.values(accepted.state.treaties).find((item) => item.parties.includes('DEU') && item.implementation?.kind === 'industrial_transfer');
+  assert.ok(treaty?.implementation);
+  if (!treaty?.implementation) return;
+  assert.ok(treaty.implementation.sectorIds.length > 0);
+  const advanced = advanceWorld(accepted.state, '2001-01-01').state;
+  const implementation = advanced.treaties[treaty.id].implementation;
+  assert.ok((implementation?.progressPct ?? 0) >= 35 && (implementation?.progressPct ?? 0) <= 38);
+  assert.equal(implementation?.phase, 'pilot');
+  assert.ok(advanced.strategicDossiers[implementation!.dossierId!]?.entries.some((entry) => entry.title.includes('25%')));
 });
 
 test('un message d’un dialogue lié est visible dans la chronologie du dossier', () => {

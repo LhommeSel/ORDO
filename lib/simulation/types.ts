@@ -207,6 +207,37 @@ export type InstitutionState = {
   startedAt?: ISODate;
 };
 
+export type TreatyImplementationKind =
+  | 'energy_framework'
+  | 'industrial_transfer'
+  | 'maritime_security'
+  | 'defense_support'
+  | 'information_channel';
+
+/**
+ * Volet matériel optionnel d'un accord diplomatique.
+ *
+ * Le traité reste un engagement politique, tandis que cette structure indique
+ * au moteur quels registres concrets peuvent progresser. Les identifiants sont
+ * des liens vers les inventaires existants : aucune capacité n'est inventée
+ * par l'accord lui-même.
+ */
+export type TreatyImplementation = {
+  kind: TreatyImplementationKind;
+  phase: 'exploration' | 'pilot' | 'operational' | 'complete';
+  progressPct: number;
+  monthlyProgressPct: number;
+  sectorIds: string[];
+  energyNodeIds: string[];
+  armamentProductIds: string[];
+  militaryTheaterIds: string[];
+  assetIds: string[];
+  milestonePcts: number[];
+  completedMilestones?: number[];
+  dossierId?: string;
+  note: string;
+};
+
 export type TreatyState = {
   id: string;
   parties: CountryId[];
@@ -215,6 +246,7 @@ export type TreatyState = {
   startDate?: ISODate;
   endDate?: ISODate;
   monthlyEffects: Array<{ countryId: CountryId; metric: WorldMetric; delta: number }>;
+  implementation?: TreatyImplementation;
 };
 
 export type HistoricalCurrent = {

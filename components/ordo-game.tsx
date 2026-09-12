@@ -1623,8 +1623,20 @@ function DiplomacyPanel({ world, onWorldChange, onNotice, initialDialogueId }: {
   ] : [];
   const agreements = selectedId ? Object.values(world.treaties ?? {})
     .filter((treaty) => treaty.status === 'active' && treaty.parties.includes(selectedId))
-    .map((treaty) => treaty.label)
+    .map((treaty) => treaty.implementation
+      ? `${treaty.label} · ${treaty.implementation.phase} ${Math.round(treaty.implementation.progressPct)}%`
+      : treaty.label)
     .slice(-6) : [];
+  const dialogueStatusLabel = !dialogue
+    ? 'Aucun canal ouvert — rédigez le premier message'
+    : dialogue.status === 'awaiting_ai'
+      ? `Appel IA en attente — demander la réponse de ${world.countries[dialogue.activeSpeakerId]?.name ?? dialogue.activeSpeakerId}`
+      : dialogue.status === 'awaiting_player'
+        ? 'Votre tour — vous pouvez répondre ou demander une option structurée'
+        : 'Canal fermé';
+  const aiRequestLabel = dialogue?.activeSpeakerId
+    ? `Demander la réponse de ${world.countries[dialogue.activeSpeakerId]?.name ?? dialogue.activeSpeakerId} (appel IA)`
+    : undefined;
   return <div className="space-y-4">
     <section className="border border-border bg-card/70 p-4">
       <div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex items-center gap-2 font-semibold"><Send className="size-4 text-primary" /> Centre diplomatique</div><p className="mt-1 text-xs text-muted-foreground">Ouvrez un canal avec n’importe quel pays. La première réponse est générée par IA ; les suivantes restent lancées explicitement.</p></div><Button onClick={openNewDialogue}>Nouveau dialogue</Button></div>
@@ -1637,7 +1649,7 @@ function DiplomacyPanel({ world, onWorldChange, onNotice, initialDialogueId }: {
       </div>
       {lastAIUsage && <div className="mt-3 font-mono text-[10px] text-muted-foreground">Dernier appel : {lastAIUsage}</div>}
     </section>
-    <DeferredPanel fallback={<div className="border border-border p-4 text-sm text-muted-foreground">Chargement du centre diplomatique…</div>}><DiplomacySheet open={open} onOpenChange={setOpen} countries={sheetCountries} selectedId={selectedSheetCountry.id} participantIds={dialogue?.participantIds} participantOptions={dialogue ? participantOptions : []} onAddParticipant={dialogue ? addParticipant : undefined} dialogues={recentDialogues.slice(0, 8).map((item) => ({ id: item.id, kind: item.kind, participantIds: item.participantIds, status: item.status, label: item.participantIds.filter((id) => id !== player.id).map((id) => world.countries[id]?.name ?? id).join(', ') }))} selectedDialogueId={dialogueId} onSelectDialogue={selectDialogue} onNewDialogue={openIndependentDialogue} onSelectCountry={(id) => { if (dialogue && !dialogue.participantIds.includes(id)) return; setSelectedId(id); }} selectedCountry={selectedSheetCountry} messages={messages} structuredResponse={dialogue?.lastResponse} responseResolution={dialogue?.resolution} onResolveResponse={dialogue?.status === 'awaiting_player' && dialogue?.lastResponse && !dialogue?.resolution ? resolveResponse : undefined} draft={draft} onDraftChange={setDraft} onSend={send} isThinking={isThinking} playerCountryName={player.name} participantCount={dialogue?.participantIds.length ?? (participants.length + 1)} activeSpeakerLabel={dialogue ? (world.countries[dialogue.activeSpeakerId]?.name ?? dialogue.activeSpeakerId) : undefined} statusLabel={!dialogue ? 'Aucun canal ouvert — rédigez le premier message' : dialogue.status === 'awaiting_ai' ? 'Réponse IA disponible — validation explicite nécessaire' : dialogue.status === 'awaiting_player' ? 'Votre tour — vous pouvez répondre ou demander une option structurée' : 'Canal fermé'} quickReplies={dialogue?.status === 'awaiting_player' ? quickReplies : []} onQuickReply={(value) => setDraft(value)} canRequestAI={Boolean(dialogue && dialogue.status === 'awaiting_ai')} onRequestAI={askAI} memories={memories} agreements={agreements} onResolveEvent={() => undefined} /></DeferredPanel>
+    <DeferredPanel fallback={<div className="border border-border p-4 text-sm text-muted-foreground">Chargement du centre diplomatique…</div>}><DiplomacySheet open={open} onOpenChange={setOpen} countries={sheetCountries} selectedId={selectedSheetCountry.id} participantIds={dialogue?.participantIds} participantOptions={dialogue ? participantOptions : []} onAddParticipant={dialogue ? addParticipant : undefined} dialogues={recentDialogues.slice(0, 8).map((item) => ({ id: item.id, kind: item.kind, participantIds: item.participantIds, status: item.status, label: item.participantIds.filter((id) => id !== player.id).map((id) => world.countries[id]?.name ?? id).join(', ') }))} selectedDialogueId={dialogueId} onSelectDialogue={selectDialogue} onNewDialogue={openIndependentDialogue} onSelectCountry={(id) => { if (dialogue && !dialogue.participantIds.includes(id)) return; setSelectedId(id); }} selectedCountry={selectedSheetCountry} messages={messages} structuredResponse={dialogue?.lastResponse} responseResolution={dialogue?.resolution} onResolveResponse={dialogue?.status === 'awaiting_player' && dialogue?.lastResponse && !dialogue?.resolution ? resolveResponse : undefined} draft={draft} onDraftChange={setDraft} onSend={send} isThinking={isThinking} playerCountryName={player.name} participantCount={dialogue?.participantIds.length ?? (participants.length + 1)} activeSpeakerLabel={dialogue ? (world.countries[dialogue.activeSpeakerId]?.name ?? dialogue.activeSpeakerId) : undefined} statusLabel={dialogueStatusLabel} quickReplies={dialogue?.status === 'awaiting_player' ? quickReplies : []} onQuickReply={(value) => setDraft(value)} canRequestAI={Boolean(dialogue && dialogue.status === 'awaiting_ai')} onRequestAI={askAI} aiRequestLabel={aiRequestLabel} memories={memories} agreements={agreements} onResolveEvent={() => undefined} /></DeferredPanel>
   </div>;
 }
 

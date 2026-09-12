@@ -60,6 +60,84 @@ function nextMonthBoundary(date: ISODate): ISODate {
   return `${value.getUTCMonth() === 11 ? value.getUTCFullYear() + 1 : value.getUTCFullYear()}-${String((value.getUTCMonth() + 1) % 12 + 1).padStart(2, '0')}-01` as ISODate;
 }
 
+const implementationPhase = (progressPct: number): NonNullable<WorldState['treaties'][string]['implementation']>['phase'] =>
+  progressPct >= 100 ? 'complete' : progressPct >= 50 ? 'operational' : progressPct >= 25 ? 'pilot' : 'exploration';
+
+/** Fait progresser le volet matériel d'un traité sans créer d'actif fictif. */
+function treatyImplementationEffects(state: WorldState, treaty: WorldState['treaties'][string], elapsedMonths: number): WorldEffect[] {
+  const implementation = treaty.implementation;
+  if (!implementation || elapsedMonths <= 0 || implementation.progressPct >= 100) return [];
+  const previousProgress = implementation.progressPct;
+  const progressPct = Math.min(100, Number((previousProgress + implementation.monthlyProgressPct * elapsedMonths).toFixed(1)));
+  const previousMilestones = implementation.completedMilestones ?? [];
+  const crossedMilestones = implementation.milestonePcts.filter((milestone) => milestone > previousProgress && milestone <= progressPct && !previousMilestones.includes(milestone));
+  const completedMilestones = [...previousMilestones, ...crossedMilestones];
+  const nextImplementation = { ...implementation, progressPct, phase: implementationPhase(progressPct), completedMilestones };
+  const effects: WorldEffect[] = [{
+    kind: 'treaty_patch', treatyId: treaty.id, patch: { implementation: nextImplementation },
+    reason: `Mise en œuvre de « ${treaty.label} » : ${progressPct}% (${nextImplementation.phase}).`, visibility: 'player',
+  }];
+
+  if (implementation.kind === 'energy_framework' && progressPct >= 25) {
+    for (const nodeId of implementation.energyNodeIds) {
+      const node = state.energyNodes[nodeId];
+      if (!node || !(previousProgress < 50 && progressPct >= 50)) continue;
+      effects.push({
+        kind: 'energy_node_patch', nodeId,
+        patch: {
+          annualCapacity: Number(Math.min(node.provenReserves, node.annualCapacity + Math.max(0.01, node.annualCapacity * 0.005)).toFixed(3)),
+          infrastructure: [...node.infrastructure, `cadre-cooperation:${treaty.id}`],
+        },
+        reason: `Le volet énergétique de « ${treaty.label} » ouvre une capacité déjà identifiée dans le registre.`, visibility: 'player',
+      });
+    }
+  }
+  if (implementation.kind === 'industrial_transfer' && progressPct >= 25) {
+    for (const sectorId of implementation.sectorIds) if (state.sectors[sectorId]) effects.push({
+      kind: 'sector_delta', sectorId,
+      delta: { health: 0.06 * elapsedMonths, technology: 0.04 * elapsedMonths, foreignDependency: -0.03 * elapsedMonths },
+      reason: `Le transfert industriel de « ${treaty.label} » consolide progressivement une filière existante.`, visibility: 'player',
+    });
+  }
+  if (implementation.kind === 'maritime_security' && progressPct >= 25) {
+    for (const theaterId of implementation.militaryTheaterIds) {
+      const theater = state.militaryTheaters[theaterId];
+      if (!theater) continue;
+      effects.push({
+        kind: 'military_theater_patch', theaterId,
+        patch: { readiness: theater.readiness + 0.15 * elapsedMonths, supplyCoverageMonths: theater.supplyCoverageMonths + 0.01 * elapsedMonths },
+        reason: `La coopération de sécurité de « ${treaty.label} » améliore la préparation du théâtre existant.`, visibility: 'player',
+      });
+    }
+  }
+  if (implementation.kind === 'defense_support' && progressPct >= 25) {
+    for (const productId of implementation.armamentProductIds) {
+      const product = state.armamentProducts[productId];
+      if (!product) continue;
+      effects.push({
+        kind: 'armament_patch', productId,
+        patch: { industrialHealth: Math.min(100, Number((product.industrialHealth + 0.1 * elapsedMonths).toFixed(2))) },
+        reason: `Le soutien de défense de « ${treaty.label} » sécurise le carnet d'un produit existant.`, visibility: 'player',
+      });
+    }
+  }
+  if (implementation.dossierId && state.strategicDossiers[implementation.dossierId]) {
+    const dossier = state.strategicDossiers[implementation.dossierId];
+    for (const milestone of crossedMilestones) effects.push({
+      kind: 'dossier_entry_add', dossierId: dossier.id,
+      entry: {
+        id: `treaty-milestone-${treaty.id}-${milestone}`,
+        date: state.currentDate,
+        title: `Jalon de mise en œuvre atteint · ${milestone}%`,
+        summary: `Le volet ${implementation.kind.replaceAll('_', ' ')} de l’accord « ${treaty.label} » atteint ${milestone}%. ${implementation.note}`,
+        importance: dossier.importance, actorIds: treaty.parties, requiresDecision: false, visibility: 'player',
+      },
+      reason: 'Un jalon matériel de l’accord est ajouté à la chronologie du dossier.', visibility: 'player',
+    });
+  }
+  return effects;
+}
+
 function advanceTreaties(state: WorldState, elapsedMonths: number) {
   let next = state;
   for (const treaty of Object.values(state.treaties)) {
@@ -77,6 +155,7 @@ function advanceTreaties(state: WorldState, elapsedMonths: number) {
       delta: effect.delta * elapsedMonths,
       reason: `Effet continu du traité « ${treaty.label} ».`,
     }));
+    effects.push(...treatyImplementationEffects(next, treaty, elapsedMonths));
     if (effects.length) next = commitWorldAction(next, {
       kind: 'economic', actorId: treaty.parties[0], targetIds: treaty.parties.slice(1), origin: 'time',
       intent: `Appliquer les effets continus de ${treaty.label}`, effects,

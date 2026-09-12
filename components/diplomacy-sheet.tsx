@@ -152,6 +152,12 @@ function relationshipTags(country: SheetCountry) {
   return [...new Set(tags)];
 }
 
+const dialogueStatusLabel = (status: string) => ({
+  awaiting_ai: 'Appel IA en attente',
+  awaiting_player: 'Votre réponse attendue',
+  closed: 'Canal fermé',
+}[status] ?? status);
+
 const agreementTypeLabels: Record<StructuredDiplomaticResponse['agreementType'], string> = {
   industrial_cooperation: 'Coopération industrielle', energy_cooperation: 'Coopération énergétique', information_sharing: 'Partage d’informations',
   security_cooperation: 'Coopération de sécurité', political_guarantee: 'Garantie politique',
@@ -218,7 +224,7 @@ export function DiplomacySheet({
                 {dialogues.slice(0, 8).map((item) => {
                   return <button key={item.id} type="button" onClick={() => onSelectDialogue(item.id)} className={`block w-full border px-2 py-1.5 text-left text-[11px] ${item.id === selectedDialogueId ? 'border-primary bg-primary/10' : 'border-border hover:bg-muted/30'}`}>
                     <span className="block font-medium">{item.kind === 'multilateral_dialogue' ? 'Groupe' : 'Canal'} · {item.label || 'Dialogue'}</span>
-                    <span className="block text-[9px] text-muted-foreground">{item.status} · {item.participantIds.length - 1} interlocuteur(s)</span>
+                    <span className="block text-[9px] text-muted-foreground">{dialogueStatusLabel(item.status)} · {item.participantIds.length - 1} interlocuteur(s)</span>
                   </button>;
                 })}
               </div>

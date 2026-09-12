@@ -3,7 +3,7 @@ import { commitWorldAction } from './ledger';
 import { relationBetween } from './ledger';
 import { resolveDossierDecision } from './dossiers';
 import { historicalAnchorChannelEffects } from './history';
-import type { DiplomaticAgreementType, DiplomaticDialogue, DiplomaticTurn, GeneralAIJob, CountryId, WorldState, AIJobOutcome, DossierEntry, StrategicDossier } from './types';
+import type { DiplomaticAgreementType, DiplomaticDialogue, DiplomaticTurn, GeneralAIJob, CountryId, WorldState, AIJobOutcome, DossierEntry, StrategicDossier, TreatyImplementation } from './types';
 import type { AIDiplomaticMove } from '../ai/job-contracts';
 
 const unique = <T,>(items: T[]) => [...new Set(items)];
@@ -121,7 +121,16 @@ export function addDiplomaticDialogueParticipant(state: WorldState, dialogueId: 
   }) };
 }
 
-function dialogueDossier(state: WorldState, dialogue: DiplomaticDialogue, title: string, summary: string, entryTitle: string, entrySummary: string, commitments: string[] = []): StrategicDossier {
+function dialogueDossier(
+  state: WorldState,
+  dialogue: DiplomaticDialogue,
+  title: string,
+  summary: string,
+  entryTitle: string,
+  entrySummary: string,
+  commitments: string[] = [],
+  options: { autoTracked?: boolean; phase?: string } = {},
+): StrategicDossier {
   const entry: DossierEntry = {
     id: `dialogue-dossier-entry-${dialogue.id}-${state.sequence + 1}`, date: state.currentDate, title: entryTitle, summary: entrySummary,
     importance: 'moderate', actorIds: dialogue.participantIds, requiresDecision: false, visibility: 'player',
@@ -129,9 +138,93 @@ function dialogueDossier(state: WorldState, dialogue: DiplomaticDialogue, title:
   return {
     id: `diplomatic-dialogue-${dialogue.id}`, title, kind: 'cooperation', status: 'active', importance: 'moderate',
     actorIds: dialogue.participantIds, regionTags: [], startedAt: state.currentDate, updatedAt: state.currentDate,
-    phase: title.startsWith('Procédure') ? 'Procédure d’accord' : 'Accord conclu', trend: 'stable', publicSummary: summary,
-    followed: true, autoTracked: true, commitments, pendingDecisions: [], relatedCurrentIds: [], relatedActionIds: [], entries: [entry],
+    phase: options.phase ?? (title.startsWith('Procédure') ? 'Procédure d’accord' : 'Accord conclu'), trend: 'stable', publicSummary: summary,
+    followed: true, autoTracked: options.autoTracked ?? true, commitments, pendingDecisions: [], relatedCurrentIds: [], relatedActionIds: [], entries: [entry],
   };
+}
+
+/**
+ * Détermine le volet matériel d'un accord sans inventer de capacité.
+ * Les références sont limitées aux registres déjà présents dans la sauvegarde;
+ * l'accord ne devient donc jamais une production ou une livraison magique.
+ */
+function treatyImplementationFor(
+  state: WorldState,
+  dialogue: DiplomaticDialogue,
+  agreementType: DiplomaticAgreementType,
+  text: string,
+  dossierId: string,
+): TreatyImplementation | undefined {
+  const parties = new Set(dialogue.participantIds);
+  const energyRequested = /gaz|gas|pétrole|petrol|hydrocarb|énerg/i.test(text);
+  const energyNodeIds = Object.values(state.energyNodes ?? {})
+    .filter((node) => parties.has(node.countryId) && (!energyRequested || node.resource === 'gas'))
+    .map((node) => node.id)
+    .slice(0, 8);
+  const sectorIds = Object.values(state.sectors ?? {})
+    .filter((sector) => parties.has(sector.countryId))
+    .filter((sector) => ['maritime_logistics', 'shipbuilding', 'telecoms', 'machine_tools', 'defense', 'semiconductors'].includes(sector.sector))
+    .map((sector) => sector.id)
+    .slice(0, 8);
+  const armamentProductIds = Object.values(state.armamentProducts ?? {})
+    .filter((product) => parties.has(product.countryId))
+    .map((product) => product.id)
+    .slice(0, 6);
+  const militaryTheaterIds = Object.values(state.militaryTheaters ?? {})
+    .filter((theater) => parties.has(theater.countryId) || theater.hostCountryIds.some((id) => parties.has(id)))
+    .map((theater) => theater.id)
+    .slice(0, 6);
+  const assetIds = Object.values(state.territorial?.assets ?? {})
+    .filter((asset) => ['port', 'lng_terminal', 'logistics', 'industrial', 'naval_base'].includes(asset.kind))
+    .filter((asset) => parties.has(state.territorial.territories[asset.territoryId]?.sovereignCountryId ?? ''))
+    .map((asset) => asset.id)
+    .slice(0, 8);
+
+  const common = {
+    progressPct: 0,
+    milestonePcts: [25, 50, 75, 100],
+    completedMilestones: [],
+    dossierId,
+    sectorIds: [] as string[],
+    energyNodeIds: [] as string[],
+    armamentProductIds: [] as string[],
+    militaryTheaterIds: [] as string[],
+    assetIds,
+  };
+  switch (agreementType) {
+    case 'energy_cooperation':
+      return {
+        ...common,
+        kind: 'energy_framework', phase: 'exploration', monthlyProgressPct: 2.5,
+        energyNodeIds, note: 'Cadre de coopération énergétique : les volumes et infrastructures doivent encore être confirmés dans le registre énergétique.',
+      };
+    case 'industrial_cooperation':
+      return {
+        ...common,
+        kind: 'industrial_transfer', phase: 'pilot', monthlyProgressPct: 3,
+        sectorIds, assetIds, note: 'Coopération industrielle : les filières liées progressent par étapes, sous réserve des capacités réellement disponibles.',
+      };
+    case 'security_cooperation':
+      return {
+        ...common,
+        kind: 'maritime_security', phase: 'pilot', monthlyProgressPct: 4,
+        militaryTheaterIds, note: 'Coopération de sécurité : la préparation des théâtres et bases liés progresse sans créer de troupes supplémentaires.',
+      };
+    case 'defense_cooperation':
+      return {
+        ...common,
+        kind: 'defense_support', phase: 'pilot', monthlyProgressPct: 3,
+        armamentProductIds, militaryTheaterIds, note: 'Coopération de défense : elle utilise les carnets et théâtres existants, sans dépasser leur capacité de production.',
+      };
+    case 'information_sharing':
+      return {
+        ...common,
+        kind: 'information_channel', phase: 'exploration', monthlyProgressPct: 5,
+        note: 'Canal d’information opérationnel : les échanges améliorent la connaissance, sans modifier les capacités physiques.',
+      };
+    default:
+      return undefined;
+  }
 }
 
 /** Ouvre un dialogue depuis une décision de dossier et consomme cette décision. */
@@ -241,6 +334,8 @@ export function resolveDiplomaticDialogueResponse(
   const effects: import('./types').WorldEffect[] = [
     { kind: 'diplomatic_dialogue_patch', dialogueId, patch: nextDialogue, reason: labels[decision], visibility: 'player' },
   ];
+  const names = dialogue.participantIds.map((id) => state.countries[id]?.name ?? id).join(', ');
+  const dossierId = `diplomatic-dialogue-${dialogue.id}`;
   if (decision === 'accept' && (response.kind === 'accept' || response.kind === 'counter')) {
     const treatyId = `dialogue-commitment-${dialogue.id}-${state.sequence + 1}`;
     const durationByType: Record<DiplomaticAgreementType, number> = {
@@ -260,9 +355,16 @@ export function resolveDiplomaticDialogueResponse(
       mediation: dialogue.participantIds.map((countryId) => ({ countryId, metric: 'stability', delta: 0.02 })),
       defense_cooperation: dialogue.participantIds.map((countryId) => ({ countryId, metric: 'security', delta: countryId === state.playerCountryId ? 0.07 : 0.045 })),
     };
+    const implementation = treatyImplementationFor(
+      state,
+      dialogue,
+      response.agreementType,
+      `${dialogue.turns.at(-1)?.publicMessage ?? ''} ${response.position}`,
+      dossierId,
+    );
     effects.push({
       kind: 'treaty_add',
-      treaty: { id: treatyId, parties: dialogue.participantIds, label: `Engagement diplomatique · ${response.agreementType.replaceAll('_', ' ')}`, status: 'active', startDate: state.currentDate, endDate: addMonths(state.currentDate, durationByType[response.agreementType]), monthlyEffects: monthlyByType[response.agreementType] },
+      treaty: { id: treatyId, parties: dialogue.participantIds, label: `Engagement diplomatique · ${response.agreementType.replaceAll('_', ' ')}`, status: 'active', startDate: state.currentDate, endDate: addMonths(state.currentDate, durationByType[response.agreementType]), monthlyEffects: monthlyByType[response.agreementType], ...(implementation ? { implementation } : {}) },
       reason: 'L’acceptation du joueur transforme la position diplomatique en engagement persistant.', visibility: 'player',
     });
     if (response.agreementType === 'information_sharing') {
@@ -287,13 +389,26 @@ export function resolveDiplomaticDialogueResponse(
     reason: decision === 'accept' ? 'L’acceptation d’un engagement diplomatique renforce la relation.' : 'Le refus d’une position diplomatique dégrade la relation.', visibility: 'player' as const,
   })));
   const formalAgreement = decision === 'accept' && (response.kind === 'accept' || response.kind === 'counter');
-  if (!dialogue.linkedDossierId && (formalAgreement || decision === 'request_revision')) {
-    const names = dialogue.participantIds.map((id) => state.countries[id]?.name ?? id).join(', ');
+  const unresolvedStrategicPosition = decision === 'acknowledge'
+    && ['energy_cooperation', 'defense_cooperation', 'security_cooperation', 'political_guarantee', 'mediation'].includes(response.agreementType)
+    && (dialogue.participantIds.length > 2 || response.redLines.length >= 2 || response.conditions.length >= 2);
+  if (!dialogue.linkedDossierId && (formalAgreement || decision === 'request_revision' || unresolvedStrategicPosition)) {
     const agreementLabel = response.agreementType.replaceAll('_', ' ');
     const dossier = formalAgreement
       ? dialogueDossier(state, dialogue, `Accord diplomatique · ${names}`, `Un accord de ${agreementLabel} est conclu avec ${names} et doit désormais être suivi dans le temps.`, 'Accord diplomatique conclu', response.position, [`Engagement diplomatique : ${response.position}`])
-      : dialogueDossier(state, dialogue, `Procédure d’accord · ${names}`, `Une procédure de négociation est ouverte avec ${names} ; les garanties et conditions restent à préciser.`, 'Procédure d’accord ouverte', messages.request_revision);
-    effects.push({ kind: 'dossier_add', dossier, reason: formalAgreement ? 'L’accord conclu devient un dossier de suivi.' : 'La demande de révision ouvre une procédure d’accord suivie.', visibility: 'player' });
+      : decision === 'request_revision'
+        ? dialogueDossier(state, dialogue, `Procédure d’accord · ${names}`, `Une procédure de négociation est ouverte avec ${names} ; les garanties et conditions restent à préciser.`, 'Procédure d’accord ouverte', messages.request_revision)
+        : dialogueDossier(
+          state,
+          dialogue,
+          `Négociation en suspens · ${names}`,
+          `La position de ${names} est enregistrée, mais aucun engagement formel n’est conclu. Les lignes rouges et garanties doivent encore être arbitrées.`,
+          'Position reçue sans accord formel',
+          `${response.position}${response.redLines.length ? ` Lignes rouges : ${response.redLines.join(' ; ')}.` : ''}`,
+          [],
+          { autoTracked: false, phase: 'Négociation exploratoire en suspens' },
+        );
+    effects.push({ kind: 'dossier_add', dossier, reason: formalAgreement ? 'L’accord conclu devient un dossier de suivi.' : decision === 'request_revision' ? 'La demande de révision ouvre une procédure d’accord suivie.' : 'Une négociation stratégique non conclue devient un dossier modéré pour éviter qu’elle ne disparaisse du monde.', visibility: 'player' });
   }
   if (dialogue.linkedDossierId && state.strategicDossiers[dialogue.linkedDossierId]) {
     const dossier = state.strategicDossiers[dialogue.linkedDossierId];
@@ -329,7 +444,10 @@ export function requestDiplomaticDialogueAI(state: WorldState, dialogueId: strin
     inputText: dialogue.turns.at(-1)?.publicMessage ?? '',
     purpose: `Réponse de ${speaker?.name ?? dialogue.activeSpeakerId} dans un dialogue diplomatique`, actorId: state.playerCountryId,
     reasons: ['Respecter les intérêts, la personnalité et les lignes rouges de l’interlocuteur.'],
-    context: { dialogueId: dialogue.id, respondingCountryId: dialogue.activeSpeakerId, participantIds: dialogue.participantIds, recentTurns: dialogue.turns.slice(-12), playerIntent: dialogue.turns.at(-1)?.publicMessage ?? '' },
+    // Le journal complet reste local dans le dialogue ; Luna ne reçoit que les
+    // huit derniers tours, suffisants pour garder les lignes rouges sans payer
+    // à nouveau toute l'histoire du canal à chaque réponse.
+    context: { dialogueId: dialogue.id, respondingCountryId: dialogue.activeSpeakerId, participantIds: dialogue.participantIds, recentTurns: dialogue.turns.slice(-8), playerIntent: dialogue.turns.at(-1)?.publicMessage ?? '' },
   };
   const queued = enqueueAIJob(state, job);
   const patched = commitWorldAction(queued, {
