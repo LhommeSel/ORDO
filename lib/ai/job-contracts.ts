@@ -79,7 +79,7 @@ export type AIPrivateDecision = {
 export type AIJobAIModelAnswer = AIJobAIAnswer & { privateDecision: AIPrivateDecision | null };
 
 export type AIJobAIResponse =
-  | { ok: true; answer: AIJobAIAnswer; usage: AdvisorAIUsage }
+  | { ok: true; answer: AIJobAIAnswer; usage: AdvisorAIUsage; diagnostics?: { diplomaticActorNormalized?: { expected: string; received: string } } }
   | {
       ok: false;
       code: 'not_configured' | 'invalid_request' | 'rate_limited' | 'budget_exhausted' | 'upstream_error';

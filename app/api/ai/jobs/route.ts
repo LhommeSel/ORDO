@@ -284,19 +284,35 @@ export async function POST(request: Request) {
       console.error('ORDO AI job invalid output', { requestId: parsed.requestId, kind: parsed.job.kind });
       return json({ ok: false, code: 'upstream_error', message: 'La réponse du modèle IA a été rejetée par le contrôle de cohérence.', usage: usageSummary() }, 502);
     }
+    let sanitizedAnswer = answer;
+    let diplomaticActorNormalized: { expected: string; received: string } | undefined;
     if (parsed.job.kind === 'diplomacy' && typeof parsed.job.domainContext.respondingCountryId === 'string'
       && answer.privateDecision?.actorId !== parsed.job.domainContext.respondingCountryId) {
-      console.error('ORDO AI diplomacy identity mismatch', {
+      // L'identifiant privé ne doit jamais pouvoir détourner une réponse vers
+      // un autre pays. Le contexte du moteur est l'autorité : on normalise ce
+      // champ interne plutôt que de rejeter une réponse publique par ailleurs
+      // valide et de facturer un nouvel essai au joueur.
+      diplomaticActorNormalized = {
+        expected: parsed.job.domainContext.respondingCountryId,
+        received: answer.privateDecision?.actorId ?? '',
+      };
+      console.warn('ORDO AI diplomacy identity normalized', {
         requestId: parsed.requestId,
-        expectedActorId: parsed.job.domainContext.respondingCountryId,
-        receivedActorId: answer.privateDecision?.actorId,
+        expectedActorId: diplomaticActorNormalized.expected,
+        receivedActorId: diplomaticActorNormalized.received,
       });
-      return json({ ok: false, code: 'upstream_error', message: 'La réponse IA a été attribuée au mauvais interlocuteur. Aucun effet n’a été appliqué.', usage: usageSummary() }, 502);
+      sanitizedAnswer = {
+        ...sanitizedAnswer,
+        privateDecision: sanitizedAnswer.privateDecision
+          ? { ...sanitizedAnswer.privateDecision, actorId: parsed.job.domainContext.respondingCountryId }
+          : sanitizedAnswer.privateDecision,
+      };
     }
     return json({
       ok: true,
-      answer: sanitizeAIJobAIAnswer(answer),
+      answer: sanitizeAIJobAIAnswer(sanitizedAnswer),
       usage: usageSummary(),
+      ...(diplomaticActorNormalized ? { diagnostics: { diplomaticActorNormalized } } : {}),
     });
   } catch (error) {
     console.error('ORDO AI job request failure', { requestId: parsed.requestId, name: error instanceof Error ? error.name : 'unknown' });

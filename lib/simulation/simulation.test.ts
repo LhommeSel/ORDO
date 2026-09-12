@@ -1837,6 +1837,7 @@ test('un groupe diplomatique peut accueillir un pays et faire tourner la parole 
   assert.equal(sent.ok, true);
   if (!sent.ok) return;
   assert.equal(sent.state.diplomaticDialogues[opened.dialogueId].status, 'awaiting_ai');
+  assert.equal(sent.state.diplomaticDialogues[opened.dialogueId].activeSpeakerId, 'ITA');
   assert.equal(sent.state.diplomaticDialogues[opened.dialogueId].aiMode, 'local');
   const secondRequest = requestDiplomaticDialogueAI(sent.state, opened.dialogueId);
   assert.equal(secondRequest.ok, true);

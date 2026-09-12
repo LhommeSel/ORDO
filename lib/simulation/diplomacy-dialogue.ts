@@ -165,7 +165,15 @@ export function sendDiplomaticDialogueMessage(state: WorldState, dialogueId: str
   if (lastTurn?.speakerId === state.playerCountryId && lastTurn.publicMessage === normalizedMessage) {
     return { ok: false as const, state, error: 'Ce message vient déjà d’être envoyé.' };
   }
-  const activeSpeaker = nextSpeaker(state, dialogue, [state.playerCountryId]);
+  // Après une réponse IA, activeSpeakerId désigne déjà l'interlocuteur que le
+  // moteur a choisi pour le prochain tour. Le message du joueur doit donc lui
+  // être adressé directement ; recalculer ici en l'excluant faisait sauter ce
+  // participant et répétait parfois le précédent locuteur dans les groupes.
+  const activeSpeaker = dialogue.activeSpeakerId !== state.playerCountryId
+    && dialogue.participantIds.includes(dialogue.activeSpeakerId)
+    && Boolean(state.countries[dialogue.activeSpeakerId])
+    ? dialogue.activeSpeakerId
+    : nextSpeaker(state, dialogue, [state.playerCountryId]);
   if (!dialogue.participantIds.includes(activeSpeaker) || activeSpeaker === state.playerCountryId) {
     return { ok: false as const, state, error: 'Aucun interlocuteur valide n’est disponible pour ce dialogue.' };
   }
