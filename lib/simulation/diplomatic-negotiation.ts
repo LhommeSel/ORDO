@@ -3,6 +3,7 @@ import { diplomaticCommitmentEffects, normalizeDialogueMove } from './diplomacy-
 import { enforceDiplomaticMove } from './diplomatic-feasibility';
 import { enqueueAIJob } from './ai/orchestrator';
 import { historicalAnchorChannelEffects } from './history';
+import { makeDossierDecision } from './dossier-decisions';
 import type {
   AIJobOutcome,
   GeneralAIJob,
@@ -16,6 +17,8 @@ import type {
   DiplomaticMeetingStatus,
   DiplomaticDialogueResponse,
   DiplomaticParticipantPosition,
+  DossierEntry,
+  StrategicDossier,
   ISODate,
   WorldEffect,
   WorldState,
@@ -55,6 +58,111 @@ const domainForAgreement = (agreementType: DiplomaticDialogueResponse['agreement
 const domainLabel: Record<DiplomaticAgreementDomain, string> = {
   energy: 'énergétique', defense: 'défense', industrial: 'industriel', security: 'sécurité', political: 'politique', general: 'coopération',
 };
+
+const meetingDossierId = (dialogueId: string) => `diplomatic-dialogue-${dialogueId}`;
+
+/**
+ * Prépare le dossier de suivi créé par une réponse bloquante. Les positions
+ * restent séparées par pays : une contre-proposition grecque ne devient pas
+ * une opposition turque, et un refus ne disparaît pas dans un résumé agrégé.
+ */
+function meetingDossierData(
+  state: WorldState,
+  dialogue: DiplomaticDialogue,
+  participantPositions: DiplomaticParticipantPosition[],
+  decision: MeetingDecision,
+  summary: string,
+): { dossier: StrategicDossier; entries: DossierEntry[]; decisions: ReturnType<typeof makeDossierDecision>[] } {
+  const counterpartIds = dialogue.participantIds.filter((id) => id !== state.playerCountryId && Boolean(state.countries[id]));
+  const names = counterpartIds.map((id) => state.countries[id]?.name ?? id).join(', ');
+  const dossierId = meetingDossierId(dialogue.id);
+  const existing = state.strategicDossiers?.[dossierId];
+  const blocked = participantPositions.filter((item) => item.kind !== 'accept');
+  const decisions = blocked.slice(0, 4).map((item) => {
+    const name = state.countries[item.participantId]?.name ?? item.participantId;
+    const prompt = item.kind === 'pending'
+      ? `Obtenir une position explicite de ${name} sur le projet diplomatique.`
+      : item.kind === 'refuse'
+        ? `Choisir une nouvelle approche avec ${name} après le refus du projet.`
+        : `Réviser le projet selon la contre-proposition de ${name}.`;
+    return makeDossierDecision({
+      id: `diplomatic-decision-${dialogue.id}-${item.participantId}-${state.sequence + 1}`,
+      prompt,
+      createdAt: state.currentDate,
+      importance: 'moderate',
+      actorIds: [state.playerCountryId, item.participantId],
+      sourceKind: 'diplomatic_response',
+      sourceId: dialogue.id,
+      sourceLabel: `Position de ${name}`,
+    });
+  });
+  const pendingPrompts = decisions.map((item) => item.prompt);
+  const oldPending = existing?.pendingDecisions ?? [];
+  const pendingDecisions = [...new Set([...oldPending.filter((prompt) => !pendingPrompts.includes(prompt)), ...pendingPrompts])].slice(0, 6);
+  const oldRecords = existing?.decisionRecords ?? [];
+  const decisionRecords = [
+    ...oldRecords.filter((record) => !pendingPrompts.includes(record.prompt) || record.status !== 'pending'),
+    ...decisions,
+  ];
+  const entries = participantPositions.map((item) => {
+    const name = state.countries[item.participantId]?.name ?? item.participantId;
+    const details = [
+      item.position,
+      item.acceptedTerms.length ? `Acquis : ${item.acceptedTerms.join(' ; ')}.` : '',
+      item.rejectedTerms.length ? `Refusé : ${item.rejectedTerms.join(' ; ')}.` : '',
+      item.conditionalTerms.length ? `Conditions : ${item.conditionalTerms.join(' ; ')}.` : '',
+      item.rationale ? `Raisons : ${item.rationale}` : '',
+    ].filter(Boolean).join(' ');
+    return {
+      id: `meeting-position-${dialogue.id}-${item.participantId}-${state.sequence + 1}`,
+      date: state.currentDate,
+      title: `Position de ${name} · ${item.kind === 'counter' ? 'contre-proposition' : item.kind === 'refuse' ? 'refus' : 'réponse manquante'}`,
+      summary: details,
+      importance: 'moderate' as const,
+      actorIds: [state.playerCountryId, item.participantId],
+      requiresDecision: item.kind !== 'accept',
+      visibility: 'player' as const,
+    };
+  });
+  const dossier: StrategicDossier = existing ?? {
+    id: dossierId,
+    title: `Négociation diplomatique · ${names}`,
+    kind: decision === 'refused' ? 'diplomatic_crisis' : 'cooperation',
+    status: 'active',
+    importance: 'moderate',
+    actorIds: dialogue.participantIds,
+    regionTags: [],
+    startedAt: state.currentDate,
+    updatedAt: state.currentDate,
+    phase: decision === 'refused' ? 'Refus formel · nouvelle approche requise' : 'Contre-propositions à arbitrer',
+    trend: decision === 'refused' ? 'escalating' : 'stable',
+    publicSummary: summary,
+    followed: true,
+    autoTracked: false,
+    commitments: [],
+    pendingDecisions,
+    decisionRecords,
+    relatedCurrentIds: [],
+    relatedActionIds: [],
+    entries: [],
+  };
+  return {
+    dossier: existing ? {
+      ...existing,
+      status: 'active',
+      updatedAt: state.currentDate,
+      phase: decision === 'refused' ? 'Refus formel · nouvelle approche requise' : 'Contre-propositions à arbitrer',
+      trend: decision === 'refused' ? 'escalating' : 'stable',
+      publicSummary: summary,
+      followed: true,
+      pendingDecisions,
+      decisionRecords,
+      sleepingAt: undefined,
+    } : dossier,
+    entries,
+    decisions,
+  };
+}
 
 export type DiplomaticBriefInput = Omit<DiplomaticBrief, 'id' | 'dialogueId' | 'generatedAt'>;
 
@@ -176,13 +284,59 @@ export function proposeDiplomaticMeeting(state: WorldState, dialogueId: string, 
 /** Modifie un projet sans appliquer encore d’effet au monde. */
 export function reviseDiplomaticAgreementDraft(state: WorldState, draftId: string, patch: Partial<Pick<DiplomaticAgreementDraft, 'summary' | 'terms' | 'unresolvedConditions'>>) {
   const draft = state.diplomaticAgreementDrafts?.[draftId];
-  if (!draft || draft.stage !== 'final_proposal') return { ok: false as const, state, error: 'Ce projet d’accord n’est plus révisable.' };
+  if (!draft || !['final_proposal', 'rejected'].includes(draft.stage)) return { ok: false as const, state, error: 'Ce projet d’accord n’est plus révisable.' };
+  const reopeningRejectedDraft = draft.stage === 'rejected';
+  const meeting = state.diplomaticMeetings?.[draft.meetingId];
+  if (!meeting) return { ok: false as const, state, error: 'La rencontre liée à ce projet est introuvable.' };
+  const nextDraftPatch: Partial<DiplomaticAgreementDraft> = {
+    ...patch,
+    // Une modification invalide toujours l’ancienne réponse : le joueur doit
+    // relancer une consultation explicite des participants.
+    counterpartDecision: 'pending',
+    ...(reopeningRejectedDraft ? { stage: 'final_proposal' as const } : {}),
+    updatedAt: state.currentDate,
+  };
+  const nextMeetingPatch: Partial<DiplomaticMeeting> = {
+    counterpartDecision: 'pending',
+    participantPositions: [],
+    ...(reopeningRejectedDraft
+      ? { status: 'scheduled' as const, scheduledAt: addMonths(state.currentDate, 1), outcomeSummary: 'Projet rouvert par le joueur après un refus ; nouvelle réponse requise.' }
+      : { status: 'scheduled' as const }),
+  };
+  const effects: WorldEffect[] = [
+    { kind: 'diplomatic_agreement_draft_patch', draftId, patch: nextDraftPatch, reason: reopeningRejectedDraft ? 'Le joueur rouvre un projet refusé avec une nouvelle formulation.' : 'Le joueur ajuste le projet et invalide la réponse précédente.', visibility: 'player' },
+    { kind: 'diplomatic_meeting_patch', meetingId: meeting.id, patch: nextMeetingPatch, reason: 'Toute révision exige une nouvelle réponse explicite des participants.', visibility: 'player' },
+  ];
+  const dossierId = meetingDossierId(draft.dialogueId);
+  const dossier = state.strategicDossiers?.[dossierId];
+  if (dossier) {
+    const diplomaticPrompts = new Set(dossier.pendingDecisions.filter((prompt) => /projet diplomatique|contre-proposition|nouvelle approche/i.test(prompt)));
+    const decisionRecords = (dossier.decisionRecords ?? []).map((record) => diplomaticPrompts.has(record.prompt) && record.status === 'pending'
+      ? { ...record, status: 'resolved' as const, resolvedAt: state.currentDate, resolutionChannel: 'dialogue' as const }
+      : record);
+    const entry: DossierEntry = {
+      id: `meeting-revision-${draft.id}-${state.sequence + 1}`,
+      date: state.currentDate,
+      title: reopeningRejectedDraft ? 'Projet diplomatique rouvert' : 'Projet diplomatique révisé',
+      summary: reopeningRejectedDraft
+        ? 'Le joueur reformule le projet après un refus. La rencontre est reprogrammée et aucun engagement n’est actif.'
+        : 'Le joueur modifie les termes après une contre-proposition. La réponse précédente est invalidée et devra être redemandée.',
+      importance: dossier.importance,
+      actorIds: draft.participantIds,
+      requiresDecision: false,
+      visibility: 'player',
+    };
+    effects.push(
+      { kind: 'dossier_patch', dossierId, patch: { status: 'active', trend: 'stable', phase: 'Projet révisé · réponse requise', playerStance: 'Projet révisé ; nouvelle position des participants à obtenir.', pendingDecisions: dossier.pendingDecisions.filter((prompt) => !diplomaticPrompts.has(prompt)), decisionRecords }, reason: 'La révision remet le dossier diplomatique dans une phase de négociation active.', visibility: 'player' },
+      { kind: 'dossier_entry_add', dossierId, entry, reason: 'La révision est conservée dans la chronologie du dossier avant la nouvelle rencontre.', visibility: 'player' },
+    );
+  }
   return {
     ok: true as const,
     state: commitWorldAction(state, {
       kind: 'diplomatic', actorId: state.playerCountryId, targetIds: draft.participantIds.filter((id) => id !== state.playerCountryId),
       origin: 'player', visibility: 'player', intent: 'Réviser un projet d’accord diplomatique',
-      effects: [{ kind: 'diplomatic_agreement_draft_patch', draftId, patch, reason: 'Le joueur ajuste le projet avant de le soumettre.', visibility: 'player' }],
+      effects,
     }),
   };
 }
@@ -283,7 +437,20 @@ export function applyDiplomaticMeetingAIAnswer(state: WorldState, jobId: string,
       };
     })
     : [];
-  const participantPositions = participantResults.map((item) => item.position);
+  const participantPositions = participantResults.length > 0
+    ? participantResults.map((item) => item.position)
+    : counterpartIds.map((participantId) => {
+      const name = state.countries[participantId]?.name ?? participantId;
+      return {
+        participantId,
+        kind: 'pending' as const,
+        position: `${name} n’a pas encore formulé de position exploitable sur le projet.`,
+        acceptedTerms: [],
+        rejectedTerms: [],
+        conditionalTerms: [`Réponse structurée de ${name} requise.`],
+        rationale: 'La réponse reçue ne contenait pas de position structurée utilisable.',
+      };
+    });
   const allAccepted = participantPositions.length > 0 && participantPositions.every((item) => item.kind === 'accept');
   const hasRefusal = participantPositions.some((item) => item.kind === 'refuse');
   const decision: MeetingDecision = allAccepted ? 'accepted' : hasRefusal ? 'refused' : 'countered';
@@ -324,7 +491,9 @@ export function applyDiplomaticMeetingAIAnswer(state: WorldState, jobId: string,
   const nextDraft: DiplomaticAgreementDraft = { ...draft, counterpartDecision: decision, unresolvedConditions: decision === 'accepted' ? [] : unresolved, stage: decision === 'refused' ? 'rejected' : 'final_proposal', summary: `${draft.summary} ${summary}`, updatedAt: state.currentDate };
   const nextMeeting: DiplomaticMeeting = { ...meeting, counterpartDecision: decision, participantPositions, status: decision === 'refused' ? 'completed' : 'scheduled', outcomeSummary: summary };
   const nextDialogue: DiplomaticDialogue = {
-    ...dialogue, updatedAt: state.currentDate,
+    ...dialogue,
+    ...(decision !== 'accepted' && !dialogue.linkedDossierId ? { linkedDossierId: meetingDossierId(dialogue.id) } : {}),
+    updatedAt: state.currentDate,
     turns: [...dialogue.turns, meetingTurn(dialogue.id, draft.participantIds.find((id) => id !== state.playerCountryId) ?? dialogue.initiatorId, dialogue.turns.length + 1, state.currentDate, effectivePublicMessage)],
     lastResponse: effectiveMove ? {
       kind: effectiveMove.kind,
@@ -336,7 +505,14 @@ export function applyDiplomaticMeetingAIAnswer(state: WorldState, jobId: string,
     } : dialogue.lastResponse,
   };
   const counterpartTargets = draft.participantIds.filter((id) => id !== state.playerCountryId);
-  const relationDelta = decision === 'accepted' ? { relation: 2, trust: 2 } : decision === 'countered' ? { relation: 1, trust: 0 } : decision === 'refused' ? { relation: -4, trust: -3 } : { relation: 0, trust: 0 };
+  // Une réponse multilatérale ne produit pas le même effet pour tout le
+  // monde : le pays qui accepte est consolidé, celui qui contre-propose garde
+  // un canal de travail, et celui qui refuse assume le coût relationnel.
+  const relationDeltaFor = (kind: DiplomaticParticipantPosition['kind']) => kind === 'accept'
+    ? { relation: 2, trust: 2 }
+    : kind === 'counter' ? { relation: 1, trust: 0 }
+      : kind === 'refuse' ? { relation: -4, trust: -3 }
+        : { relation: 0, trust: 0 };
   const effectiveOutcome: AIJobOutcome = engineAdjusted
     ? { ...outcome, publicMessage: effectivePublicMessage, assessment: `${outcome.assessment} Le moteur conserve une décision par participant et empêche tout consensus implicite${allIssues.length ? ' ; les lignes rouges et contraintes sont affichées.' : '.'}` }
     : outcome;
@@ -344,10 +520,34 @@ export function applyDiplomaticMeetingAIAnswer(state: WorldState, jobId: string,
     { kind: 'diplomatic_agreement_draft_patch', draftId: draft.id, patch: nextDraft, reason: `La réponse IA des participants est enregistrée : ${meetingDecisionLabel[decision]}.`, visibility: 'player' },
     { kind: 'diplomatic_meeting_patch', meetingId: meeting.id, patch: nextMeeting, reason: 'La rencontre conserve sa réponse sans signer automatiquement.', visibility: 'player' },
     { kind: 'diplomatic_dialogue_patch', dialogueId: dialogue.id, patch: nextDialogue, reason: 'La réponse de la rencontre rejoint la mémoire du dialogue diplomatique.', visibility: 'player' },
-    ...(relationDelta.relation !== 0 || relationDelta.trust !== 0 ? counterpartTargets.map((targetId) => ({ kind: 'relation_delta' as const, from: targetId, to: state.playerCountryId, relation: relationDelta.relation, trust: relationDelta.trust, reason: `Réponse ${decision === 'accepted' ? 'favorable' : decision === 'countered' ? 'contre-proposée' : 'refusée'} au projet diplomatique.`, visibility: 'player' as const })) : []),
+    ...participantPositions.flatMap((item) => {
+      const delta = relationDeltaFor(item.kind);
+      if (delta.relation === 0 && delta.trust === 0) return [];
+      return [{ kind: 'relation_delta' as const, from: item.participantId, to: state.playerCountryId, relation: delta.relation, trust: delta.trust, reason: `Réponse ${item.kind === 'accept' ? 'favorable' : item.kind === 'counter' ? 'contre-proposée' : 'refusée'} au projet diplomatique.`, visibility: 'player' as const }];
+    }),
     { kind: 'ai_job_patch', jobId, patch: { status: 'resolved', resolvedAt: state.currentDate, attempts: job.attempts + 1, outcome: effectiveOutcome }, reason: 'La réponse IA de la rencontre est conservée dans la tâche.', visibility: 'debug' },
   ];
-  if (dialogue.linkedDossierId && state.strategicDossiers[dialogue.linkedDossierId]) effects.push({ kind: 'dossier_entry_add', dossierId: dialogue.linkedDossierId, entry: { id: `meeting-response-${meeting.id}-${state.sequence + 1}`, date: state.currentDate, title: `Réponse à la rencontre · ${decision}`, summary, importance: state.strategicDossiers[dialogue.linkedDossierId].importance, actorIds: draft.participantIds, requiresDecision: decision === 'countered', visibility: 'player' }, reason: 'La réponse de la rencontre actualise le dossier sans effacer les conditions.', visibility: 'player' });
+  if (decision !== 'accepted') {
+    const dossierData = meetingDossierData(state, dialogue, participantPositions, decision, summary);
+    const dossierId = dossierData.dossier.id;
+    if (!state.strategicDossiers?.[dossierId]) {
+      effects.push({ kind: 'dossier_add', dossier: dossierData.dossier, reason: 'Une contre-proposition ou un refus ouvre un dossier de suivi au lieu de disparaître dans le journal.', visibility: 'player' });
+    } else {
+      effects.push({ kind: 'dossier_patch', dossierId, patch: {
+        status: dossierData.dossier.status,
+        trend: dossierData.dossier.trend,
+        phase: dossierData.dossier.phase,
+        publicSummary: dossierData.dossier.publicSummary,
+        followed: true,
+        pendingDecisions: dossierData.dossier.pendingDecisions,
+        decisionRecords: dossierData.dossier.decisionRecords,
+        sleepingAt: undefined,
+      }, reason: 'La réponse de la rencontre actualise le dossier diplomatique déjà suivi.', visibility: 'player' });
+    }
+    effects.push(...dossierData.entries.map((entry) => ({ kind: 'dossier_entry_add' as const, dossierId, entry, reason: 'La position de chaque participant est conservée séparément dans le dossier.', visibility: 'player' as const })));
+  } else if (dialogue.linkedDossierId && state.strategicDossiers[dialogue.linkedDossierId]) {
+    effects.push({ kind: 'dossier_entry_add', dossierId: dialogue.linkedDossierId, entry: { id: `meeting-response-${meeting.id}-${state.sequence + 1}`, date: state.currentDate, title: `Réponse à la rencontre · ${decision}`, summary, importance: state.strategicDossiers[dialogue.linkedDossierId].importance, actorIds: draft.participantIds, requiresDecision: false, visibility: 'player' }, reason: 'La réponse de la rencontre actualise le dossier sans effacer les conditions.', visibility: 'player' });
+  }
   return { ok: true as const, state: commitWorldAction(state, { kind: 'diplomatic', actorId: draft.participantIds.find((id) => id !== state.playerCountryId) ?? state.playerCountryId, targetIds: counterpartTargets, origin: 'ai', visibility: 'player', intent: `Réponse des participants à ${draft.title}`, effects }), decision };
 }
 

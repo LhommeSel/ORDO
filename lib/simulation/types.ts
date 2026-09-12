@@ -1505,7 +1505,7 @@ export type DossierEntry = {
 
 export type DossierDecisionUrgency = 'low' | 'medium' | 'high' | 'critical';
 export type DossierDecisionChannel = 'local_action' | 'dialogue' | 'delegation' | 'explicit_silence';
-export type DossierDecisionSourceKind = 'legacy' | 'world_pulse' | 'autonomous_program' | 'historical' | 'player_action';
+export type DossierDecisionSourceKind = 'legacy' | 'world_pulse' | 'autonomous_program' | 'historical' | 'player_action' | 'diplomatic_response';
 
 /** Métadonnées persistantes d’une décision, sans supprimer la compatibilité avec pendingDecisions. */
 export type DossierDecision = {
