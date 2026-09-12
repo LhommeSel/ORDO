@@ -15,7 +15,7 @@ import { addEconomicShock, setEconomicPolicy } from './macro-economy';
 import { applyDebtCrisisResponse } from './sovereign-debt';
 import { evaluateStrategicAction, selectStrategicAction } from './decision-making';
 import { reviewCountryStrategy } from './autonomy';
-import { countrySheet, defenseReferences2000ForValidation } from './country-sheet';
+import { countrySheet, defenseReferenceForCountry, defenseReferences2000ForValidation } from './country-sheet';
 import type { GovernmentMeasure, ISODate, StrategicActionCandidate, WorldState } from './types';
 import { createFrance2000World, createWorld2000 } from './scenario-2000';
 import { deriveStructuralDiagnostics } from './structural-diagnostics';
@@ -48,6 +48,27 @@ import { advancePoliticalCycles, assessPoliticalSupport, choosePoliticalCampaign
 import { nationalReformEffects, reformStateKey } from './reforms';
 import { advanceMilitaryTheaterAccess, militaryBasesForCountry, militaryTheatersForCountry } from './military-theaters';
 import { advanceWarZones, warZonesForCountry } from './war-zones';
+
+const trackedGreatPowers = ['FRA', 'DEU', 'ITA', 'ESP', 'POL', 'USA', 'GBR', 'RUS', 'CHN', 'NOR', 'DZA', 'LBY', 'SAU', 'BRA', 'ZAF', 'AUS', 'IND', 'JPN', 'TUR', 'VNM'] as const;
+
+test('les grandes puissances suivies disposent d’un socle macro, politique, militaire et commercial complet', () => {
+  const state = createWorld2000();
+  for (const countryId of trackedGreatPowers) {
+    assert.ok(state.countries[countryId], `${countryId}: fiche nationale`);
+    assert.ok(state.macroEconomies[countryId], `${countryId}: macroéconomie`);
+    assert.ok(state.structuralProfiles[countryId], `${countryId}: profil structurel`);
+    assert.ok(state.leadership[countryId]?.figures.length, `${countryId}: dirigeant`);
+    assert.ok(state.politicalApparatus[countryId]?.currents.length, `${countryId}: appareil politique`);
+    assert.ok(state.decisionProfiles[countryId], `${countryId}: profil décisionnel`);
+    const defense = defenseReferenceForCountry(state, countryId);
+    assert.equal(defense?.modelingLevel, 'documented', `${countryId}: référence militaire documentée`);
+    assert.ok(Object.values(state.tradeFlows).some((flow) => flow.exporterId === countryId || flow.importerId === countryId), `${countryId}: flux commercial`);
+  }
+  const spain = state.macroEconomies.ESP;
+  assert.equal(spain.realGdpBillion2000Usd, 598.103);
+  assert.equal(spain.populationMillions, 40.568);
+  assert.equal(spain.inflationAnnualPct, 3.434);
+});
 
 test('le scénario 2000 charge un monde cohérent et jouable', () => {
   const state = createFrance2000World();

@@ -101,6 +101,13 @@ const deploymentReference2000: Partial<Record<CountryId, DeploymentSeed>> = {
     { location: 'Balkans et Caucase', personnelThousands: 30, mission: 'Coopération et influence régionale' },
     { location: 'Réserve opérationnelle / rotation', personnelThousands: 30, mission: 'Relève et renfort' },
   ],
+  ESP: [
+    { location: 'Métropole', personnelThousands: 124, mission: 'Défense du territoire et préparation OTAN' },
+    { location: 'Canaries, Ceuta et Melilla', personnelThousands: 10, mission: 'Souveraineté des approches et enclaves' },
+    { location: 'Balkans', personnelThousands: 5, mission: 'SFOR/KFOR et stabilisation européenne' },
+    { location: 'OTAN Europe', personnelThousands: 2, mission: 'État-major et coopération alliée' },
+    { location: 'Réserve opérationnelle / rotation', personnelThousands: 4, mission: 'Relève et renfort' },
+  ],
 };
 
 export type SecurityActorReference = {
@@ -162,6 +169,7 @@ export const defenseReference2000: Record<CountryId, DefenseReference> = {
       { location: 'Réserve opérationnelle / rotation', personnelThousands: 48, mission: 'Alerte, relève et renfort des théâtres' },
     ],
   },
+  ESP: { budgetBillionUsd: 8.7, activePersonnelThousands: 145, posture: 'défense méditerranéenne et projection alliée', capabilities: ['forces terrestres mécanisées', 'marine et détroits', 'OTAN'] },
   DEU: { budgetBillionUsd: 28, activePersonnelThousands: 333, posture: 'défense alliée européenne', capabilities: ['armée de terre mécanisée', 'industrie de défense', 'OTAN'] },
   ITA: { budgetBillionUsd: 20, activePersonnelThousands: 320, posture: 'méditerranée et coalition', capabilities: ['marine', 'bases méditerranéennes', 'OTAN'] },
   POL: { budgetBillionUsd: 4.5, activePersonnelThousands: 235, posture: 'défense territoriale en transition', capabilities: ['forces terrestres', 'adaptation OTAN'] },

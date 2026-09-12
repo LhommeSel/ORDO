@@ -54,6 +54,14 @@ const overrides: Record<CountryId, ProfileOverride> = {
     riskTolerance: 48, adaptability: 72, satisficingThreshold: -10, choiceNoise: 16,
     constraints: [aversion('ita-debt', 'Prudence imposée par la dette existante', 'preference', ['deficit_spending'], 16, 62)],
   },
+  ESP: {
+    weights: { growth: 86, fiscal_sustainability: 84, alliance_cohesion: 82, strategic_autonomy: 62, social_cohesion: 72, international_prestige: 78 },
+    riskTolerance: 46, adaptability: 64, satisficingThreshold: -9, choiceNoise: 12,
+    constraints: [
+      aversion('esp-fiscal-credibility', 'Préserver la crédibilité budgétaire et la convergence européenne', 'preference', ['deficit_spending'], 18, 62),
+      aversion('esp-territorial-integrity', 'Préserver l’intégrité territoriale de l’État', 'taboo', ['elite_displacement'], 45, 86),
+    ],
+  },
   POL: {
     weights: { growth: 88, employment: 82, strategic_autonomy: 92, alliance_cohesion: 98, regime_survival: 80, international_prestige: 72 },
     riskTolerance: 58, adaptability: 70, satisficingThreshold: -7, choiceNoise: 11,

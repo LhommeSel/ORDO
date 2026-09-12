@@ -36,6 +36,28 @@ const leadershipOverrides: Partial<Record<CountryId, LeadershipOverride>> = {
     executiveCoordination: 78,
     figures: [{ id: 'deu-schroder-2000', name: 'Gerhard Schröder', role: 'Chancelier fédéral', authorityShare: 100, ideologyTags: ['social-démocratie réformatrice', 'européisme', 'atlantisme'], traits: traits(42, 25, 61, 68, 68, 58, 76) }],
   },
+  ITA: {
+    executiveCoordination: 61,
+    figures: [
+      { id: 'ita-ciampi-2000', name: 'Carlo Azeglio Ciampi', role: 'Président de la République', authorityShare: 30, ideologyTags: ['européisme', 'crédibilité monétaire', 'institutionnalisme'], traits: traits(30, 18, 64, 58, 79, 63, 86) },
+      { id: 'ita-dalema-2000', name: 'Massimo D’Alema', role: 'Président du Conseil', authorityShare: 70, ideologyTags: ['centre gauche', 'réforme prudente', 'ancrage européen'], traits: traits(42, 27, 62, 65, 69, 57, 72) },
+    ],
+  },
+  POL: {
+    executiveCoordination: 64,
+    figures: [
+      { id: 'pol-kwasniewski-2000', name: 'Aleksander Kwaśniewski', role: 'Président de la République', authorityShare: 36, ideologyTags: ['social-démocratie', 'intégration euro-atlantique', 'pragmatisme'], traits: traits(46, 28, 69, 62, 71, 50, 75) },
+      { id: 'pol-buzek-2000', name: 'Jerzy Buzek', role: 'Premier ministre', authorityShare: 64, ideologyTags: ['droite réformatrice', 'atlantisme', 'transition de marché'], traits: traits(48, 32, 55, 57, 62, 67, 69) },
+    ],
+  },
+  ESP: {
+    executiveCoordination: 82,
+    figures: [{ id: 'esp-aznar-2000', name: 'José María Aznar', role: 'Président du gouvernement', authorityShare: 100, ideologyTags: ['conservatisme libéral', 'atlantisme', 'intégration européenne'], traits: traits(48, 42, 58, 70, 68, 72, 74) }],
+  },
+  NOR: {
+    executiveCoordination: 74,
+    figures: [{ id: 'nor-bondevik-2000', name: 'Kjell Magne Bondevik', role: 'Premier ministre', authorityShare: 100, ideologyTags: ['centre droit', 'État-providence', 'atlantisme prudent'], traits: traits(32, 20, 61, 59, 81, 69, 84) }],
+  },
   GBR: {
     executiveCoordination: 88,
     figures: [{ id: 'gbr-blair-2000', name: 'Tony Blair', role: 'Premier ministre', authorityShare: 100, ideologyTags: ['troisième voie', 'atlantisme', 'interventionnisme'], traits: traits(66, 61, 65, 72, 57, 69, 72) }],
@@ -142,6 +164,10 @@ export function createLeadership2000(countries: Record<CountryId, CountryState>)
 const apparatusLabels: Partial<Record<CountryId, [string, string]>> = {
   FRA: ['Haute administration républicaine et européenne', 'Majorité de gauche plurielle'],
   DEU: ['Culture ordolibérale et fédérale', 'Coalition sociale-démocrate et écologiste'],
+  ITA: ['Bureaucratie d’État et réseaux économiques territoriaux', 'Coalition de centre gauche et partenaires parlementaires'],
+  POL: ['Administration de transition et appareil de sécurité', 'Coalition AWS–UW et élites réformatrices'],
+  ESP: ['Administration centrale et autonomies régionales', 'Majorité Partido Popular et élites économiques'],
+  NOR: ['Administration consensuelle et institutions pétrolières', 'Coalition chrétienne-démocrate et partenaires centristes'],
   GBR: ['État permanent, atlantiste et financier', 'Majorité travailliste réformatrice'],
   USA: ['Établissement de sécurité et appareil fédéral', 'Congrès et coalition économique'],
   RUS: ['Appareil sécuritaire et centralisateur', 'Réseaux économiques issus de la transition'],

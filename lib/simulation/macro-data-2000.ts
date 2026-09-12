@@ -109,11 +109,12 @@ const debtCalibration: Record<CountryId, {
   VNM: { effectiveRate: 6.0, spread: 520, maturity: 5.0, foreignHeld: 30, foreignCurrency: 38, bankExposure: 20, backstop: 50, marketAccess: 54, bankCapital: 9.0, badLoans: 12.0 },
 };
 
-// Spain is added as a first-class country for the territorial slice. Its macro
-// values are deliberately rounded scenario inputs; the regional allocation is
-// supplied by Eurostat's retrospective 2000 series below.
-Object.assign(baseline, { ESP: { gdp: 646.456, growth: 5.048, population: 40.470, populationGrowth: 0.140, inflation: 2.999, unemployment: 13.945, investment: 26.184, exports: 30.086, imports: 32.744, industry: 28.004, confidence: 88 } satisfies Baseline });
-Object.assign(calibration, { ESP: { workingAge: 68.1, participation: 65, migration: 2.0, debt: 58, revenue: 38, spending: 39, rate: 4.8, privateDebt: 88, reserves: 2.8, agriculture: 4.2, extractive: 0.8, publicServices: 17 } satisfies Calibration });
+// Spain is a first-class country for the territorial slice. These values use
+// the same WDI 2000 indicators as the other explicitly calibrated countries;
+// the remaining stocks are rounded ORDO scenario inputs. The regional
+// allocation is supplied by Eurostat's retrospective 2000 series below.
+Object.assign(baseline, { ESP: { gdp: 598.103, growth: 5.201, population: 40.568, populationGrowth: 0.447, inflation: 3.434, unemployment: 13.785, investment: 26.672, exports: 28.589, imports: 31.533, industry: 28.021, confidence: 88 } satisfies Baseline });
+Object.assign(calibration, { ESP: { workingAge: 68.6, participation: 52.9, migration: 4.3, debt: 56.5, revenue: 38, spending: 39, rate: 4.8, privateDebt: 88, reserves: 2.8, agriculture: 4.2, extractive: 0.8, publicServices: 17 } satisfies Calibration });
 Object.assign(productEndowments, { ESP: [74, 37, 49, 70, 73, 65] });
 Object.assign(debtCalibration, { ESP: { effectiveRate: 5.4, spread: 35, maturity: 5.8, foreignHeld: 35, foreignCurrency: 0, bankExposure: 18, backstop: 62, marketAccess: 88, bankCapital: 10.5, badLoans: 4.5 } });
 

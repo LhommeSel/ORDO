@@ -63,3 +63,15 @@ test('parcours territorial : France, carte, 12 mois, sauvegarde et extension à 
   const detailedAssets = Object.values(initial.territorial.assets).filter((asset) => asset.territoryId.startsWith('FRA-')).length;
   console.log(`Parcours validé : 34 territoires français, ${detailedAssets} actifs français (${Object.keys(initial.territorial.assets).length} actifs détaillés au total), 22 contours, 12 mois, conservation sur ${Object.keys(initial.countries).length} pays, sauvegarde et migration, régionalisation étrangère. ${seconds.toFixed(2)} s. Aucun appel IA.`);
 });
+
+test('les actifs français conservent une attribution d’opérateur compatible avec leur catégorie', () => {
+  const state = createFrance2000World();
+  const assets = Object.values(state.territorial.assets);
+  const asset = (id: string) => assets.find((item) => item.id === `asset:FRA:${id}`);
+  assert.equal(asset('gravelines')?.operatorEntityId, 'operator:EDF');
+  assert.equal(asset('montoir')?.operatorEntityId, 'operator:GDF');
+  assert.equal(asset('porcheville')?.operatorEntityId, null);
+  assert.equal(asset('paris-basin')?.operatorEntityId, null);
+  assert.equal(asset('cdg')?.operatorEntityId, null);
+  assert.deepEqual(asset('porcheville')?.sourceIds, []);
+});

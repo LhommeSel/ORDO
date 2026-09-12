@@ -79,14 +79,29 @@ territories.push(...external.map(([code, name, lon, lat, uninhabited]): Territor
 })));
 
 const assets: TerritorialAsset[] = [];
-const add = (id: string, name: string, code: string, kind: TerritorialAsset['kind'], lon: number, lat: number) => assets.push({
+const operatorByKind: Partial<Record<TerritorialAsset['kind'], string>> = {
+  nuclear: 'operator:EDF',
+  hydro: 'operator:EDF',
+  lng_terminal: 'operator:GDF',
+  storage: 'operator:GDF',
+  gas_field: 'operator:GDF',
+};
+const sourceByKind: Partial<Record<TerritorialAsset['kind'], string>> = {
+  port: 'ports', nuclear: 'edf', hydro: 'edf', lng_terminal: 'elengy', storage: 'elengy', gas_field: 'elengy',
+};
+const add = (id: string, name: string, code: string, kind: TerritorialAsset['kind'], lon: number, lat: number) => {
+  const operator = operatorByKind[kind] ?? null;
+  assets.push({
   id: `asset:FRA:${id}`, name, territoryId: `FRA-r${code}`, kind, anchor: [lon, lat],
-  ownerEntityId: kind === 'port' ? null : kind === 'nuclear' ? 'operator:EDF' : 'operator:GDF',
-  operatorEntityId: kind === 'port' ? null : kind === 'nuclear' ? 'operator:EDF' : 'operator:GDF',
+  ownerEntityId: operator,
+  operatorEntityId: operator,
   status: 'operating', capacity: null, integration: 'inventory_only',
-  sourceIds: [kind === 'port' ? 'ports' : kind === 'nuclear' ? 'edf' : 'elengy'],
-  note: 'Site présent en 2000 ; position indicative. Capacité historique et contraintes de flux à raccorder, sans production ajoutée au registre national.',
-});
+  sourceIds: sourceByKind[kind] ? [sourceByKind[kind]!] : [],
+  note: sourceByKind[kind]
+    ? 'Site présent en 2000 ; position indicative. Capacité historique et contraintes de flux à raccorder, sans production ajoutée au registre national.'
+    : 'Site majeur présent dans le scénario 2000 ; position indicative. Opérateur et capacité restent à documenter avant toute utilisation quantitative.',
+  });
+};
 add('dunkerque', 'Port de Dunkerque', '31', 'port', 2.3, 51.05);
 add('calais', 'Port de Calais', '31', 'port', 1.85, 50.97);
 add('le-havre', 'Port du Havre', '23', 'port', 0.12, 49.49);

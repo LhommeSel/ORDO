@@ -29,6 +29,11 @@ export function createTradeFlows2000(): Record<string, BilateralTradeFlow> {
   const values = [
     flow('FRA', 'DEU', 37, mixed), flow('DEU', 'FRA', 43, industrial),
     flow('FRA', 'ITA', 24, mixed), flow('ITA', 'FRA', 22, industrial),
+    flow('ESP', 'FRA', 28, mixed, 10, 86), flow('FRA', 'ESP', 30, industrial, 10, 86),
+    flow('ESP', 'DEU', 31, industrial, 10, 87), flow('DEU', 'ESP', 33, industrial, 10, 87),
+    flow('ESP', 'ITA', 12, industrial, 12, 84), flow('ITA', 'ESP', 13, industrial, 12, 84),
+    flow('ESP', 'GBR', 13, mixed, 12, 84), flow('GBR', 'ESP', 12, mixed, 12, 84),
+    flow('ESP', 'PRT', 10, industrial, 8, 88), flow('PRT', 'ESP', 9, mixed, 8, 88),
     flow('DEU', 'ITA', 31, industrial), flow('ITA', 'DEU', 27, industrial),
     flow('DEU', 'POL', 12, industrial, 12, 82), flow('POL', 'DEU', 10, industrial, 12, 80),
     flow('FRA', 'GBR', 25, mixed, 10), flow('GBR', 'FRA', 24, mixed, 10),
