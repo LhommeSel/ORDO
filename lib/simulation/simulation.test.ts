@@ -48,12 +48,11 @@ import { advancePoliticalCycles, assessPoliticalSupport, choosePoliticalCampaign
 import { nationalReformEffects, reformStateKey } from './reforms';
 import { advanceMilitaryTheaterAccess, militaryBasesForCountry, militaryTheatersForCountry } from './military-theaters';
 import { advanceWarZones, warZonesForCountry } from './war-zones';
-
-const trackedGreatPowers = ['FRA', 'DEU', 'ITA', 'ESP', 'POL', 'USA', 'GBR', 'RUS', 'CHN', 'NOR', 'DZA', 'LBY', 'SAU', 'BRA', 'ZAF', 'AUS', 'IND', 'JPN', 'TUR', 'VNM'] as const;
+import { trackedGreatPowerIds } from './great-powers';
 
 test('les grandes puissances suivies disposent d’un socle macro, politique, militaire et commercial complet', () => {
   const state = createWorld2000();
-  for (const countryId of trackedGreatPowers) {
+  for (const countryId of trackedGreatPowerIds) {
     assert.ok(state.countries[countryId], `${countryId}: fiche nationale`);
     assert.ok(state.macroEconomies[countryId], `${countryId}: macroéconomie`);
     assert.ok(state.structuralProfiles[countryId], `${countryId}: profil structurel`);

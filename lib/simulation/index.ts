@@ -19,6 +19,7 @@ export * from './diplomatic-negotiation';
 export * from './intent';
 export * from './engine';
 export * from './history';
+export * from './great-powers';
 export * from './industry';
 export * from './military-theaters';
 export * from './war-zones';
