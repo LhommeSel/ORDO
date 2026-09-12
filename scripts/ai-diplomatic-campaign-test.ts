@@ -138,7 +138,9 @@ const escalationCampaignCases: CampaignCase[] = [
   },
 ];
 
-const campaignCases = process.env.ORDO_CAMPAIGN_MODE === 'escalation' ? escalationCampaignCases : baselineCampaignCases;
+const requestedCaseIds = process.env.ORDO_CAMPAIGN_CASE_IDS?.split(',').map((value) => value.trim()).filter(Boolean);
+const campaignCases = (process.env.ORDO_CAMPAIGN_MODE === 'escalation' ? escalationCampaignCases : baselineCampaignCases)
+  .filter((scenario) => !requestedCaseIds?.length || requestedCaseIds.includes(scenario.id));
 
 type CallRecord = {
   stage: string;
