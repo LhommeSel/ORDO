@@ -580,6 +580,28 @@ test('le pouls mondial IA ne peut créer que des mises à jour de dossiers cité
   assert.equal(applied.relationChanges, 1);
 });
 
+test('le pouls mondial conserve le contexte interne du joueur sans exposer celui des autres pays', () => {
+  const initial = createFrance2000World();
+  const withPlayerDossierEntry = commitWorldAction(initial, {
+    kind: 'diplomatic', actorId: 'FRA', targetIds: ['USA'], origin: 'player', visibility: 'player',
+    intent: 'Préparer une consultation franco-américaine sur la bulle technologique',
+    effects: [{
+      kind: 'dossier_entry_add', dossierId: 'current-dotcom-exuberance', visibility: 'player', reason: 'Conserver le point de situation du joueur.',
+      entry: {
+        id: 'pulse-player-visible-entry', date: initial.currentDate, title: 'Consultation franco-américaine préparée',
+        summary: 'Paris prépare une consultation avec Washington sur les expositions technologiques.', importance: 'major',
+        actorIds: ['FRA', 'USA'], requiresDecision: false, visibility: 'player',
+      },
+    }],
+  });
+  const request = createWorldPulseRequest(withPlayerDossierEntry, withPlayerDossierEntry.actions.length, 1, 'test-world-pulse-private-continuity');
+  const autonomy = request.pulses.find((item) => item.kind === 'world_autonomy');
+  assert.ok(autonomy);
+  if (!autonomy) return;
+  assert.ok(autonomy.context.facts.some((fact) => fact.id === 'dossier-entry:pulse-player-visible-entry'));
+  assert.ok(!autonomy.context.facts.some((fact) => fact.id === 'country:USA:capacity:government'));
+});
+
 test('un rejet du pouls IA est isolé et conserve le tour local en secours', async () => {
   const initial = createFrance2000World();
   const prepared = prepareCommonAction(initial, 'Ouvrir une coopération technologique avec l’Allemagne.');

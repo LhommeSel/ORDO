@@ -48,7 +48,12 @@ function pulseFacts(
   const all = collectFacts(state)
     // Le pouls n'obtient pas les secrets des gouvernements : ses sorties seront
     // affichées au joueur et doivent rester compatibles avec cette visibilité.
-    .filter((fact) => fact.visibility === 'public')
+    // Les faits internes appartenant au joueur sont toutefois nécessaires pour
+    // conserver la continuité des dossiers et des rencontres qu'il a lui-même
+    // ouverts. Ils ne révèlent aucune information privée d'un autre pays : les
+    // faits internes étrangers restent volontairement hors du pouls mondial.
+    .filter((fact) => fact.visibility === 'public'
+      || (fact.visibility === 'internal' && fact.ownerCountryId === state.playerCountryId))
     // La dépendance pétrolière française ne doit pas devenir un sujet récurrent
     // par défaut. Elle revient dans le contexte uniquement lorsqu'une action ou
     // un dossier stratégique traite réellement d'énergie.
