@@ -40,7 +40,7 @@ type CampaignCase = {
   finalDecision?: 'accept' | 'refuse' | 'request_revision' | 'acknowledge';
 };
 
-const campaignCases: CampaignCase[] = [
+const baselineCampaignCases: CampaignCase[] = [
   {
     id: 'aegean-gas',
     title: 'Exploitation coordonnée du gaz en Méditerranée orientale',
@@ -81,6 +81,64 @@ const campaignCases: CampaignCase[] = [
     finalDecision: 'request_revision',
   },
 ];
+
+/** Variante d’escalade demandée pour vérifier la résistance des négociations. */
+const escalationCampaignCases: CampaignCase[] = [
+  {
+    id: 'aegean-gas-escalation',
+    title: 'Égée : soutien français explicite à la position grecque',
+    participants: ['TUR', 'GRC'],
+    opening: 'La France propose à la Turquie et à la Grèce d’examiner une exploitation coordonnée du gaz en Méditerranée orientale, mais précise qu’aucun forage ne doit créer un fait accompli dans les zones disputées.',
+    followUps: [
+      'La France soutient désormais explicitement le principe grec : aucune opération dans une zone disputée sans accord préalable et mécanisme de déconfliction. La Turquie peut-elle accepter ce moratoire sans renoncer à ses revendications ?',
+      'Nous proposons un moratoire vérifiable, une commission technique et un partage provisoire des recettes, sans reconnaissance de souveraineté. En cas de refus, la France soutiendra la Grèce dans les enceintes européennes et juridiques. Quelles garanties finales chaque gouvernement exige-t-il ?',
+      'Si le statu quo persiste, la France prendra le parti de la Grèce : présence navale de signalement, soutien diplomatique et suspension de toute coopération qui banaliserait un forage unilatéral. Nous préférons un compromis, mais nous n’accepterons pas un fait accompli.',
+    ],
+    expectedSignals: ['la Grèce demande des garanties de souveraineté', 'la Turquie défend ses revendications', 'risque d’escalade ou de confrontation', 'aucun accord automatique'],
+    finalDecision: 'acknowledge',
+  },
+  {
+    id: 'suriname-illegal-gold-mining',
+    title: 'Suriname : lutte contre l’orpaillage illégal avec présence française',
+    participants: ['SUR'],
+    opening: 'La France propose au Suriname une coopération ciblée contre l’orpaillage illégal, les trafics et la déforestation : renseignement fluvial, contrôle des pistes et soutien aux garde-côtes. La France souhaite aussi établir une force de liaison permanente et une base avancée conjointe, sous souveraineté surinamaise.',
+    followUps: [
+      'La France accepte que la base soit juridiquement surinamaise, mais demande un détachement français permanent de renseignement, de gendarmerie et de soutien logistique sur place. Quelles limites de souveraineté et quelles règles d’engagement le Suriname impose-t-il ?',
+      'Sans présence française durable, le dispositif risque de rester symbolique face aux réseaux d’orpaillage. Nous proposons une base avancée conjointe, un mandat de trois ans renouvelable et un financement français des moyens fluviaux. Êtes-vous prêts à l’inscrire dans un accord formel ?',
+      'Nous pouvons limiter les patrouilles françaises à la formation, au renseignement et à la protection des équipes, mais nous insistons pour que la base et le détachement figurent dans l’accord contre l’orpaillage illégal. Quelle contrepartie le Suriname demande-t-il pour accepter ?',
+    ],
+    expectedSignals: ['orpaillage illégal', 'souveraineté surinamaise', 'présence française sur place', 'mandat et règles d’engagement'],
+    finalDecision: 'accept',
+  },
+  {
+    id: 'latin-mediterranean-autonomy',
+    title: 'France–Italie–Espagne : coopération méditerranéenne plus autonome',
+    participants: ['ITA', 'ESP'],
+    opening: 'La France propose à l’Italie et à l’Espagne un cadre latin de coopération en Méditerranée : ports, sécurité maritime, énergie et investissements. Le cadre resterait compatible avec l’Union européenne, mais pourrait décider et financer certaines initiatives sans attendre une impulsion de Bruxelles.',
+    followUps: [
+      'Nous proposons un secrétariat léger, un fonds méditerranéen et des décisions à trois sur les infrastructures et la sécurité maritime. L’Italie et l’Espagne accepteraient-elles une géométrie variable qui ne passe pas systématiquement par les institutions européennes ?',
+      'La coopération ne vise pas à quitter l’Union, mais à disposer d’une capacité d’initiative autonome : financement commun, patrouilles coordonnées et contrats portuaires négociés ensemble. Quelles lignes rouges politiques ou budgétaires souhaitez-vous inscrire ?',
+      'La France est prête à avancer même si l’Union ne valide pas chaque étape, avec transparence et compatibilité juridique. Nous demandons une décision politique de principe aujourd’hui et un premier projet méditerranéen hors calendrier communautaire. Qui est prêt à s’engager ?',
+    ],
+    expectedSignals: ['complémentarité mais autonomie vis-à-vis de l’UE', 'priorités italiennes et espagnoles distinctes', 'fonds ou secrétariat commun', 'risque politique de dissociation'],
+    finalDecision: 'accept',
+  },
+  {
+    id: 'india-aircraft-sale',
+    title: 'Inde : finalisation d’une vente d’avions de combat',
+    participants: ['IND'],
+    opening: 'La France propose à l’Inde une vente ferme de 24 Mirage 2000-5/9, avec formation, maintenance en Inde et transfert industriel limité. Le calendrier doit rester compatible avec la capacité annuelle française et l’autonomie stratégique indienne.',
+    followUps: [
+      'Nous pouvons réserver 24 appareils sur quatre ans, avec un premier lot de six avions, formation des équipages et chaîne de maintenance indienne. Quelles exigences de transfert industriel, de financement et d’emploi opérationnel conditionnent votre accord ?',
+      'La France accepte une montée en compétence industrielle et un centre de maintenance en Inde, mais conserve les éléments les plus sensibles des moteurs et de l’avionique. Nous pouvons aussi garantir un calendrier de livraison et une clause de non-réexportation. Cette formule répond-elle à vos besoins ?',
+      'Nous validons les conditions : 24 avions, livraisons échelonnées sur quatre ans, formation, maintenance locale, financement pluriannuel et contrôle de l’usage final. La France demande maintenant la signature politique du contrat et le lancement de la commande.',
+    ],
+    expectedSignals: ['volume plafonné à 24 appareils', 'transfert industriel progressif', 'autonomie stratégique indienne', 'validation finale du contrat'],
+    finalDecision: 'accept',
+  },
+];
+
+const campaignCases = process.env.ORDO_CAMPAIGN_MODE === 'escalation' ? escalationCampaignCases : baselineCampaignCases;
 
 type CallRecord = {
   stage: string;
