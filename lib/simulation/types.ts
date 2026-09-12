@@ -468,6 +468,8 @@ export type DiplomaticMeeting = {
   agenda: string[];
   outcomeSummary?: string;
   draftId?: string;
+  /** Réponse agrégée des participants à la proposition finale. */
+  counterpartDecision?: 'pending' | 'accepted' | 'countered' | 'refused';
 };
 
 export type DiplomaticAgreementDomain = 'energy' | 'defense' | 'industrial' | 'security' | 'political' | 'general';
@@ -485,6 +487,8 @@ export type DiplomaticAgreementDraft = {
   summary: string;
   terms: Record<string, string | number>;
   unresolvedConditions: string[];
+  /** L’accord ne peut être signé qu’après acceptation explicite des participants. */
+  counterpartDecision?: 'pending' | 'accepted' | 'countered' | 'refused';
   createdAt: ISODate;
   updatedAt: ISODate;
 };

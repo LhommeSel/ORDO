@@ -39,7 +39,7 @@ import { rankWorldAttention } from './ai/world-attention';
 import { activeMajorDossierCount, rankDossierReviews, rankStrategicDossierReviews } from './ai/dossier-scheduler';
 import { commitWorldAction } from './ledger';
 import { addDiplomaticDialogueParticipant, applyDiplomaticDialogueAIAnswer, openDiplomaticDialogue, openDiplomaticDialogueForDossier, requestDiplomaticDialogueAI, resolveDiplomaticDialogueResponse, sendDiplomaticDialogueMessage } from './diplomacy-dialogue';
-import { diplomaticBriefFromDialogue, proposeDiplomaticMeeting, reviseDiplomaticAgreementDraft, signDiplomaticAgreementDraft } from './diplomatic-negotiation';
+import { applyDiplomaticMeetingAIAnswer, diplomaticBriefFromDialogue, proposeDiplomaticMeeting, requestDiplomaticMeetingAI, reviseDiplomaticAgreementDraft, signDiplomaticAgreementDraft } from './diplomatic-negotiation';
 import { validateCountryRegistry } from './data-validator';
 import { buildTurnBriefing } from './turn-briefing';
 import { queueAutonomousProgram } from './ai/autonomous-programs';
@@ -1911,7 +1911,26 @@ test('la synthèse et la rencontre restent séparées du contrat et sont persist
   const blockedByDate = signDiplomaticAgreementDraft(cleared.state, draftId);
   assert.equal(blockedByDate.ok, false);
   const atMeetingDate = advanceWorld(cleared.state, '2000-02-01').state;
-  const signed = signDiplomaticAgreementDraft(atMeetingDate, draftId);
+  const blockedByCounterpart = signDiplomaticAgreementDraft(atMeetingDate, draftId);
+  assert.equal(blockedByCounterpart.ok, false);
+  if (blockedByCounterpart.ok) return;
+  assert.match(blockedByCounterpart.error, /participants/i);
+  const meetingAI = requestDiplomaticMeetingAI(atMeetingDate, draftId);
+  assert.equal(meetingAI.ok, true);
+  if (!meetingAI.ok) return;
+  const meetingAnswered = applyDiplomaticMeetingAIAnswer(meetingAI.state, meetingAI.jobId, {
+    headline: 'Accord accepté', assessment: 'Les participants valident le projet.',
+    publicMessage: 'Nous acceptons le projet final et sommes prêts à le signer.', proposals: [], requestedFacts: [], contextFactIds: [], approximateInputTokens: 220,
+  }, {
+    scope: 'general_dialogue', kind: 'accept', agreementType: 'industrial_cooperation',
+    position: 'Le projet final est accepté.', concessions: [], guaranteesRequested: [], conditions: [], redLines: [], timeline: 'Mise en œuvre progressive.',
+  });
+  assert.equal(meetingAnswered.ok, true);
+  if (!meetingAnswered.ok) return;
+  assert.equal(meetingAnswered.state.diplomaticAgreementDrafts[draftId].counterpartDecision, 'accepted');
+  assert.equal(meetingAnswered.state.diplomaticMeetings[meetingId].counterpartDecision, 'accepted');
+  assert.equal(meetingAnswered.state.aiJobs[meetingAI.jobId].status, 'resolved');
+  const signed = signDiplomaticAgreementDraft(meetingAnswered.state, draftId);
   assert.equal(signed.ok, true, signed.ok ? undefined : signed.error);
   if (!signed.ok) return;
   assert.equal(signed.state.diplomaticAgreementDrafts[draftId].stage, 'signed');
@@ -1923,6 +1942,63 @@ test('la synthèse et la rencontre restent séparées du contrat et sont persist
   assert.deepEqual(restored.diplomaticBriefs, revised.state.diplomaticBriefs);
   assert.deepEqual(restored.diplomaticMeetings, revised.state.diplomaticMeetings);
   assert.deepEqual(restored.diplomaticAgreementDrafts, revised.state.diplomaticAgreementDrafts);
+});
+
+test('la réponse de rencontre peut contre-proposer ou refuser sans engagement implicite', () => {
+  const initial = createFrance2000World();
+  const opened = openDiplomaticDialogue(initial, ['GRC'], 'Proposons une coopération maritime avec garanties réciproques.');
+  assert.equal(opened.ok, true);
+  if (!opened.ok) return;
+  const queued = requestDiplomaticDialogueAI(opened.state, opened.dialogueId);
+  assert.equal(queued.ok, true);
+  if (!queued.ok) return;
+  const answered = applyDiplomaticDialogueAIAnswer(queued.state, queued.jobId, {
+    headline: 'Ouverture', assessment: 'Une rencontre est utile.', publicMessage: 'Nous sommes prêts à examiner votre proposition.', proposals: [], requestedFacts: [], contextFactIds: [], approximateInputTokens: 120,
+  }, {
+    scope: 'general_dialogue', kind: 'counter', agreementType: 'security_cooperation', position: 'Nous demandons des garanties réciproques.', concessions: [], guaranteesRequested: ['Consultations régulières'], conditions: ['Pas de déploiement unilatéral'], redLines: ['Respect des zones maritimes'], timeline: 'Réexamen sous six mois.',
+  });
+  assert.equal(answered.ok, true);
+  if (!answered.ok) return;
+  const acceptedBase = resolveDiplomaticDialogueResponse(answered.state, opened.dialogueId, 'accept');
+  assert.equal(acceptedBase.ok, true);
+  if (!acceptedBase.ok) return;
+  const meeting = proposeDiplomaticMeeting(acceptedBase.state, opened.dialogueId, 'discreet');
+  assert.equal(meeting.ok, true);
+  if (!meeting.ok) return;
+  const draftId = meeting.draftId;
+  const meetingId = meeting.meetingId;
+  if (typeof draftId !== 'string' || typeof meetingId !== 'string') return;
+  const meetingAI = requestDiplomaticMeetingAI(meeting.state, draftId);
+  assert.equal(meetingAI.ok, true);
+  if (!meetingAI.ok) return;
+  const countered = applyDiplomaticMeetingAIAnswer(meetingAI.state, meetingAI.jobId, {
+    headline: 'Contre-proposition', assessment: 'Athènes demande une garantie supplémentaire.', publicMessage: 'Nous acceptons le principe mais demandons une clause de consultation préalable.', proposals: [], requestedFacts: [], contextFactIds: [], approximateInputTokens: 140,
+  }, {
+    scope: 'general_dialogue', kind: 'counter', agreementType: 'security_cooperation', position: 'Accord possible avec consultation préalable.', concessions: [], guaranteesRequested: ['Consultation préalable'], conditions: ['Validation par nos autorités'], redLines: [], timeline: 'Revue annuelle.',
+  });
+  assert.equal(countered.ok, true);
+  if (!countered.ok) return;
+  assert.equal(countered.state.diplomaticAgreementDrafts[draftId].counterpartDecision, 'countered');
+  assert.ok(countered.state.diplomaticAgreementDrafts[draftId].unresolvedConditions.length > 0);
+  const cleared = reviseDiplomaticAgreementDraft(countered.state, draftId, { unresolvedConditions: [] });
+  assert.equal(cleared.ok, true);
+  if (!cleared.ok) return;
+  const blocked = signDiplomaticAgreementDraft(cleared.state, draftId);
+  assert.equal(blocked.ok, false);
+  if (!blocked.ok) assert.match(blocked.error, /participants/i);
+  const refusalJob = requestDiplomaticMeetingAI(cleared.state, draftId);
+  assert.equal(refusalJob.ok, true);
+  if (!refusalJob.ok) return;
+  const refused = applyDiplomaticMeetingAIAnswer(refusalJob.state, refusalJob.jobId, {
+    headline: 'Refus', assessment: 'La garantie ne peut pas être acceptée.', publicMessage: 'Nous refusons le projet dans sa forme actuelle.', proposals: [], requestedFacts: [], contextFactIds: [], approximateInputTokens: 110,
+  }, {
+    scope: 'general_dialogue', kind: 'refuse', agreementType: 'security_cooperation', position: 'Le projet est refusé.', concessions: [], guaranteesRequested: [], conditions: [], redLines: [], timeline: 'Aucune échéance.',
+  });
+  assert.equal(refused.ok, true);
+  if (!refused.ok) return;
+  assert.equal(refused.state.diplomaticAgreementDrafts[draftId].stage, 'rejected');
+  assert.equal(refused.state.diplomaticMeetings[meetingId].status, 'completed');
+  assert.equal(Object.values(refused.state.treaties).filter((treaty) => treaty.status === 'active').length, 0);
 });
 
 test('une position stratégique sans accord formel devient un dossier modéré non majeur', () => {

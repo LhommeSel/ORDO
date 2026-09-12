@@ -33,7 +33,7 @@ function turn(id: string, date: `${number}-${number}-${number}`, speakerId: Coun
  * malgré tout renvoyer le mauvais scope ; on le ramène alors dans le contrat
  * générique en conservant sa décision et son message public.
  */
-function normalizeDialogueMove(move: AIDiplomaticMove, publicMessage: string): Extract<AIDiplomaticMove, { scope: 'general_dialogue' }> {
+export function normalizeDialogueMove(move: AIDiplomaticMove, publicMessage: string): Extract<AIDiplomaticMove, { scope: 'general_dialogue' }> {
   if (move.scope === 'general_dialogue') return move;
   const position = publicMessage.trim() || 'La position de l’interlocuteur doit être précisée avant tout engagement.';
   return {

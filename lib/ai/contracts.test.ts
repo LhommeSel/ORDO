@@ -7,6 +7,8 @@ import { compileContextForAIJob, selectSupplementalFacts } from '../simulation/a
 import { executeAIJob } from '../simulation/ai/executor';
 import { createFrance2000World } from '../simulation/scenario-2000';
 import { createAdministrativeEnergyOffer, startEnergyNegotiationAI } from '../simulation/energy-negotiation';
+import { applyDiplomaticDialogueAIAnswer, openDiplomaticDialogue, requestDiplomaticDialogueAI, resolveDiplomaticDialogueResponse } from '../simulation/diplomacy-dialogue';
+import { proposeDiplomaticMeeting, requestDiplomaticMeetingAI } from '../simulation/diplomatic-negotiation';
 import type { GeneralAIJob } from '../simulation/types';
 
 test('le schéma du pouls déclare aussi les champs optionnels pour la sortie structurée stricte', () => {
@@ -88,4 +90,45 @@ test('une intention d’action IA doit cibler un acteur effectivement transmis',
     claims: [],
   }, new Set(['fact-1']), new Set(['FRA', 'DEU']));
   assert.deepEqual(issues, ['option0.actionIntent.acteur absent du contexte']);
+});
+
+test('le routage IA d’une rencontre applique la réponse sans signer le projet', async () => {
+  const initial = createFrance2000World();
+  const opened = openDiplomaticDialogue(initial, ['GRC'], 'Proposons une coopération maritime structurée.');
+  assert.equal(opened.ok, true);
+  if (!opened.ok) return;
+  const queued = requestDiplomaticDialogueAI(opened.state, opened.dialogueId);
+  assert.equal(queued.ok, true);
+  if (!queued.ok) return;
+  const answered = applyDiplomaticDialogueAIAnswer(queued.state, queued.jobId, {
+    headline: 'Ouverture', assessment: 'Le dialogue est possible.', publicMessage: 'Nous sommes prêts à examiner un projet.', proposals: [], requestedFacts: [], contextFactIds: [], approximateInputTokens: 100,
+  }, {
+    scope: 'general_dialogue', kind: 'counter', agreementType: 'security_cooperation', position: 'Un projet est envisageable.', concessions: [], guaranteesRequested: [], conditions: [], redLines: [], timeline: 'Six mois.',
+  });
+  assert.equal(answered.ok, true);
+  if (!answered.ok) return;
+  const accepted = resolveDiplomaticDialogueResponse(answered.state, opened.dialogueId, 'accept');
+  assert.equal(accepted.ok, true);
+  if (!accepted.ok) return;
+  const meeting = proposeDiplomaticMeeting(accepted.state, opened.dialogueId, 'discreet');
+  assert.equal(meeting.ok, true);
+  if (!meeting.ok || typeof meeting.draftId !== 'string') return;
+  const request = requestDiplomaticMeetingAI(meeting.state, meeting.draftId);
+  assert.equal(request.ok, true);
+  if (!request.ok) return;
+  const response: AIJobAIResponse = {
+    ok: true,
+    answer: {
+      headline: 'Projet accepté', assessment: 'Les participants valident la proposition.', publicMessage: 'Nous acceptons le projet final.', proposals: [], requestedFacts: [], powerStrugglePlan: null,
+      diplomaticMove: { scope: 'general_dialogue', kind: 'accept', agreementType: 'security_cooperation', position: 'Projet accepté.', concessions: [], guaranteesRequested: [], conditions: [], redLines: [], timeline: 'Mise en œuvre progressive.' },
+    },
+    usage: { model: 'gpt-5.6-luna', inputTokens: 600, cachedInputTokens: 0, outputTokens: 120, estimatedCostUsd: 0.0002, latencyMs: 2, remainingSessionRequestsToday: 19 },
+  };
+  const fakeFetch = (async () => new Response(JSON.stringify(response), { status: 200, headers: { 'Content-Type': 'application/json' } })) as typeof fetch;
+  const result = await executeAIJob(request.state, request.jobId, 'session-meeting-test', fakeFetch);
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(result.state.diplomaticAgreementDrafts[meeting.draftId].counterpartDecision, 'accepted');
+  assert.equal(result.state.diplomaticAgreementDrafts[meeting.draftId].stage, 'final_proposal');
+  assert.equal(Object.values(result.state.treaties).filter((treaty) => treaty.status === 'active').length, 0);
 });

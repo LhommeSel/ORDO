@@ -132,7 +132,8 @@ export async function POST(request: Request) {
   try {
     const policy = aiRuntimePolicy();
     const requestStartedAt = performance.now();
-    const isFreeDialogue = parsed.job.kind === 'diplomacy' && typeof parsed.job.domainContext.dialogueId === 'string';
+    const isDiplomaticMeeting = parsed.job.kind === 'diplomacy' && typeof parsed.job.domainContext.meetingId === 'string';
+    const isFreeDialogue = parsed.job.kind === 'diplomacy' && typeof parsed.job.domainContext.dialogueId === 'string' && !isDiplomaticMeeting;
     const instructions = [
       'Tu es le moteur d’arbitrage narratif d’ORDO, un bac à sable géopolitique réaliste.',
       taskInstruction[parsed.job.kind],
@@ -144,8 +145,11 @@ export async function POST(request: Request) {
       parsed.job.kind === 'diplomacy'
         ? 'Réponds directement en tant que pays interlocuteur : ne répète pas, ne cite pas et ne reformule pas le premier message du joueur. Commence par la position, la réaction ou la demande de l’interlocuteur, puis avance une réponse concrète.'
         : '',
-      parsed.job.kind === 'diplomacy' && typeof parsed.job.domainContext.respondingCountryId === 'string'
+      parsed.job.kind === 'diplomacy' && typeof parsed.job.domainContext.respondingCountryId === 'string' && !isDiplomaticMeeting
         ? `Le seul interlocuteur autorisé à répondre est ${parsed.job.domainContext.respondingCountryId}. Dans un groupe, les autres participants ne parlent pas à sa place ; privateDecision.actorId doit reprendre exactement cet identifiant.`
+        : '',
+      isDiplomaticMeeting
+        ? 'Pour une rencontre diplomatique, diplomaticMove.scope doit être general_dialogue. Réponds comme une synthèse de la position finale de tous les participants listés dans le contexte : publicMessage peut attribuer clairement les réserves de chacun, mais ne fabrique pas de consensus si une ligne rouge demeure. privateDecision.actorId doit reprendre le premier respondingCountryId fourni par le moteur. kind=accept signifie que tous les participants acceptent le projet final ; kind=counter signifie qu’au moins un participant demande un ajustement ; kind=refuse signifie que le projet est rejeté.'
         : '',
       parsed.job.kind === 'diplomacy'
         ? 'Pour un dialogue, reste exploitable en jeu : publicMessage doit faire moins de 900 caractères et se terminer par une phrase complète ; assessment doit faire moins de 700 caractères ; diplomaticMove doit rester précis ; limite les proposals à une ou deux options réellement distinctes. Ne remplis pas les champs avec des répétitions.'
