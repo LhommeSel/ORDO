@@ -432,6 +432,19 @@ export type DiplomaticDialogueResponse = {
   conditions: string[];
   redLines: string[];
   timeline: string;
+  /** Lecture rapide de la réponse, sans demander au joueur d’interpréter un paragraphe. */
+  acceptedTerms?: string[];
+  rejectedTerms?: string[];
+  conditionalTerms?: string[];
+  decisionScope?: 'dialogue_only' | 'principle' | 'substance';
+  /** Raisons déterministes affichées lorsque le moteur a ramené une acceptation à une contre-proposition. */
+  feasibilityIssues?: Array<{
+    id: string;
+    severity: 'hard' | 'counter';
+    label: string;
+    explanation: string;
+    requiredResponse: string;
+  }>;
 };
 
 export type DiplomaticDialogueResolution = {

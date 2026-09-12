@@ -63,6 +63,11 @@ type StructuredDiplomaticResponse = {
   conditions: string[];
   redLines: string[];
   timeline: string;
+  acceptedTerms?: string[];
+  rejectedTerms?: string[];
+  conditionalTerms?: string[];
+  decisionScope?: 'dialogue_only' | 'principle' | 'substance';
+  feasibilityIssues?: Array<{ id: string; severity: 'hard' | 'counter'; label: string; explanation: string; requiredResponse: string }>;
 };
 
 type DiplomaticResponseResolution = {
@@ -360,6 +365,13 @@ export function DiplomacySheet({
                 <article className="message foreign border border-primary/40 bg-primary/5">
                   <p className="mb-2 font-mono text-[9px] tracking-[0.08em] text-primary">POSITION STRUCTURÉE · {structuredResponse.kind === 'accept' ? 'ACCORD' : structuredResponse.kind === 'counter' ? 'CONTRE-PROPOSITION' : structuredResponse.kind === 'refuse' ? 'REFUS' : structuredResponse.kind === 'request_clarification' ? 'PRÉCISIONS' : 'MESSAGE'} · {agreementTypeLabels[structuredResponse.agreementType]}</p>
                   <p className="text-sm leading-6">{structuredResponse.position}</p>
+                  {(structuredResponse.acceptedTerms?.length || structuredResponse.rejectedTerms?.length || structuredResponse.conditionalTerms?.length) ? <div className="mt-3 grid gap-3 border-y border-border/70 py-3 text-xs sm:grid-cols-3">
+                    {structuredResponse.acceptedTerms && structuredResponse.acceptedTerms.length > 0 && <div><strong className="text-emerald-200">Termes acceptés</strong><ul>{structuredResponse.acceptedTerms.map((item) => <li key={item}>+ {item}</li>)}</ul></div>}
+                    {structuredResponse.conditionalTerms && structuredResponse.conditionalTerms.length > 0 && <div><strong className="text-amber-200">Termes conditionnels</strong><ul>{structuredResponse.conditionalTerms.map((item) => <li key={item}>? {item}</li>)}</ul></div>}
+                    {structuredResponse.rejectedTerms && structuredResponse.rejectedTerms.length > 0 && <div><strong className="text-red-300">Termes refusés</strong><ul>{structuredResponse.rejectedTerms.map((item) => <li key={item}>× {item}</li>)}</ul></div>}
+                  </div> : null}
+                  {structuredResponse.feasibilityIssues && structuredResponse.feasibilityIssues.length > 0 && <div className="mt-3 border border-amber-300/40 bg-amber-300/5 p-2 text-xs"><p className="font-mono text-[9px] tracking-[0.1em] text-amber-200">GARDE-FOU DU MOTEUR · ACCEPTATION RAMENÉE À UNE CONTRE-PROPOSITION</p><ul className="mt-1 space-y-1">{structuredResponse.feasibilityIssues.map((item) => <li key={item.id}><strong>{item.severity === 'hard' ? 'Bloquant' : 'À encadrer'} · {item.label} :</strong> {item.explanation} <span className="text-muted-foreground">{item.requiredResponse}</span></li>)}</ul></div>}
+                  {structuredResponse.decisionScope && <p className="mt-2 text-[10px] text-muted-foreground">Portée : {structuredResponse.decisionScope === 'substance' ? 'accord de fond' : structuredResponse.decisionScope === 'principle' ? 'accord de principe, à formaliser' : 'échange sans engagement'}</p>}
                   <div className="mt-3 grid gap-3 text-xs sm:grid-cols-2">
                     {structuredResponse.concessions.length > 0 && <div><strong>Concessions possibles</strong><ul>{structuredResponse.concessions.map((item) => <li key={item}>— {item}</li>)}</ul></div>}
                     {structuredResponse.guaranteesRequested.length > 0 && <div><strong>Garanties demandées</strong><ul>{structuredResponse.guaranteesRequested.map((item) => <li key={item}>— {item}</li>)}</ul></div>}

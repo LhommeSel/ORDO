@@ -266,6 +266,8 @@ export function applyDiplomaticMeetingAIAnswer(state: WorldState, jobId: string,
       kind: effectiveMove.kind === 'request_clarification' || effectiveMove.kind === 'message' ? 'counter' : effectiveMove.kind,
       agreementType: effectiveMove.agreementType, position: effectiveMove.position, concessions: effectiveMove.concessions,
       guaranteesRequested: effectiveMove.guaranteesRequested, conditions: effectiveMove.conditions, redLines: effectiveMove.redLines, timeline: effectiveMove.timeline,
+      acceptedTerms: effectiveMove.acceptedTerms, rejectedTerms: effectiveMove.rejectedTerms, conditionalTerms: effectiveMove.conditionalTerms,
+      decisionScope: effectiveMove.decisionScope, feasibilityIssues: constrained?.feasibility.issues,
     } : dialogue.lastResponse,
   };
   const counterpartTargets = draft.participantIds.filter((id) => id !== state.playerCountryId);

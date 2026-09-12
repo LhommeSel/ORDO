@@ -1,5 +1,6 @@
 import type { AIGenericDiplomaticMove } from '../ai/job-contracts';
-import type { CountryId, CountryState, ISODate, WorldState } from './types';
+import type { CountryId, CountryState, WorldState } from './types';
+import { evaluateHistoricalChronology } from './historical-chronology';
 
 /**
  * Garde-fous diplomatiques déterministes.
@@ -243,9 +244,8 @@ export function deriveDiplomaticFeasibility(state: WorldState, actorId: CountryI
   if (ceasefire && !hasConflictWithParticipant) {
     issues.push(issue('chronology.no-active-conflict', 'hard', 'Aucun conflit actif entre les parties à la date courante', 'Un cessez-le-feu suppose un affrontement en cours ; le moteur ne doit pas en fabriquer un.', 'Reformuler en canal préventif, médiation ou mécanisme de désescalade, sans parler de cessez-le-feu actuel.'));
   }
-  if (ceasefire && actorId === 'RUS' && safeParticipants.includes('UKR') && state.currentDate < ('2014-01-01' as ISODate)) {
-    issues.push(issue('chronology.rus-ukr-pre-2014', 'hard', 'La crise russo-ukrainienne n’a pas commencé à cette date', 'Le scénario se situe avant 2014 : une négociation de cessez-le-feu russo-ukrainienne serait anachronique.', 'Proposer un dialogue de prévention ou une garantie de sécurité régionale.'));
-  }
+  const chronologyFindings = evaluateHistoricalChronology(state.currentDate, proposalText, [actorId, ...safeParticipants]);
+  issues.push(...chronologyFindings.map((finding) => issue(finding.id, finding.severity, finding.label, finding.explanation, finding.requiredResponse)));
   const hasChina = actorId === 'CHN' || safeParticipants.includes('CHN');
   const hasUs = actorId === 'USA' || safeParticipants.includes('USA');
   const hasFrance = actorId === 'FRA' || safeParticipants.includes('FRA');
@@ -297,6 +297,10 @@ export function enforceDiplomaticMove(state: WorldState, actorId: CountryId, par
     conditions: unique([...move.conditions, ...required]).slice(0, 5).map((item) => compact(item, 400)),
     redLines: unique([...move.redLines, ...labels]).slice(0, 5).map((item) => compact(item, 400)),
     timeline: move.timeline || 'Réexamen après clarification des lignes rouges et du calendrier.',
+    acceptedTerms: (move.acceptedTerms ?? move.concessions).slice(0, 5),
+    rejectedTerms: unique([...(move.rejectedTerms ?? []), ...labels]).slice(0, 5).map((item) => compact(item, 400)),
+    conditionalTerms: unique([...(move.conditionalTerms ?? []), ...required]).slice(0, 5).map((item) => compact(item, 400)),
+    decisionScope: 'principle',
   };
   const constrainedMessage = compact(`${actorName} formule une contre-proposition. ${labels.join(' ; ')}. ${required[0] ?? 'Les termes doivent être clarifiés avant tout engagement.'}`, 1_150);
   return { move: constrained, publicMessage: constrainedMessage, feasibility, overridden: true };

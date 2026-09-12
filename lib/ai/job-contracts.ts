@@ -64,6 +64,11 @@ export type AIGenericDiplomaticMove = {
   conditions: string[];
   redLines: string[];
   timeline: string;
+  /** Résumé machine-lisible des termes de la réponse. Optionnel en entrée pour compatibilité avec les anciens jobs. */
+  acceptedTerms?: string[];
+  rejectedTerms?: string[];
+  conditionalTerms?: string[];
+  decisionScope?: 'dialogue_only' | 'principle' | 'substance';
 };
 
 export type AIDiplomaticMove = AIEnergyDiplomaticMove | AIGenericDiplomaticMove;
@@ -246,7 +251,11 @@ function isDiplomaticMove(value: unknown): value is AIDiplomaticMove | null {
     && isStringArray(value.guaranteesRequested, 5, 400)
     && isStringArray(value.conditions, 5, 400)
     && isStringArray(value.redLines, 5, 400)
-    && isString(value.timeline, 220, 1);
+    && isString(value.timeline, 220, 1)
+    && (value.acceptedTerms === undefined || isStringArray(value.acceptedTerms, 5, 400))
+    && (value.rejectedTerms === undefined || isStringArray(value.rejectedTerms, 5, 400))
+    && (value.conditionalTerms === undefined || isStringArray(value.conditionalTerms, 5, 400))
+    && (value.decisionScope === undefined || (typeof value.decisionScope === 'string' && ['dialogue_only', 'principle', 'substance'].includes(value.decisionScope)));
 }
 
 export function isAIJobAIModelAnswer(value: unknown, kind?: AIJobKind): value is AIJobAIModelAnswer {
@@ -348,6 +357,10 @@ const generalDiplomaticMoveSchema = {
     conditions: { type: 'array', maxItems: 5, items: { type: 'string', maxLength: 400 } },
     redLines: { type: 'array', maxItems: 5, items: { type: 'string', maxLength: 400 } },
     timeline: { type: 'string', maxLength: 220 },
+    acceptedTerms: { type: 'array', maxItems: 5, items: { type: 'string', maxLength: 400 } },
+    rejectedTerms: { type: 'array', maxItems: 5, items: { type: 'string', maxLength: 400 } },
+    conditionalTerms: { type: 'array', maxItems: 5, items: { type: 'string', maxLength: 400 } },
+    decisionScope: { type: 'string', enum: ['dialogue_only', 'principle', 'substance'] },
   },
 } as const;
 

@@ -35,7 +35,16 @@ function turn(id: string, date: `${number}-${number}-${number}`, speakerId: Coun
  * générique en conservant sa décision et son message public.
  */
 export function normalizeDialogueMove(move: AIDiplomaticMove, publicMessage: string): Extract<AIDiplomaticMove, { scope: 'general_dialogue' }> {
-  if (move.scope === 'general_dialogue') return move;
+  if (move.scope === 'general_dialogue') {
+    const openTerms = [...move.conditions, ...move.guaranteesRequested];
+    return {
+      ...move,
+      acceptedTerms: move.acceptedTerms ?? (move.kind === 'accept' ? [move.position] : move.concessions.slice(0, 5)),
+      rejectedTerms: move.rejectedTerms ?? move.redLines.slice(0, 5),
+      conditionalTerms: move.conditionalTerms ?? openTerms.slice(0, 5),
+      decisionScope: move.decisionScope ?? (move.kind === 'accept' && openTerms.length === 0 && move.redLines.length === 0 ? 'substance' : move.kind === 'accept' || move.kind === 'counter' ? 'principle' : 'dialogue_only'),
+    };
+  }
   const position = publicMessage.trim() || 'La position de l’interlocuteur doit être précisée avant tout engagement.';
   return {
     scope: 'general_dialogue',
@@ -53,6 +62,10 @@ export function normalizeDialogueMove(move: AIDiplomaticMove, publicMessage: str
       : [],
     redLines: [],
     timeline: move.durationYears !== null ? `Réexaminer les paramètres dans ${move.durationYears} an(s).` : 'À préciser lors de la prochaine réunion.',
+    acceptedTerms: move.kind === 'accept' ? [position] : [],
+    rejectedTerms: [],
+    conditionalTerms: move.annualVolume !== null || move.durationYears !== null ? ['Préciser séparément les paramètres techniques lors de la prochaine phase de négociation.'] : [],
+    decisionScope: move.kind === 'accept' ? 'principle' : 'dialogue_only',
   };
 }
 
@@ -528,6 +541,11 @@ export function applyDiplomaticDialogueAIAnswer(state: WorldState, jobId: string
     conditions: effectiveMove.conditions,
     redLines: effectiveMove.redLines,
     timeline: effectiveMove.timeline,
+    acceptedTerms: effectiveMove.acceptedTerms,
+    rejectedTerms: effectiveMove.rejectedTerms,
+    conditionalTerms: effectiveMove.conditionalTerms,
+    decisionScope: effectiveMove.decisionScope,
+    feasibilityIssues: constrained?.feasibility.issues,
   } : dialogue.lastResponse;
   const nextDialogue: DiplomaticDialogue = {
     ...dialogue, status: 'awaiting_player', aiMode: 'ai', activeSpeakerId: nextSpeakerId, updatedAt: state.currentDate,
