@@ -1643,7 +1643,12 @@ function DiplomacyPanel({ world, onWorldChange, onNotice, initialDialogueId }: {
     const result = resolveDiplomaticDialogueResponse(worldRef.current, dialogue.id, decision);
     if (!result.ok) { onNotice(result.error); return; }
     onWorldChange(result.state);
-    onNotice(decision === 'accept' ? 'Engagement diplomatique inscrit dans le moteur et le registre.' : decision === 'refuse' ? 'Position refusée : le canal est fermé.' : decision === 'acknowledge' ? 'Position reçue : aucun engagement formel n’a été créé.' : 'Révision demandée : confirmez ensuite l’appel IA pour obtenir une nouvelle réponse.');
+    const resolutionStatus = result.state.diplomaticDialogues[dialogue.id]?.resolution?.status;
+    onNotice(decision === 'accept'
+      ? resolutionStatus === 'accepted_conditionally'
+        ? 'Base de travail acceptée : aucune obligation active. Ouvrez une rencontre pour formaliser les conditions restantes.'
+        : 'Engagement diplomatique inscrit dans le moteur et le registre.'
+      : decision === 'refuse' ? 'Position refusée : le canal est fermé.' : decision === 'acknowledge' ? 'Position reçue : aucun engagement formel n’a été créé.' : 'Révision demandée : confirmez ensuite l’appel IA pour obtenir une nouvelle réponse.');
   };
   const addParticipant = (countryId: string) => {
     if (!dialogue) return;

@@ -66,7 +66,7 @@ type StructuredDiplomaticResponse = {
 };
 
 type DiplomaticResponseResolution = {
-  status: 'accepted' | 'refused' | 'revision_requested' | 'acknowledged';
+  status: 'accepted' | 'accepted_conditionally' | 'refused' | 'revision_requested' | 'acknowledged';
   decidedAt: string;
   summary: string;
 };
@@ -241,6 +241,11 @@ export function DiplomacySheet({
   agreements = [],
 }: DiplomacySheetProps) {
   const tags = relationshipTags(selectedCountry);
+  const responseHasOpenTerms = Boolean(structuredResponse && (
+    structuredResponse.conditions.length > 0 ||
+    structuredResponse.guaranteesRequested.length > 0 ||
+    structuredResponse.redLines.length > 0
+  ));
   const [participantToAdd, setParticipantToAdd] = useState(participantOptions[0]?.id ?? '');
   useEffect(() => {
     if (!participantOptions.some((country) => country.id === participantToAdd)) setParticipantToAdd(participantOptions[0]?.id ?? '');
@@ -347,7 +352,7 @@ export function DiplomacySheet({
                     {structuredResponse.redLines.length > 0 && <div><strong>Lignes rouges</strong><ul>{structuredResponse.redLines.map((item) => <li key={item}>— {item}</li>)}</ul></div>}
                   </div>
                   <p className="mt-3 text-xs text-muted-foreground"><strong>Calendrier :</strong> {structuredResponse.timeline}</p>
-                  {responseResolution ? <p className="mt-3 border-t border-border pt-2 text-xs text-primary">{responseResolution.summary}</p> : onResolveResponse && <div className="mt-3 flex flex-wrap gap-2 border-t border-border pt-3">{(structuredResponse.kind === 'accept' || structuredResponse.kind === 'counter') ? <Button type="button" size="sm" onClick={() => onResolveResponse('accept')}>Accepter l’engagement</Button> : <Button type="button" size="sm" onClick={() => onResolveResponse('acknowledge')}>Prendre acte</Button>}<Button type="button" size="sm" variant="outline" onClick={() => onResolveResponse('request_revision')}>{structuredResponse.kind === 'refuse' ? 'Demander une réouverture' : 'Demander une révision'}</Button>{(structuredResponse.kind === 'accept' || structuredResponse.kind === 'counter') && <Button type="button" size="sm" variant="ghost" onClick={() => onResolveResponse('refuse')}>Refuser</Button>}</div>}
+                  {responseResolution ? <p className="mt-3 border-t border-border pt-2 text-xs text-primary">{responseResolution.summary}</p> : onResolveResponse && <div className="mt-3 space-y-2 border-t border-border pt-3"><p className="text-[11px] text-muted-foreground">{responseHasOpenTerms ? 'Accepter enregistre une base de travail : les conditions, garanties ou lignes rouges restantes devront être formalisées avant tout engagement actif.' : 'Cette proposition ne comporte plus de condition ouverte : son acceptation créera un engagement diplomatique actif.'}</p><div className="flex flex-wrap gap-2">{(structuredResponse.kind === 'accept' || structuredResponse.kind === 'counter') ? <Button type="button" size="sm" onClick={() => onResolveResponse('accept')}>{responseHasOpenTerms ? 'Accepter sous conditions' : 'Signer l’engagement'}</Button> : <Button type="button" size="sm" onClick={() => onResolveResponse('acknowledge')}>Prendre acte</Button>}<Button type="button" size="sm" variant="outline" onClick={() => onResolveResponse('request_revision')}>{structuredResponse.kind === 'refuse' ? 'Demander une réouverture' : 'Demander une révision'}</Button>{(structuredResponse.kind === 'accept' || structuredResponse.kind === 'counter') && <Button type="button" size="sm" variant="ghost" onClick={() => onResolveResponse('refuse')}>Refuser</Button>}</div></div>}
                 </article>
               )}
               {isThinking && <div className="message foreign"><p className="font-mono text-[9px] text-muted-foreground">ANALYSE DES INTÉRÊTS EN COURS…</p></div>}

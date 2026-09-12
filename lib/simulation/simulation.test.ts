@@ -519,8 +519,12 @@ test('un accord issu d’un dialogue historique réduit la pression uniquement l
   assert.ok(accepted.ok);
   if (!accepted.ok) return;
   const anchor = accepted.state.historicalAnchors['mass-casualty-terrorism'];
-  assert.ok(anchor.pressure < before);
-  assert.equal(anchor.lastIntervention?.outcome, 'agreed');
+  // La contre-proposition comporte encore une garantie et une condition :
+  // l’acceptation du joueur reste une intention à formaliser et ne doit pas
+  // modifier immédiatement la trajectoire historique.
+  assert.equal(accepted.state.diplomaticDialogues[opened.dialogueId].resolution?.status, 'accepted_conditionally');
+  assert.equal(anchor.pressure, before);
+  assert.equal(anchor.lastIntervention, undefined);
 });
 
 test('une réforme nationale échouée libère le domaine et ouvre un arbitrage', () => {
@@ -1794,14 +1798,12 @@ test('un dialogue libre attend une première réponse IA puis réserve Luna aux 
   assert.equal(accepted.ok, true);
   if (!accepted.ok) return;
   assert.equal(accepted.state.diplomaticDialogues[opened.dialogueId].status, 'closed');
-  assert.equal(accepted.state.diplomaticDialogues[opened.dialogueId].resolution?.status, 'accepted');
+  assert.equal(accepted.state.diplomaticDialogues[opened.dialogueId].resolution?.status, 'accepted_conditionally');
   const acceptedTreaty = Object.values(accepted.state.treaties).find((treaty) => treaty.id.startsWith(`dialogue-commitment-${opened.dialogueId}`));
-  assert.equal(acceptedTreaty?.status, 'active');
-  assert.equal(acceptedTreaty?.monthlyEffects[0]?.metric, 'stability');
-  assert.equal(acceptedTreaty?.startDate, accepted.state.currentDate);
-  assert.ok((acceptedTreaty?.endDate ?? '') > accepted.state.currentDate);
-  const afterExpiry = advanceWorld(accepted.state, '2002-01-01').state;
-  assert.equal(afterExpiry.treaties[acceptedTreaty!.id]?.status, 'expired');
+  assert.equal(acceptedTreaty, undefined);
+  const formalisation = accepted.state.strategicDossiers[`diplomatic-dialogue-${opened.dialogueId}`];
+  assert.equal(formalisation?.phase, 'Formalisation requise');
+  assert.ok(formalisation?.commitments.some((commitment) => commitment.startsWith('Intention à formaliser')));
 });
 
 test('un groupe diplomatique peut accueillir un pays et faire tourner la parole sans appel implicite', () => {
@@ -2019,10 +2021,12 @@ test('un scope énergétique mal renvoyé dans un dialogue libre reste résolubl
   const resolved = resolveDiplomaticDialogueResponse(applied.state, opened.dialogueId, 'accept');
   assert.equal(resolved.ok, true);
   if (!resolved.ok) return;
-  assert.equal(resolved.state.diplomaticDialogues[opened.dialogueId].resolution?.status, 'accepted');
+  assert.equal(resolved.state.diplomaticDialogues[opened.dialogueId].resolution?.status, 'accepted_conditionally');
   const treaty = Object.values(resolved.state.treaties).find((item) => item.id.startsWith(`dialogue-commitment-${opened.dialogueId}`));
-  assert.ok(treaty?.label.includes('energy cooperation'));
-  assert.equal(treaty?.monthlyEffects.length, 0);
+  assert.equal(treaty, undefined);
+  const formalisation = resolved.state.strategicDossiers[`diplomatic-dialogue-${opened.dialogueId}`];
+  assert.equal(formalisation?.phase, 'Formalisation requise');
+  assert.ok(formalisation?.commitments.some((commitment) => commitment.startsWith('Intention à formaliser')));
 });
 
 test('le dossier militaire décompose un théâtre large par pays sans changer le total', () => {

@@ -435,7 +435,7 @@ export type DiplomaticDialogueResponse = {
 };
 
 export type DiplomaticDialogueResolution = {
-  status: 'accepted' | 'refused' | 'revision_requested' | 'acknowledged';
+  status: 'accepted' | 'accepted_conditionally' | 'refused' | 'revision_requested' | 'acknowledged';
   decidedAt: ISODate;
   summary: string;
 };

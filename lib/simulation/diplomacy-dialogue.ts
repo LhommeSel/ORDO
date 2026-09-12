@@ -295,8 +295,11 @@ export function sendDiplomaticDialogueMessage(state: WorldState, dialogueId: str
 
 /**
  * Le joueur tranche la dernière position structurée reçue. Une acceptation
- * crée un engagement diplomatique persistant ; un refus ferme le canal ; une
- * demande de révision relance explicitement un tour IA sans appliquer d'effet.
+ * ne devient un engagement actif que si l'interlocuteur a effectivement
+ * formulé une proposition finale sans conditions, garanties ou lignes rouges
+ * encore ouvertes. Dans les autres cas, l'acceptation est conservée comme une
+ * intention conditionnelle à formaliser ; un refus ferme le canal et une
+ * demande de révision relance explicitement un tour IA.
  */
 export function resolveDiplomaticDialogueResponse(
   state: WorldState,
@@ -311,14 +314,17 @@ export function resolveDiplomaticDialogueResponse(
   if (decision === 'accept' && response.kind !== 'accept' && response.kind !== 'counter') {
     return { ok: false as const, state, error: 'Cette réponse est une prise de position, pas une proposition formalisable.' };
   }
+  const hasOpenTerms = response.conditions.length > 0 || response.guaranteesRequested.length > 0 || response.redLines.length > 0;
+  const formalAgreement = decision === 'accept' && response.kind === 'accept' && !hasOpenTerms;
+  const conditionalAcceptance = decision === 'accept' && (response.kind === 'accept' || response.kind === 'counter') && !formalAgreement;
   const labels = {
-    accept: 'Position acceptée : un engagement diplomatique est inscrit.',
+    accept: formalAgreement ? 'Position acceptée : un engagement diplomatique est inscrit.' : 'Position acceptée sous conditions : une formalisation reste nécessaire.',
     refuse: 'Position refusée : le canal diplomatique est fermé.',
     request_revision: 'Révision demandée : une nouvelle réponse de l’interlocuteur est attendue.',
     acknowledge: 'Position reçue : aucun engagement formel n’est créé.',
   } as const;
   const messages = {
-    accept: 'Nous acceptons cette position et souhaitons l’inscrire comme engagement diplomatique.',
+    accept: formalAgreement ? 'Nous acceptons cette position et souhaitons l’inscrire comme engagement diplomatique.' : 'Nous acceptons cette position comme base de travail, sous réserve de formaliser les conditions et garanties restantes.',
     refuse: 'Nous refusons cette position dans sa forme actuelle et ne pouvons pas l’inscrire comme engagement.',
     request_revision: 'Nous demandons une révision de cette position, notamment sur les garanties et les conditions proposées.',
     acknowledge: 'Nous prenons acte de votre position. Aucun engagement formel n’est conclu à ce stade.',
@@ -328,7 +334,7 @@ export function resolveDiplomaticDialogueResponse(
     ...dialogue,
     status: nextStatus,
     updatedAt: state.currentDate,
-    resolution: { status: decision === 'request_revision' ? 'revision_requested' : decision === 'accept' ? 'accepted' : decision === 'refuse' ? 'refused' : 'acknowledged', decidedAt: state.currentDate, summary: labels[decision] },
+    resolution: { status: decision === 'request_revision' ? 'revision_requested' : formalAgreement ? 'accepted' : conditionalAcceptance ? 'accepted_conditionally' : decision === 'refuse' ? 'refused' : 'acknowledged', decidedAt: state.currentDate, summary: labels[decision] },
     turns: [...dialogue.turns, turn(`${dialogue.id}-player-resolution-${dialogue.turns.length + 1}`, state.currentDate, state.playerCountryId, decision === 'accept' ? 'acceptance' : decision === 'refuse' ? 'refusal' : 'counterproposal', messages[decision])],
   };
   const effects: import('./types').WorldEffect[] = [
@@ -336,7 +342,7 @@ export function resolveDiplomaticDialogueResponse(
   ];
   const names = dialogue.participantIds.map((id) => state.countries[id]?.name ?? id).join(', ');
   const dossierId = `diplomatic-dialogue-${dialogue.id}`;
-  if (decision === 'accept' && (response.kind === 'accept' || response.kind === 'counter')) {
+  if (formalAgreement) {
     const treatyId = `dialogue-commitment-${dialogue.id}-${state.sequence + 1}`;
     const durationByType: Record<DiplomaticAgreementType, number> = {
       industrial_cooperation: 36, energy_cooperation: 24, information_sharing: 24, security_cooperation: 24,
@@ -381,21 +387,24 @@ export function resolveDiplomaticDialogueResponse(
     }
   }
   const isEnergyFramework = response.agreementType === 'energy_cooperation';
-  const relationEffect = decision === 'accept' && (response.kind === 'accept' || response.kind === 'counter')
+  const relationEffect = formalAgreement
     ? { relation: isEnergyFramework ? 1 : 4, trust: isEnergyFramework ? 0 : 3 }
-    : decision === 'refuse' ? { relation: -3, trust: -2 } : null;
+    : conditionalAcceptance
+      ? { relation: isEnergyFramework ? 1 : 2, trust: isEnergyFramework ? 0 : 1 }
+      : decision === 'refuse' ? { relation: -3, trust: -2 } : null;
   if (relationEffect) effects.push(...dialogue.participantIds.filter((id) => id !== state.playerCountryId).map((targetId) => ({
     kind: 'relation_delta' as const, from: state.playerCountryId, to: targetId, relation: relationEffect.relation, trust: relationEffect.trust,
     reason: decision === 'accept' ? 'L’acceptation d’un engagement diplomatique renforce la relation.' : 'Le refus d’une position diplomatique dégrade la relation.', visibility: 'player' as const,
   })));
-  const formalAgreement = decision === 'accept' && (response.kind === 'accept' || response.kind === 'counter');
   const unresolvedStrategicPosition = decision === 'acknowledge'
     && ['energy_cooperation', 'defense_cooperation', 'security_cooperation', 'political_guarantee', 'mediation'].includes(response.agreementType)
     && (dialogue.participantIds.length > 2 || response.redLines.length >= 2 || response.conditions.length >= 2);
-  if (!dialogue.linkedDossierId && (formalAgreement || decision === 'request_revision' || unresolvedStrategicPosition)) {
+  if (!dialogue.linkedDossierId && (formalAgreement || conditionalAcceptance || decision === 'request_revision' || unresolvedStrategicPosition)) {
     const agreementLabel = response.agreementType.replaceAll('_', ' ');
     const dossier = formalAgreement
       ? dialogueDossier(state, dialogue, `Accord diplomatique · ${names}`, `Un accord de ${agreementLabel} est conclu avec ${names} et doit désormais être suivi dans le temps.`, 'Accord diplomatique conclu', response.position, [`Engagement diplomatique : ${response.position}`])
+      : conditionalAcceptance
+        ? dialogueDossier(state, dialogue, `Formalisation diplomatique · ${names}`, `La position de ${names} est acceptée comme base de travail, mais les conditions restantes empêchent encore tout engagement actif.`, 'Intention acceptée sous conditions', messages.accept, [`Intention à formaliser : ${response.position}`], { phase: 'Formalisation requise' })
       : decision === 'request_revision'
         ? dialogueDossier(state, dialogue, `Procédure d’accord · ${names}`, `Une procédure de négociation est ouverte avec ${names} ; les garanties et conditions restent à préciser.`, 'Procédure d’accord ouverte', messages.request_revision)
         : dialogueDossier(
@@ -408,15 +417,15 @@ export function resolveDiplomaticDialogueResponse(
           [],
           { autoTracked: false, phase: 'Négociation exploratoire en suspens' },
         );
-    effects.push({ kind: 'dossier_add', dossier, reason: formalAgreement ? 'L’accord conclu devient un dossier de suivi.' : decision === 'request_revision' ? 'La demande de révision ouvre une procédure d’accord suivie.' : 'Une négociation stratégique non conclue devient un dossier modéré pour éviter qu’elle ne disparaisse du monde.', visibility: 'player' });
+    effects.push({ kind: 'dossier_add', dossier, reason: formalAgreement ? 'L’accord conclu devient un dossier de suivi.' : conditionalAcceptance ? 'L’acceptation conditionnelle ouvre une formalisation suivie sans activer encore l’accord.' : decision === 'request_revision' ? 'La demande de révision ouvre une procédure d’accord suivie.' : 'Une négociation stratégique non conclue devient un dossier modéré pour éviter qu’elle ne disparaisse du monde.', visibility: 'player' });
   }
   if (dialogue.linkedDossierId && state.strategicDossiers[dialogue.linkedDossierId]) {
     const dossier = state.strategicDossiers[dialogue.linkedDossierId];
     effects.push(
-      { kind: 'dossier_patch', dossierId: dossier.id, patch: { commitments: decision === 'accept' && (response.kind === 'accept' || response.kind === 'counter') ? [...dossier.commitments, `Engagement diplomatique : ${response.position}`] : dossier.commitments, playerStance: messages[decision] }, reason: 'La décision du joueur actualise les engagements du dossier.', visibility: 'player' },
+      { kind: 'dossier_patch', dossierId: dossier.id, patch: { commitments: formalAgreement ? [...dossier.commitments, `Engagement diplomatique : ${response.position}`] : conditionalAcceptance ? [...dossier.commitments, `Intention à formaliser : ${response.position}`] : dossier.commitments, playerStance: messages[decision] }, reason: 'La décision du joueur actualise les engagements du dossier.', visibility: 'player' },
       { kind: 'dossier_entry_add', dossierId: dossier.id, entry: { id: `dialogue-resolution-${dialogue.id}-${state.sequence + 1}`, date: state.currentDate, title: labels[decision], summary: messages[decision], importance: dossier.importance, actorIds: dialogue.participantIds, requiresDecision: false, visibility: 'player' }, reason: 'La résolution du dialogue est conservée dans la chronologie du dossier.', visibility: 'player' },
     );
-    const historicalResolution = decision === 'accept' && (response.kind === 'accept' || response.kind === 'counter')
+    const historicalResolution = formalAgreement
       ? 'diplomatic_agreement' as const
       : decision === 'refuse' ? 'diplomatic_refusal' as const : undefined;
     if (historicalResolution) effects.push(...historicalAnchorChannelEffects(state, dossier.id, { sourceId: dialogue.id, resolution: historicalResolution }));
