@@ -570,6 +570,29 @@ function applyEffect(state: WorldState, action: WorldAction, effect: WorldEffect
     return appendChange(next, action, effect, `militaryTheaters.${effect.theaterId}`, before, after);
   }
 
+  if (effect.kind === 'military_base_add') {
+    const bases = state.militaryBases ?? {};
+    const before = bases[effect.base.id] ?? null;
+    const after = before ?? effect.base;
+    const next = { ...state, militaryBases: { ...bases, [effect.base.id]: after } };
+    return appendChange(next, action, effect, `militaryBases.${effect.base.id}`, before, after);
+  }
+
+  if (effect.kind === 'military_base_patch') {
+    const base = state.militaryBases?.[effect.baseId];
+    if (!base) return state;
+    const before = Object.fromEntries(Object.keys(effect.patch).map((key) => [key, base[key as keyof typeof base]]));
+    const raw = { ...base, ...effect.patch };
+    const afterBase = {
+      ...raw,
+      capacityThousands: Number(Math.max(0, raw.capacityThousands).toFixed(2)),
+      assignedPersonnelThousands: Number(Math.max(0, Math.min(raw.capacityThousands, raw.assignedPersonnelThousands)).toFixed(2)),
+    };
+    const after = Object.fromEntries(Object.keys(effect.patch).map((key) => [key, afterBase[key as keyof typeof afterBase]]));
+    const next = { ...state, militaryBases: { ...state.militaryBases, [effect.baseId]: afterBase } };
+    return appendChange(next, action, effect, `militaryBases.${effect.baseId}`, before, after);
+  }
+
   const product = state.armamentProducts[effect.productId];
   if (!product) return state;
   const after = { ...product, ...effect.patch };

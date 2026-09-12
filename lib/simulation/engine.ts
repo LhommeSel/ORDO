@@ -14,6 +14,7 @@ import { reactivateDossiersOnWorldSignals } from './dossiers';
 import { advanceDossierEffects } from './dossier-effects';
 import { compactWorldForSave } from './persistence';
 import { advancePoliticalCycles } from './political-cycles';
+import { advanceMilitaryTheaterAccess } from './military-theaters';
 import { summarizeTurnResolution, type TurnResolutionSummary } from './core/turn-orchestrator';
 import type { ISODate, SimulationStop, WorldEffect, WorldState } from './types';
 
@@ -122,6 +123,7 @@ function simulationPhases(
 ): SimulationPhase[] {
   return [
     { id: 'treaties', advance: (state, context) => advanceTreaties(state, context.elapsedMonths) },
+    { id: 'military-access', advance: (state, context) => context.reachedMonthBoundary ? advanceMilitaryTheaterAccess(state) : state },
     { id: 'institutions', advance: (state, context) => advanceInstitutions(state, context.elapsedMonths) },
     { id: 'common-actions', advance: (state, context) => advanceCommonActionPrograms(state, context.elapsedMonths) },
     { id: 'political-cycles', advance: (state, context) => context.reachedMonthBoundary ? advancePoliticalCycles(state) : state },

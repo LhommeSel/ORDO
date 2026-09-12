@@ -44,7 +44,7 @@ import { queueAutonomousProgram } from './ai/autonomous-programs';
 import { authorizeArmamentProspect, createAutomaticArmamentProspects, rankArmamentProspectBuyers, rejectArmamentProspect } from './industry';
 import { advancePoliticalCycles, assessPoliticalSupport, choosePoliticalCampaignStrategy, politicalCampaignDecisionPrompt, politicalCycleStops } from './political-cycles';
 import { nationalReformEffects, reformStateKey } from './reforms';
-import { militaryTheatersForCountry } from './military-theaters';
+import { advanceMilitaryTheaterAccess, militaryBasesForCountry, militaryTheatersForCountry } from './military-theaters';
 
 test('le scénario 2000 charge un monde cohérent et jouable', () => {
   const state = createFrance2000World();
@@ -1977,6 +1977,41 @@ test('un redéploiement de théâtre conserve les effectifs et bloque les opéra
   const resolved = advanceCommonActionPrograms(launched.state, 2);
   assert.equal(resolved.militaryTheaters[africa.id].personnelThousands, africa.personnelThousands - 5);
   assert.equal(resolved.militaryTheaters[balkans.id].personnelThousands, balkans.personnelThousands + 5);
+});
+
+test('les implantations extérieures majeures sont distinguées des simples théâtres', () => {
+  const state = createFrance2000World();
+  const bases = militaryBasesForCountry(state, 'FRA');
+  assert.equal(bases.length, 3);
+  const djibouti = bases.find((base) => base.hostCountryId === 'DJI');
+  assert.ok(djibouti);
+  assert.equal(djibouti?.access, 'host_consent');
+  const africa = militaryTheatersForCountry(state, 'FRA').find((theater) => theater.location === 'Afrique');
+  assert.ok(africa?.baseIds?.includes(djibouti!.id));
+});
+
+test('les relations et accords recalculent l’accès d’une base, et un refus bloque un renforcement', () => {
+  const initial = createFrance2000World();
+  const djibouti = militaryBasesForCountry(initial, 'FRA').find((base) => base.hostCountryId === 'DJI');
+  const africa = militaryTheatersForCountry(initial, 'FRA').find((theater) => theater.location === 'Afrique');
+  assert.ok(djibouti && africa);
+  if (!djibouti || !africa) return;
+  const withAgreement = structuredClone(initial);
+  withAgreement.relations['FRA:DJI'] = { from: 'FRA', to: 'DJI', relation: 82, trust: 76, tradeIntensity: 10, securityAlignment: 75, memories: [] };
+  withAgreement.treaties['fra-dji-defense'] = { id: 'fra-dji-defense', parties: ['FRA', 'DJI'], label: 'Accord de défense et de stationnement', status: 'active', monthlyEffects: [] };
+  const allied = advanceMilitaryTheaterAccess(withAgreement);
+  assert.equal(allied.militaryBases[djibouti.id].access, 'allied');
+  const lowAccess = structuredClone(initial);
+  lowAccess.relations['FRA:DJI'] = { from: 'FRA', to: 'DJI', relation: 8, trust: 12, tradeIntensity: 0, securityAlignment: 0, memories: [] };
+  const downgraded = advanceMilitaryTheaterAccess(lowAccess);
+  assert.equal(downgraded.militaryBases[djibouti.id].access, 'denied');
+  assert.ok(downgraded.strategicDossiers['military-access-base-FRA-DJI']);
+  const deniedState = {
+    ...initial,
+    militaryTheaters: { ...initial.militaryTheaters, [africa.id]: { ...africa, access: 'denied' as const } },
+  };
+  const blocked = prepareMilitaryTheaterAction(deniedState, africa.id, 'reinforce', 5);
+  assert.equal(blocked.ok, false);
 });
 
 test('un programme autonome diplomatique ne peut pas cibler son propre État', () => {

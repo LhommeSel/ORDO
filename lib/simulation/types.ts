@@ -1196,8 +1196,25 @@ export type ActionProgram = {
 };
 
 export type MilitaryTheaterStatus = 'home' | 'active' | 'reserve' | 'withdrawn';
-export type MilitaryTheaterAccess = 'national' | 'host_consent' | 'allied' | 'contested' | 'unknown';
+export type MilitaryTheaterAccess = 'national' | 'host_consent' | 'allied' | 'contested' | 'denied' | 'unknown';
 export type MilitaryTheaterActionKind = 'reinforce' | 'withdraw' | 'redeploy';
+export type MilitaryBaseStatus = 'active' | 'restricted' | 'closed';
+export type MilitaryBaseType = 'permanent' | 'prepositioned' | 'support';
+
+export type MilitaryBase = {
+  id: string;
+  ownerCountryId: CountryId;
+  hostCountryId: CountryId;
+  location: string;
+  type: MilitaryBaseType;
+  capacityThousands: number;
+  assignedPersonnelThousands: number;
+  status: MilitaryBaseStatus;
+  access: MilitaryTheaterAccess;
+  mission: string;
+  agreementStartAt?: ISODate;
+  agreementEndAt?: ISODate;
+};
 
 export type MilitaryTheaterOperation = {
   id: string;
@@ -1224,6 +1241,7 @@ export type MilitaryTheater = {
   readiness: number;
   supplyCoverageMonths: number;
   access: MilitaryTheaterAccess;
+  baseIds?: string[];
   currentOperation?: MilitaryTheaterOperation;
 };
 
@@ -1277,7 +1295,9 @@ export type WorldEffect =
   | { kind: 'action_program_add'; program: ActionProgram; reason: string; visibility?: Visibility }
   | { kind: 'action_program_patch'; programId: string; patch: Partial<ActionProgram>; reason: string; visibility?: Visibility }
   | { kind: 'military_theater_add'; theater: MilitaryTheater; reason: string; visibility?: Visibility }
-  | { kind: 'military_theater_patch'; theaterId: string; patch: Partial<MilitaryTheater>; reason: string; visibility?: Visibility };
+  | { kind: 'military_theater_patch'; theaterId: string; patch: Partial<MilitaryTheater>; reason: string; visibility?: Visibility }
+  | { kind: 'military_base_add'; base: MilitaryBase; reason: string; visibility?: Visibility }
+  | { kind: 'military_base_patch'; baseId: string; patch: Partial<MilitaryBase>; reason: string; visibility?: Visibility };
 
 export type ActionDraft = {
   kind: ActionKind;
@@ -1435,6 +1455,7 @@ export type WorldState = {
   aiJobs: Record<string, AIJob>;
   actionPrograms: Record<string, ActionProgram>;
   militaryTheaters: Record<string, MilitaryTheater>;
+  militaryBases: Record<string, MilitaryBase>;
   diplomaticSessions: Record<string, DiplomaticSession>;
   diplomaticDialogues: Record<string, DiplomaticDialogue>;
   sectors: Record<string, StrategicSectorState>;

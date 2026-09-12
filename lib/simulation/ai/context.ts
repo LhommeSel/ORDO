@@ -7,7 +7,7 @@ import type {
   Visibility,
   WorldState,
 } from '../types';
-import { militaryTheatersForCountry } from '../military-theaters';
+import { militaryBasesForCountry, militaryTheatersForCountry } from '../military-theaters';
 
 export type AIContextDomain =
   | 'overview'
@@ -225,6 +225,15 @@ export function collectFacts(state: WorldState): AIContextFact[] {
       importance: 84, confidence: 100, visibility: 'public',
       sourcePath: `militaryTheaters.${country.id}`,
       statement: `${country.name}: ${militaryTheaters.map((theater) => `${theater.location} ${theater.personnelThousands.toFixed(1)} k, disponibles ${theater.availablePersonnelThousands.toFixed(1)} k, préparation ${theater.readiness}/100, ravitaillement ${theater.supplyCoverageMonths.toFixed(1)} mois${theater.currentOperation ? `, opération jusqu'au ${theater.currentOperation.completesAt}` : ''}`).join(' ; ')}.`,
+    });
+    const militaryBases = militaryBasesForCountry(state, country.id);
+    if (militaryBases.length) add({
+      id: `country:${country.id}:military-bases`, domain: 'military',
+      entityIds: [country.id, ...militaryBases.map((base) => base.hostCountryId)],
+      topicTags: ['militaire', 'base', 'stationnement', 'acces'],
+      importance: 86, confidence: 100, visibility: 'public',
+      sourcePath: `militaryBases.${country.id}`,
+      statement: `${country.name}: ${militaryBases.map((base) => `base ${base.location} (${base.hostCountryId}), ${base.assignedPersonnelThousands.toFixed(1)} k/${base.capacityThousands.toFixed(1)} k, statut ${base.status}, accès ${base.access}`).join(' ; ')}.`,
     });
   }
 
