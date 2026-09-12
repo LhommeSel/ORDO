@@ -1,4 +1,5 @@
 import type { ActionProgram, StrategicDossier, WorldState } from './types';
+import { dossierScopeFor } from './dossier-scope';
 
 export type TurnBriefingMetric = {
   id: string;
@@ -15,6 +16,7 @@ export type TurnBriefingHighlight = {
   title: string;
   detail: string;
   tone: 'major' | 'moderate' | 'positive' | 'neutral';
+  scope: 'player' | 'world';
   dossierId?: string;
 };
 
@@ -26,6 +28,8 @@ export type TurnBriefing = {
   autonomousActorCount: number;
   metrics: TurnBriefingMetric[];
   highlights: TurnBriefingHighlight[];
+  playerHighlights: TurnBriefingHighlight[];
+  worldHighlights: TurnBriefingHighlight[];
   completedPrograms: Array<{ id: string; title: string; status: ActionProgram['status']; resolution?: string }>;
 };
 
@@ -48,13 +52,14 @@ function dossierTone(dossier: StrategicDossier): TurnBriefingHighlight['tone'] {
 function dossierHighlights(before: WorldState, after: WorldState): TurnBriefingHighlight[] {
   const highlights: TurnBriefingHighlight[] = [];
   for (const dossier of Object.values(after.strategicDossiers ?? {})) {
+    const scope = dossierScopeFor(after, dossier) === 'player_involved' ? 'player' : 'world';
     const debtCountryId = dossier.id.startsWith('sovereign-debt-') ? dossier.actorIds.find((id) => Boolean(after.macroEconomies[id])) : undefined;
     const debtDefaultRecorded = dossier.entries.some((entry) => /défaut souverain/i.test(entry.title));
     const debtRelevant = !debtCountryId || debtCountryId === after.playerCountryId || after.macroEconomies[debtCountryId]?.sovereignDebt.status === 'default' || debtDefaultRecorded;
     if (!debtRelevant) continue;
     const previous = before.strategicDossiers?.[dossier.id];
     if (!previous) {
-      highlights.push({ id: `new-${dossier.id}`, title: `Nouveau dossier · ${dossier.title}`, detail: `${dossier.phase} — ${dossier.publicSummary}`, tone: dossierTone(dossier), dossierId: dossier.id });
+      highlights.push({ id: `new-${dossier.id}`, title: `Nouveau dossier · ${dossier.title}`, detail: `${dossier.phase} — ${dossier.publicSummary}`, tone: dossierTone(dossier), scope, dossierId: dossier.id });
       continue;
     }
     if (previous.status !== dossier.status) {
@@ -62,7 +67,7 @@ function dossierHighlights(before: WorldState, after: WorldState): TurnBriefingH
         id: `status-${dossier.id}-${dossier.status}`,
         title: dossier.status === 'resolved' ? `Dossier stabilisé · ${dossier.title}` : `Changement de phase · ${dossier.title}`,
         detail: `${previous.status} → ${dossier.status} · ${dossier.phase}`,
-        tone: dossier.status === 'resolved' || dossier.status === 'deescalating' ? 'positive' : dossierTone(dossier), dossierId: dossier.id,
+        tone: dossier.status === 'resolved' || dossier.status === 'deescalating' ? 'positive' : dossierTone(dossier), scope, dossierId: dossier.id,
       });
       continue;
     }
@@ -71,18 +76,18 @@ function dossierHighlights(before: WorldState, after: WorldState): TurnBriefingH
         id: `trajectory-${dossier.id}`,
         title: `Trajectoire modifiée · ${dossier.title}`,
         detail: `${previous.importance}/${previous.trend} → ${dossier.importance}/${dossier.trend} · ${dossier.phase}`,
-        tone: dossierTone(dossier), dossierId: dossier.id,
+        tone: dossierTone(dossier), scope, dossierId: dossier.id,
       });
       continue;
     }
     const previousEntries = new Set(previous.entries.map((entry) => entry.id));
     const entry = dossier.entries.slice().reverse().find((item) => !previousEntries.has(item.id) && item.visibility !== 'debug');
     if (entry && (entry.importance === 'moderate' || entry.importance === 'major' || entry.importance === 'critical' || entry.requiresDecision)) {
-      highlights.push({ id: `entry-${entry.id}`, title: `${dossier.title} · ${entry.title}`, detail: entry.summary, tone: dossierTone(dossier), dossierId: dossier.id });
+      highlights.push({ id: `entry-${entry.id}`, title: `${dossier.title} · ${entry.title}`, detail: entry.summary, tone: dossierTone(dossier), scope, dossierId: dossier.id });
     }
   }
   const rank = { major: 0, moderate: 1, positive: 2, neutral: 3 } as const;
-  return highlights.sort((a, b) => rank[a.tone] - rank[b.tone]).slice(0, 6);
+  return highlights.sort((a, b) => rank[a.tone] - rank[b.tone]);
 }
 
 /**
@@ -109,6 +114,9 @@ export function buildTurnBriefing(before: WorldState, after: WorldState): TurnBr
     metric('debt', 'Dette publique', beforeMacro.publicDebtPctGdp, afterMacro.publicDebtPctGdp, ' % PIB', 2),
     metric('budget', 'Marge budgétaire', beforeCountry.metrics.budget, afterCountry.metrics.budget, '', 1),
   ] : [];
+  const highlights = dossierHighlights(before, after);
+  const playerHighlights = highlights.filter((item) => item.scope === 'player').slice(0, 6);
+  const worldHighlights = highlights.filter((item) => item.scope === 'world').slice(0, 6);
   return {
     from: before.currentDate,
     to: after.currentDate,
@@ -116,7 +124,9 @@ export function buildTurnBriefing(before: WorldState, after: WorldState): TurnBr
     actionCount: newActions.filter((action) => action.kind !== 'time_advance').length,
     autonomousActorCount: new Set(newActions.filter((action) => action.actorId !== after.playerCountryId).map((action) => action.actorId)).size,
     metrics,
-    highlights: dossierHighlights(before, after),
+    highlights: [...playerHighlights, ...worldHighlights],
+    playerHighlights,
+    worldHighlights,
     completedPrograms,
   };
 }

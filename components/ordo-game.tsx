@@ -263,7 +263,7 @@ function WarZonePanel({ world }: { world: WorldState }) {
   </div>;
 }
 
-type EventFeedItem = { id: string; date: string; title: string; summary: string; importance: 'major' | 'moderate' | 'minor'; source: string; dossierId?: string };
+type EventFeedItem = { id: string; date: string; title: string; summary: string; importance: 'major' | 'moderate' | 'minor'; source: string; scope: 'player' | 'world'; dossierId?: string };
 
 function buildEventFeed(world: WorldState): EventFeedItem[] {
   const items: EventFeedItem[] = [];
@@ -283,9 +283,11 @@ function buildEventFeed(world: WorldState): EventFeedItem[] {
       const historicalEvent = dossier.kind === 'historical'
         || sourceAction?.origin === 'historical'
         || entry.id.startsWith('historical-');
-      if (!playerMessage && !historicalEvent) continue;
+      const scope = dossierScopeFor(world, dossier) === 'player_involved' ? 'player' : 'world';
+      const worldAutonomousEvent = scope === 'world' && entry.importance !== 'minor';
+      if (!playerMessage && !historicalEvent && !worldAutonomousEvent) continue;
       const importance = entry.importance === 'critical' || entry.importance === 'major' ? 'major' : entry.importance === 'moderate' ? 'moderate' : 'minor';
-      items.push({ id: `dossier:${entry.id}`, date: entry.date, title: entry.title, summary: entry.summary, importance, source: historicalEvent ? `Histoire · ${dossier.title}` : 'Message du joueur', dossierId: dossier.id });
+      items.push({ id: `dossier:${entry.id}`, date: entry.date, title: entry.title, summary: entry.summary, importance, source: historicalEvent ? `Histoire · ${dossier.title}` : worldAutonomousEvent ? `Monde · ${dossier.title}` : 'Message du joueur', scope, dossierId: dossier.id });
     }
   }
   for (const change of visibleLedger(world).slice(-160)) {
@@ -295,12 +297,14 @@ function buildEventFeed(world: WorldState): EventFeedItem[] {
     const importance = sourceAction?.metadata?.minorEvent === true
       ? 'minor'
       : change.origin === 'ai' || change.path.includes('relations') || change.path.includes('worldEconomy') || change.path.includes('macroEconomies') ? 'moderate' : 'minor';
-    items.push({ id: `change:${change.id}`, date: change.date, title: change.path.split('.').at(-1) ?? 'Modification du monde', summary: change.reason, importance, source: sourceAction.origin === 'historical' ? 'Événement historique' : 'Action du joueur' });
+    items.push({ id: `change:${change.id}`, date: change.date, title: change.path.split('.').at(-1) ?? 'Modification du monde', summary: change.reason, importance, source: sourceAction.origin === 'historical' ? 'Événement historique' : 'Action du joueur', scope: sourceAction.actorId === world.playerCountryId || sourceAction.origin === 'player' ? 'player' : 'world' });
   }
   return items.sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id)).slice(0, 120);
 }
 
 function EventFeedPanel({ feed }: { feed: EventFeedItem[] }) {
+  const [scopeFilter, setScopeFilter] = useState<'all' | 'player' | 'world'>('all');
+  const visibleFeed = scopeFilter === 'all' ? feed : feed.filter((item) => item.scope === scopeFilter);
   const groups: Array<{ key: EventFeedItem['importance']; label: string; tone: string }> = [
     { key: 'major', label: 'Majeurs', tone: 'text-red-300' },
     { key: 'moderate', label: 'Modérés', tone: 'text-amber-300' },
@@ -309,8 +313,15 @@ function EventFeedPanel({ feed }: { feed: EventFeedItem[] }) {
   return <div className="border border-border bg-card/70 p-4">
     <div className="flex items-center gap-2 font-semibold"><BellRing className="size-4 text-primary" /> Fil des événements</div>
     <p className="mt-1 text-xs text-muted-foreground">Les événements majeurs restent visibles en alerte ; les événements mineurs sont simulés sans interrompre le rythme du joueur.</p>
+    <div className="mt-3 flex flex-wrap gap-2">
+      {([
+        ['all', 'Tout le fil'],
+        ['player', 'Pays joué'],
+        ['world', 'Monde'],
+      ] as const).map(([value, label]) => <Button key={value} size="sm" variant={scopeFilter === value ? 'default' : 'outline'} onClick={() => setScopeFilter(value)}>{label}</Button>)}
+    </div>
     <div className="mt-4 grid gap-3 lg:grid-cols-3">{groups.map((group) => {
-      const entries = feed.filter((item) => item.importance === group.key).slice(0, 8);
+      const entries = visibleFeed.filter((item) => item.importance === group.key).slice(0, 8);
       return <section key={group.key} className="border border-border/80 bg-background/25 p-3"><div className={`font-mono text-[10px] uppercase tracking-wider ${group.tone}`}>{group.label} · {entries.length}</div><div className="mt-2 space-y-2">{entries.length ? entries.map((item) => <div key={item.id} className="border-b border-border/60 pb-2 last:border-0"><div className="text-xs font-medium">{item.title}</div><div className="mt-1 text-[10px] text-muted-foreground">{item.date} · {item.source}</div><p className="mt-1 line-clamp-3 text-[11px] text-muted-foreground">{item.summary}</p></div>) : <div className="text-xs text-muted-foreground">Aucun événement dans cette catégorie.</div>}</div></section>;
     })}</div>
   </div>;
@@ -1407,6 +1418,7 @@ function DossiersPanel({ world, selectedId, onSelect, onWorldChange, onNotice, o
       <div className="border border-border bg-card/70 p-4">
         <div className="flex flex-wrap items-start justify-between gap-3"><div><div className={`font-mono text-[10px] uppercase tracking-wider ${dossierImportanceTone[selected.importance]}`}>{dossierScopeLabel(dossierScopeFor(world, selected))} · {selected.kind} · {selected.sleepingAt ? 'en sommeil' : selected.status}</div><h2 className="mt-1 text-xl font-semibold">{selected.title}</h2></div><div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => onWorldChange(setDossierFollowed(world, selected.id, !selected.followed))}>{selected.followed ? <PinOff className="size-4" /> : <Pin className="size-4" />}{selected.followed ? 'Ne plus épingler' : 'Épingler'}</Button>{selected.sleepingAt && <Button variant="outline" onClick={() => { onWorldChange(reactivateDossier(world, selected.id)); onNotice('Dossier réactivé dans le suivi actif.'); }}>Réactiver le dossier</Button>}{(selected.importance === 'moderate' || selected.importance === 'major' || selected.importance === 'critical') && <Button onClick={askDossierAI} disabled={dossierAIStatus === 'loading'}>{dossierAIStatus === 'loading' ? <LoaderCircle className="size-4 animate-spin" /> : <BrainCircuit className="size-4" />}Demander des options à l’IA</Button>}</div></div>
         <p className="mt-3 text-sm text-muted-foreground">{selected.publicSummary}</p>
+        {selected.parentDossierId && <p className="mt-3 border-l-2 border-sky-300/70 pl-3 text-xs text-sky-100">Conséquence rattachée à <button type="button" className="font-semibold underline decoration-dotted underline-offset-2 hover:text-white" onClick={() => onSelect(selected.parentDossierId!)}>{world.strategicDossiers[selected.parentDossierId]?.title ?? selected.parentDossierId}</button>.</p>}
         <div className="mt-4 grid gap-2 sm:grid-cols-4"><Stat label="Phase" value={selected.phase} /><Stat label="Tendance" value={selected.trend} /><Stat label="Acteurs" value={selected.actorIds.map((id) => world.countries[id]?.flag ?? id).join(' ')} /><Stat label="Relances" value={String(selected.escalationCount ?? 0)} detail={selected.lastEscalatedAt ? `dernière : ${selected.lastEscalatedAt}` : 'aucune'} /></div>
         {selected.playerStance && <div className="mt-3 border-l-2 border-primary pl-3 text-sm"><b>Position du joueur :</b> {selected.playerStance}</div>}
         {dossierImpact?.active && <div className="mt-4 border border-amber-400/30 bg-amber-300/5 p-3 text-xs">
@@ -1764,7 +1776,10 @@ function LedgerPanel({ world }: { world: WorldState }) {
 function TurnBriefingPanel({ briefing, onOpenDossier }: { briefing: TurnBriefing; onOpenDossier: (id: string) => void }) {
   const tone = { major: 'text-red-300', moderate: 'text-amber-300', positive: 'text-emerald-300', neutral: 'text-muted-foreground' } as const;
   const signed = (value: number, digits: number, unit: string) => `${value > 0 ? '+' : ''}${value.toFixed(digits)}${unit}`;
-  const calm = briefing.highlights.length === 0 && briefing.completedPrograms.length === 0;
+  const playerHighlights = briefing.playerHighlights ?? briefing.highlights;
+  const worldHighlights = briefing.worldHighlights ?? [];
+  const calm = playerHighlights.length === 0 && worldHighlights.length === 0 && briefing.completedPrograms.length === 0;
+  const renderHighlights = (items: TurnBriefing['highlights'], emptyLabel: string) => items.length ? items.map((item) => <button key={item.id} type="button" onClick={() => item.dossierId && onOpenDossier(item.dossierId)} disabled={!item.dossierId} className="block w-full border-b border-border/60 pb-2 text-left disabled:cursor-default"><div className={`text-xs font-medium ${tone[item.tone]}`}>{item.title}</div><p className="mt-1 line-clamp-2 text-[11px] text-muted-foreground">{item.detail}</p></button>) : <p className="text-xs text-muted-foreground">{emptyLabel}</p>;
   return <details open className="group border-b border-border bg-card/55">
     <summary className="mx-auto flex max-w-[1600px] cursor-pointer list-none items-center gap-3 px-4 py-2 text-sm lg:px-6">
       <ChevronRight className="size-4 text-primary transition-transform group-open:rotate-90" />
@@ -1778,7 +1793,11 @@ function TurnBriefingPanel({ briefing, onOpenDossier }: { briefing: TurnBriefing
       </section>
       <section className="border border-border bg-background/35 p-3">
         <div className="font-mono text-[10px] uppercase tracking-wider text-primary">Faits à retenir</div>
-        <div className="mt-2 space-y-2">{calm && <p className="text-xs text-muted-foreground">Aucun basculement majeur : les systèmes ont évolué sans ouvrir de nouvelle décision.</p>}{briefing.highlights.map((item) => <button key={item.id} type="button" onClick={() => item.dossierId && onOpenDossier(item.dossierId)} disabled={!item.dossierId} className="block w-full border-b border-border/60 pb-2 text-left disabled:cursor-default"><div className={`text-xs font-medium ${tone[item.tone]}`}>{item.title}</div><p className="mt-1 line-clamp-2 text-[11px] text-muted-foreground">{item.detail}</p></button>)}{briefing.completedPrograms.map((program) => <div key={program.id} className="border-b border-border/60 pb-2"><div className={program.status === 'succeeded' ? 'text-xs font-medium text-emerald-300' : program.status === 'failed' ? 'text-xs font-medium text-red-300' : 'text-xs font-medium text-amber-300'}>{program.title} · {program.status}</div><p className="mt-1 text-[11px] text-muted-foreground">{program.resolution}</p></div>)}</div>
+        <div className="mt-2 grid gap-3 md:grid-cols-2">
+          <div><div className="text-xs font-semibold text-amber-200">Pays joué · arbitrages</div><div className="mt-2 space-y-2">{renderHighlights(playerHighlights, 'Aucune décision ou évolution nationale nouvelle.')}</div></div>
+          <div><div className="text-xs font-semibold text-sky-200">Monde · information</div><div className="mt-2 space-y-2">{renderHighlights(worldHighlights, 'Aucune évolution mondiale notable dans cette avance.')}</div></div>
+        </div>
+        <div className="mt-3 space-y-2">{briefing.completedPrograms.map((program) => <div key={program.id} className="border-b border-border/60 pb-2"><div className={program.status === 'succeeded' ? 'text-xs font-medium text-emerald-300' : program.status === 'failed' ? 'text-xs font-medium text-red-300' : 'text-xs font-medium text-amber-300'}>{program.title} · {program.status}</div><p className="mt-1 text-[11px] text-muted-foreground">{program.resolution}</p></div>)}{calm && <p className="text-xs text-muted-foreground">Aucun basculement majeur : les systèmes ont évolué sans ouvrir de nouvelle décision.</p>}</div>
       </section>
     </div>
   </details>;
@@ -1803,6 +1822,8 @@ export default function Home() {
   const player = world.countries[world.playerCountryId];
   const autonomousCount = useMemo(() => new Set(world.actions.filter((action) => action.origin === 'local_rule').map((action) => action.actorId)).size, [world.actions]);
   const dossierAlerts = useMemo(() => dossiersRequiringAttention(world), [world]);
+  const playerDossierAlerts = useMemo(() => dossierAlerts.filter((dossier) => dossierScopeFor(world, dossier) === 'player_involved'), [dossierAlerts, world]);
+  const worldDossierAlerts = useMemo(() => dossierAlerts.filter((dossier) => dossierScopeFor(world, dossier) !== 'player_involved'), [dossierAlerts, world]);
   const openDossier = (id: string) => { setSelectedDossierId(id); setPanel('dossiers'); };
 
   const advance = async (months: number) => {
@@ -1899,7 +1920,8 @@ export default function Home() {
         <div className="flex gap-1"><Button size="icon" variant="ghost" title="Sauvegarder" onClick={save}><Save /></Button><Button size="icon" variant="ghost" title="Charger" onClick={load}><Archive /></Button><Button size="icon" variant="ghost" title="Réinitialiser" onClick={reset}><RotateCcw /></Button></div>
       </div>
       <div className="mx-auto flex max-w-[1600px] gap-1 overflow-x-auto px-4 lg:px-6">{panels.map(({ id, label, icon: Icon }) => <button key={id} onClick={() => setPanel(id)} className={`flex items-center gap-2 border-b-2 px-3 py-2 text-sm ${panel === id ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}><Icon className="size-4" />{label}</button>)}</div>
-      {dossierAlerts.length > 0 && <div className="border-t border-border bg-card/60"><div className="mx-auto flex max-w-[1600px] items-center gap-2 overflow-x-auto px-4 py-2 lg:px-6"><BellRing className="size-4 shrink-0 text-amber-300" /><span className="shrink-0 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Dossiers actifs</span>{dossierAlerts.slice(0, 4).map((dossier) => <button key={dossier.id} onClick={() => openDossier(dossier.id)} className="shrink-0 border border-border bg-background px-2 py-1 text-xs hover:border-primary"><span className={dossierImportanceTone[dossier.importance]}>●</span> {dossier.title}{dossier.pendingDecisions.length > 0 ? ' · décision attendue' : ` · ${dossierUnreadCount(world, dossier.id)} nouveau(x)`}</button>)}</div></div>}
+      {playerDossierAlerts.length > 0 && <div className="border-t border-border bg-card/60"><div className="mx-auto flex max-w-[1600px] items-center gap-2 overflow-x-auto px-4 py-2 lg:px-6"><BellRing className="size-4 shrink-0 text-amber-300" /><span className="shrink-0 font-mono text-[10px] uppercase tracking-wider text-amber-200">Pays joué · action ou décision</span>{playerDossierAlerts.slice(0, 4).map((dossier) => <button key={dossier.id} onClick={() => openDossier(dossier.id)} className="shrink-0 border border-border bg-background px-2 py-1 text-xs hover:border-primary"><span className={dossierImportanceTone[dossier.importance]}>●</span> {dossier.title}{dossier.pendingDecisions.length > 0 ? ' · décision attendue' : ` · ${dossierUnreadCount(world, dossier.id)} nouveau(x)`}</button>)}</div></div>}
+      {worldDossierAlerts.length > 0 && <div className="border-t border-border bg-card/40"><div className="mx-auto flex max-w-[1600px] items-center gap-2 overflow-x-auto px-4 py-2 lg:px-6"><Map className="size-4 shrink-0 text-sky-300" /><span className="shrink-0 font-mono text-[10px] uppercase tracking-wider text-sky-200">Monde · information</span>{worldDossierAlerts.slice(0, 4).map((dossier) => <button key={dossier.id} onClick={() => openDossier(dossier.id)} className="shrink-0 border border-border bg-background px-2 py-1 text-xs hover:border-primary"><span className={dossierImportanceTone[dossier.importance]}>●</span> {dossier.title} · {dossierUnreadCount(world, dossier.id)} nouveauté(s)</button>)}</div></div>}
     </header>
     <div className="border-b border-border bg-muted/20"><div className="mx-auto flex max-w-[1600px] items-center justify-between gap-4 px-4 py-2 text-xs text-muted-foreground lg:px-6"><span>{notice}</span><span className="hidden font-mono sm:block">{autonomousCount} acteurs autonomes · seed {world.seed} · séquence {world.sequence}</span></div></div>
     {lastBriefing && <TurnBriefingPanel briefing={lastBriefing} onOpenDossier={openDossier} />}

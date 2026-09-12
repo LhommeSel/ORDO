@@ -16,7 +16,7 @@ import { applyDebtCrisisResponse } from './sovereign-debt';
 import { evaluateStrategicAction, selectStrategicAction } from './decision-making';
 import { reviewCountryStrategy } from './autonomy';
 import { countrySheet, defenseReferences2000ForValidation } from './country-sheet';
-import type { GovernmentMeasure, ISODate, StrategicActionCandidate } from './types';
+import type { GovernmentMeasure, ISODate, StrategicActionCandidate, WorldState } from './types';
 import { createFrance2000World, createWorld2000 } from './scenario-2000';
 import { deriveStructuralDiagnostics } from './structural-diagnostics';
 import {
@@ -337,7 +337,69 @@ test('le bilan de tour résume les indicateurs et les changements de dossier san
   assert.equal(briefing.to, '2000-02-01');
   assert.equal(briefing.metrics.find((item) => item.id === 'gdp')?.delta, 2);
   assert.ok(briefing.highlights.some((item) => item.dossierId === 'current-dotcom-exuberance'));
+  assert.ok(briefing.playerHighlights.some((item) => item.dossierId === 'current-dotcom-exuberance'));
+
+  const source = after.strategicDossiers['current-dotcom-exuberance'];
+  assert.ok(source);
+  if (!source) return;
+  after.strategicDossiers['briefing-world-dossier'] = {
+    ...source,
+    id: 'briefing-world-dossier',
+    title: 'Dossier mondial de démonstration',
+    actorIds: ['USA', 'DEU'],
+    scope: 'world',
+    pendingDecisions: [],
+    entries: [],
+    updatedAt: after.currentDate,
+  };
+  const worldBriefing = buildTurnBriefing(before, after);
+  assert.ok(worldBriefing.worldHighlights.some((item) => item.dossierId === 'briefing-world-dossier'));
+  assert.equal(worldBriefing.playerHighlights.some((item) => item.dossierId === 'briefing-world-dossier'), false);
   assert.equal(before.currentDate, '2000-01-01');
+});
+
+test('plusieurs avances successives conservent des files de dossiers joueur et monde distinctes', () => {
+  const initial = createFrance2000World();
+  const source = initial.strategicDossiers['current-dotcom-exuberance'];
+  assert.ok(source);
+  if (!source) return;
+  let state: WorldState = {
+    ...initial,
+    strategicDossiers: {
+      ...initial.strategicDossiers,
+      'multi-advance-world': {
+        ...source,
+        id: 'multi-advance-world',
+        title: 'Suivi mondial de test',
+        actorIds: ['USA', 'DEU'],
+        scope: 'world' as const,
+        pendingDecisions: ['Surveiller la diffusion du choc.'],
+        lastAutonomousReviewAt: undefined,
+      },
+      'multi-advance-player': {
+        ...source,
+        id: 'multi-advance-player',
+        title: 'Dossier national de test',
+        actorIds: ['FRA'],
+        scope: 'player_involved' as const,
+        pendingDecisions: ['Choisir une réponse française.'],
+        lastAutonomousReviewAt: undefined,
+      },
+    },
+  };
+  for (const month of [2, 3, 4]) {
+    const nextDate = `2000-${String(month).padStart(2, '0')}-01` as ISODate;
+    state = advanceWorld(state, nextDate).state;
+    const autonomy = createWorldPulseRequest(state, state.actions.length, 1, `multi-advance-${month}`).pulses
+      .find((pulse) => pulse.kind === 'world_autonomy');
+    assert.ok(autonomy?.context.strategicDossierQueue.some((review) => review.dossierId === 'multi-advance-player'));
+    assert.ok(autonomy?.context.worldDossierQueue.some((review) => review.dossierId === 'multi-advance-world'));
+    assert.equal(autonomy?.context.strategicDossierQueue.some((review) => review.dossierId === 'multi-advance-world'), false);
+    assert.equal(autonomy?.context.worldDossierQueue.some((review) => review.dossierId === 'multi-advance-player'), false);
+  }
+  assert.equal(state.currentDate, '2000-04-01');
+  assert.ok(state.strategicDossiers['multi-advance-world']);
+  assert.ok(state.strategicDossiers['multi-advance-player']);
 });
 
 test('le moteur limite les conséquences systémiques simultanées à quatre dossiers', () => {
