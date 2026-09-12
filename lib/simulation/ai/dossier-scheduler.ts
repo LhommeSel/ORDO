@@ -28,6 +28,22 @@ export type DossierReviewSchedule = {
 
 const hasDateAfter = (date: ISODate, reference: ISODate) => date > reference;
 
+/**
+ * Ordre de rotation déterministe pour les dossiers ex æquo.
+ *
+ * La file stratégique est volontairement plafonnée : lorsque plusieurs
+ * dossiers majeurs réclament une revue en même temps, un simple tri par
+ * urgence pouvait laisser les derniers de la liste hors contexte indéfiniment
+ * si l'IA ne produisait pas de proposition sur les premiers. On fait donc
+ * tourner les ex æquo chaque mois, sans ajouter de curseur dans la sauvegarde
+ * ni introduire d'aléa non rejouable.
+ */
+function rotationRank(month: string, dossierId: string) {
+  let hash = 2166136261;
+  for (const character of `${month}:${dossierId}`) hash = Math.imul(hash ^ character.charCodeAt(0), 16777619);
+  return hash >>> 0;
+}
+
 /** Nombre de frontières mensuelles écoulées entre deux dates ISO. */
 function monthsSince(reference: ISODate, current: ISODate) {
   const [referenceYear, referenceMonth] = reference.slice(0, 7).split('-').map(Number);
@@ -174,21 +190,28 @@ export function rankStrategicDossierReviews(state: WorldState, limit = 4): Strat
         ...(escalating && strongestSignal > 0 ? ['tendance d’escalade confirmée par un changement récent'] : []),
       ];
       return {
-        dossierId: dossier.id,
-        importance: dossier.importance,
-        urgency,
-        requiresImmediateReview: hasPendingDecision || strongestSignal >= 28 || (dossier.importance === 'critical' && strongestSignal > 0),
-        reasons,
-        actorIds: dossier.actorIds.filter((id) => Boolean(state.countries[id])).slice(0, 6),
+        review: {
+          dossierId: dossier.id,
+          importance: dossier.importance,
+          urgency,
+          requiresImmediateReview: hasPendingDecision || strongestSignal >= 28 || (dossier.importance === 'critical' && strongestSignal > 0),
+          reasons,
+          actorIds: dossier.actorIds.filter((id) => Boolean(state.countries[id])).slice(0, 6),
+        },
+        rotation: rotationRank(state.currentDate.slice(0, 7), dossier.id),
       };
     })
     // Un dossier calme n'est pas supprimé : il est seulement retiré de la voie
     // IA du mois. Il reste consultable dans l'interface et peut être épinglé.
-    .filter((review) => review.reasons.length > 0 && !(
+    .filter(({ review }) => review.reasons.length > 0 && !(
       monthsSince(state.strategicDossiers[review.dossierId].lastAutonomousReviewAt ?? state.strategicDossiers[review.dossierId].updatedAt, state.currentDate) < 2
       && !review.requiresImmediateReview
     ))
-    .sort((left, right) => right.urgency - left.urgency || left.dossierId.localeCompare(right.dossierId))
+    .sort((left, right) => Number(right.review.requiresImmediateReview) - Number(left.review.requiresImmediateReview)
+      || right.review.urgency - left.review.urgency
+      || left.rotation - right.rotation
+      || left.review.dossierId.localeCompare(right.review.dossierId))
+    .map(({ review }) => review)
     .slice(0, limit);
 }
 

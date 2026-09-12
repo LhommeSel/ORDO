@@ -768,6 +768,29 @@ test('les dossiers majeurs calmes quittent la file IA, mais une décision en att
   assert.ok(parseWorldPulseRequest(request));
 });
 
+test('la file stratégique fait tourner les dossiers majeurs ex æquo au fil des mois', () => {
+  const initial = createFrance2000World();
+  const source = initial.strategicDossiers['current-dotcom-exuberance'];
+  assert.ok(source);
+  if (!source) return;
+  const state = {
+    ...initial,
+    strategicDossiers: Object.fromEntries(Array.from({ length: 8 }, (_, index) => {
+      const id = `rotation-major-${index + 1}`;
+      return [id, {
+        ...source, id, title: `Dossier majeur en rotation ${index + 1}`, importance: 'major' as const,
+        autoTracked: true, pendingDecisions: [], lastAutonomousReviewAt: undefined, lastLocalReviewAt: undefined,
+      }];
+    })),
+  };
+  const seen = new Set<string>();
+  for (let month = 1; month <= 12; month += 1) {
+    const currentDate = `2000-${String(month).padStart(2, '0')}-01` as ISODate;
+    rankStrategicDossierReviews({ ...state, currentDate }, 4).forEach((review) => seen.add(review.dossierId));
+  }
+  assert.equal(seen.size, 8);
+});
+
 test('les voies de suivi des dossiers ont des cadences indépendantes', () => {
   const initial = createFrance2000World();
   const schedules = rankDossierReviews(initial);
