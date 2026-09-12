@@ -246,6 +246,14 @@
 .map-deployment-halo { fill: color-mix(in oklch, var(--signal-blue) 18%, transparent); stroke: color-mix(in oklch, var(--signal-blue) 70%, transparent); stroke-width: 0.8; }
 .map-deployment-dot { fill: var(--signal-blue); stroke: var(--foreground); stroke-width: 0.8; }
 .map-deployment-marker:hover .map-deployment-halo, .map-deployment-marker:focus-visible .map-deployment-halo { fill: color-mix(in oklch, var(--signal-blue) 42%, transparent); stroke: var(--foreground); stroke-width: 1.5; }
+.map-war-zone-layer { pointer-events: none; }
+.map-war-zone-marker { pointer-events: auto; cursor: pointer; outline: none; }
+.map-war-zone-ring { fill: color-mix(in oklch, var(--signal-red) 12%, transparent); stroke: color-mix(in oklch, var(--signal-red) 72%, transparent); stroke-width: 1; stroke-dasharray: 2 1; }
+.map-war-zone-dot { fill: var(--signal-red); stroke: var(--foreground); stroke-width: 0.7; }
+.map-war-zone-marker.moderate .map-war-zone-ring { stroke: var(--signal-gold); fill: color-mix(in oklch, var(--signal-gold) 12%, transparent); }
+.map-war-zone-marker.low .map-war-zone-ring { stroke: var(--signal-blue); fill: color-mix(in oklch, var(--signal-blue) 12%, transparent); }
+.map-war-zone-marker.critical .map-war-zone-ring { stroke-width: 1.4; }
+.map-war-zone-marker:hover .map-war-zone-ring, .map-war-zone-marker:focus-visible .map-war-zone-ring { stroke: var(--foreground); stroke-width: 1.8; }
 .map-controls { position: absolute; z-index: 2; top: 0.75rem; left: 0.75rem; display: grid; border: 1px solid var(--border); background: color-mix(in oklch, var(--card) 92%, transparent); }
 .map-controls button { display: grid; width: 2rem; height: 2rem; place-items: center; border-bottom: 1px solid var(--border); color: var(--foreground); }
 .map-controls button:last-child { border-bottom: 0; }
@@ -261,6 +269,7 @@
 .map-legend i.medium { background: var(--signal-gold); }
 .map-legend i.low { background: var(--signal-red); }
 .map-legend i.deployment { width: 0.55rem; height: 0.55rem; border: 1px solid var(--foreground); border-radius: 999px; background: var(--signal-blue); box-shadow: 0 0 0 3px color-mix(in oklch, var(--signal-blue) 18%, transparent); }
+.map-legend i.war-zone { width: 0.62rem; height: 0.62rem; border: 1px dashed var(--signal-red); border-radius: 999px; background: var(--signal-red); box-shadow: 0 0 0 3px color-mix(in oklch, var(--signal-red) 14%, transparent); }
 
 #diplomacy-center { display: none; }
 .event-diplomacy-button { display: flex; align-items: center; gap: 0.3rem; margin-top: 0.7rem; color: var(--primary); font-family: var(--font-geist-mono); font-size: 0.52rem; letter-spacing: 0.08em; }

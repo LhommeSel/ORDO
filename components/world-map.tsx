@@ -20,6 +20,13 @@ type WorldMapProps = {
     personnelThousands: number;
     mission: string;
   }>;
+  /** Repères des zones de guerre actives, un point par pays impliqué. */
+  warZoneMarkers?: Array<{
+    id: string;
+    countryId: string;
+    label: string;
+    intensity: 'low' | 'moderate' | 'high' | 'critical';
+  }>;
 };
 
 type MapEntity = {
@@ -35,6 +42,14 @@ type DeploymentPoint = {
   label: string;
   personnelThousands: number;
   mission: string;
+  point: [number, number];
+};
+
+type WarZonePoint = {
+  id: string;
+  countryId: string;
+  label: string;
+  intensity: 'low' | 'moderate' | 'high' | 'critical';
   point: [number, number];
 };
 
@@ -66,12 +81,13 @@ const fallbackCoordinates: Record<string, [number, number]> = {
   CYN: [33.0, 35.2], SOL: [46.0, 5.0],
 };
 
-export function WorldMap({ mode, metrics, selectedId, onSelect, playerCountryId, deploymentMarkers = [] }: WorldMapProps) {
+export function WorldMap({ mode, metrics, selectedId, onSelect, playerCountryId, deploymentMarkers = [], warZoneMarkers = [] }: WorldMapProps) {
   const [transform, setTransform] = useState({ x: 0, y: 0, k: 1 });
   const [entities, setEntities] = useState<MapEntity[]>([]);
   const [spherePath, setSpherePath] = useState<string>();
   const [graticulePath, setGraticulePath] = useState<string>();
   const [deploymentPoints, setDeploymentPoints] = useState<DeploymentPoint[]>([]);
+  const [warZonePoints, setWarZonePoints] = useState<WarZonePoint[]>([]);
   const [loadError, setLoadError] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const moved = useRef(false);
@@ -129,11 +145,19 @@ export function WorldMap({ mode, metrics, selectedId, onSelect, playerCountryId,
         })();
         return point ? [{ ...marker, point }] : [];
       }));
+      setWarZonePoints(warZoneMarkers.flatMap((marker) => {
+        const point = countryPoints.get(marker.countryId) ?? (() => {
+          const coordinates = fallbackCoordinates[marker.countryId];
+          const projected = coordinates ? projection(coordinates) : null;
+          return projected ? projected as [number, number] : undefined;
+        })();
+        return point ? [{ ...marker, point }] : [];
+      }));
       setSpherePath(path({ type: 'Sphere' }) ?? undefined);
       setGraticulePath(path(d3.geoGraticule10()) ?? undefined);
     }).catch(() => { if (!cancelled) setLoadError(true); });
     return () => { cancelled = true; };
-  }, [attempt, deploymentMarkers]);
+  }, [attempt, deploymentMarkers, warZoneMarkers]);
 
   const bound = (x: number, size: number, k: number) => Math.max(size * (1 - k), Math.min(0, x));
   const zoom = (factor: number) => setTransform((current) => {
@@ -219,6 +243,21 @@ export function WorldMap({ mode, metrics, selectedId, onSelect, playerCountryId,
               <circle className="map-deployment-halo" cx={marker.point[0]} cy={marker.point[1]} r={Math.max(5, Math.min(12, 4 + marker.personnelThousands / 12))} />
               <circle className="map-deployment-dot" cx={marker.point[0]} cy={marker.point[1]} r={3.2} />
               <title>{marker.label} · {marker.personnelThousands} k · {marker.mission}</title>
+            </g>)}
+          </g>}
+          {warZonePoints.length > 0 && <g className="map-war-zone-layer" aria-label="Zones de guerre actives">
+            {warZonePoints.map((marker) => <g
+              key={marker.id}
+              className={`map-war-zone-marker ${marker.intensity}`}
+              role="button"
+              tabIndex={0}
+              aria-label={`${marker.label} · intensité ${marker.intensity}`}
+              onClick={(event) => { event.stopPropagation(); if (!moved.current) onSelect(marker.countryId, marker.label); }}
+              onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onSelect(marker.countryId, marker.label); } }}
+            >
+              <circle className="map-war-zone-ring" cx={marker.point[0]} cy={marker.point[1]} r={Math.max(6, marker.intensity === 'critical' ? 10 : marker.intensity === 'high' ? 8 : 6)} />
+              <circle className="map-war-zone-dot" cx={marker.point[0]} cy={marker.point[1]} r={2.6} />
+              <title>{marker.label} · zone de guerre · intensité {marker.intensity}</title>
             </g>)}
           </g>}
         </g>
