@@ -1490,6 +1490,7 @@ export type SimulationStop = {
 
 export type DossierImportance = 'minor' | 'moderate' | 'major' | 'critical';
 export type DossierKind = 'conflict' | 'diplomatic_crisis' | 'economic' | 'security' | 'cooperation' | 'historical' | 'power_struggle' | 'political_transition';
+export type DossierScope = 'world' | 'national' | 'player_involved';
 
 export type DossierEntry = {
   id: string;
@@ -1530,6 +1531,10 @@ export type StrategicDossier = {
   kind: DossierKind;
   status: 'emerging' | 'active' | 'deescalating' | 'resolved';
   importance: DossierImportance;
+  /** Périmètre de suivi ; absent dans les anciennes sauvegardes et alors inféré. */
+  scope?: DossierScope;
+  /** Dossier mondial à l’origine d’une déclinaison nationale éventuelle. */
+  parentDossierId?: string;
   actorIds: EntityId[];
   regionTags: string[];
   startedAt: ISODate;

@@ -76,7 +76,7 @@ function instructionFor(item: WorldPulseRequestItem) {
     'Tu peux imaginer une suite nouvelle seulement comme évolution prospective à inscrire au monde simulé, jamais comme un fait réel extérieur à ORDO.',
     'Chaque proposition doit citer au moins un factId transmis et ne peut utiliser que des pays présents dans les faits.',
     'Les faits history-anchor:... représentent des ancrages historiques bornés. Tu ne peux concrétiser que ceux dont le statut est active et qui sont dans leur fenêtre. Si une divergence contained est signalée, ne ravive jamais l’ancrage. Si une divergence redirected est signalée, toute manifestation doit respecter cette bifurcation plutôt que reproduire mécaniquement l’histoire réelle. Renseigne historicalAnchorId seulement lorsqu’une proposition concrétise réellement l’ancrage ; sinon omets ce champ. Ne révèle pas le titre historique exact lorsque le fait ne le rend pas public.',
-    'dossierId vaut l’identifiant brut d’un dossier existant si tu le mets à jour ; si le fait cité est « dossier:current-dotcom-exuberance », écris exactement « current-dotcom-exuberance », jamais « dossier:current-dotcom-exuberance ». Il vaut null pour créer un nouveau dossier.',
+    'dossierId vaut l’identifiant brut d’un dossier existant si tu le mets à jour ; si le fait cité est « dossier:current-dotcom-exuberance », écris exactement « current-dotcom-exuberance », jamais « dossier:current-dotcom-exuberance ». Il vaut null pour créer un nouveau dossier. parentDossierId est facultatif et doit pointer vers un dossier existant lorsque tu décris une conséquence locale ou nationale d’un dossier mondial.',
     'relationEffects ne sont que des pressions limitées : elles ne signent pas un accord, ne déclenchent pas une guerre et ne modifient aucune donnée économique.',
     'Pour world_autonomy uniquement, tu peux joindre autonomousAction à une proposition si un gouvernement non joueur lance plausiblement un programme concret. C’est une intention, pas un effet immédiat : indique un actorId et des targetIds présents dans actorIds, un seul objectif précis et un domaine parmi diplomacy, economic, institutional, defense, intelligence. N’envoie jamais autonomousAction pour le pays du joueur.',
     'requiresPlayerDecision ne vaut true que pour une décision importante impliquant directement le pays du joueur ; sinon false et playerDecision null.',
@@ -94,11 +94,11 @@ function instructionFor(item: WorldPulseRequestItem) {
   return [
     ...common,
     'Mission : faire évoluer le monde hors du joueur. Cherche les dossiers actifs, tendances historiques, tensions ou stratégies nationales déjà présentes.',
-    'strategicDossierQueue est la seule file de dossiers majeurs qui réclament un réexamen maintenant. Si elle est vide, ne force aucune mise à jour de crise. Si elle contient un dossier requiresImmediateReview=true, tu peux prioriser sa progression uniquement si les faits la soutiennent.',
-    'Les dossiers majeurs absents de strategicDossierQueue sont volontairement au calme : ne les mets pas à jour, même s’ils figurent ailleurs dans les faits. Un silence est une information normale du jeu.',
-    'autonomyFocus est une rotation indépendante de régions négligées : utilise-la comme priorité d’exploration, jamais comme un fait ni comme une obligation. Réserve au moins une proposition à cette exploration quand aucun dossier de strategicDossierQueue ne réclame une réponse immédiate et que les faits le permettent.',
+    'strategicDossierQueue est la file des dossiers majeurs nationaux du pays joué ou impliquant directement le pays du joueur. worldDossierQueue est une file séparée pour les dossiers mondiaux ou nationaux d’autres pays. Respecte cette séparation : ne transforme pas un dossier mondial en décision du joueur sans lien causal.',
+    'Les dossiers majeurs absents des deux files sont volontairement au calme : ne les mets pas à jour, même s’ils figurent ailleurs dans les faits. Un silence est une information normale du jeu.',
+    'autonomyFocus est une rotation indépendante de régions négligées : utilise-la comme priorité d’exploration, jamais comme un fait ni comme une obligation. Réserve au moins une proposition à cette exploration quand aucune des deux files ne réclame une réponse immédiate et que les faits le permettent.',
     'Renvoie une ou deux propositions au plus. Au moins une doit concerner des acteurs qui ne sont pas le pays du joueur lorsque le contexte le permet.',
-    'Privilégie une progression crédible d’un dossier de la file stratégique ou une évolution issue de autonomyFocus. Crée un nouveau dossier seulement si un fait du contexte rend l’émergence plausible ; réserve major ou critical à une rupture manifestement exceptionnelle.',
+    'Privilégie une progression crédible d’un dossier de l’une des deux files ou une évolution issue de autonomyFocus. Crée un nouveau dossier seulement si un fait du contexte rend l’émergence plausible ; réserve major ou critical à une rupture manifestement exceptionnelle.',
     'Quand une évolution autonome implique une décision concrète d’un État non joueur, ajoute autonomousAction afin que le moteur puisse la mettre en file et la résoudre dans le temps. Ne transforme pas chaque dossier en programme : utilise-le seulement quand les faits et les intérêts du pays le justifient.',
     'Ne duplique pas une réaction directe aux actions récentes du joueur : cette mission est traitée par une autre voie.',
   ].join('\n');
@@ -225,7 +225,8 @@ export async function POST(request: Request) {
       const grounded = normalizedAnswer.proposals.every((proposal) => proposal.factIds.some((id) => factIds.has(id))
         && proposal.actorIds.every((id) => actorIds.has(id))
         && proposal.relationEffects.every((effect) => actorIds.has(effect.from) && actorIds.has(effect.to))
-        && (proposal.dossierId === null || factIds.has(`dossier:${proposal.dossierId}`)));
+        && (proposal.dossierId === null || factIds.has(`dossier:${proposal.dossierId}`))
+        && (proposal.parentDossierId === undefined || proposal.parentDossierId === null || factIds.has(`dossier:${proposal.parentDossierId}`)));
       if (!grounded) {
         console.error('ORDO world pulse grounding failure', { requestId: parsed.requestId, kind: item.kind });
         return { id: item.id, kind: item.kind, ok: false, message: 'La réponse de cette voie cite des éléments absents du contexte.', usage: itemUsage };

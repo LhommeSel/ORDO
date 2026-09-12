@@ -33,7 +33,7 @@ import {
   openDiplomaticDialogue, openDiplomaticDialogueForDossier, sendDiplomaticDialogueMessage, requestDiplomaticDialogueAI, addDiplomaticDialogueParticipant,
   structuralDiagnosisGroups,
   classifyAdvisorQuestion,
-  createWorldPulseRequest, executeWorldPulse, rankDossierReviews, rankStrategicDossierReviews,
+  createWorldPulseRequest, executeWorldPulse, rankDossierReviews, rankStrategicDossierReviews, rankWorldDossierReviews,
   setDossierFollowed,
   dossierDecisionRecords,
   dossierPressureProfile,
@@ -52,6 +52,7 @@ import {
   type NationalReformDomain, type PoliticalCampaignStrategy, type PreparedCommonAction, type PrototypeMeasureId, type StructuralDiagnosis, type TurnBriefing, type WorldState,
   type DiplomaticBrief, type DiplomaticMeeting, type DiplomaticAgreementDraft,
 } from '@/lib/simulation';
+import { dossierScopeFor, dossierScopeLabel } from '@/lib/simulation/dossier-scope';
 import {
   createAdvisorAIRequest,
   type AdvisorAIAnswer,
@@ -1226,10 +1227,19 @@ function DossiersPanel({ world, selectedId, onSelect, onWorldChange, onNotice, o
   const historicalIntentLabels: Record<HistoricalInterventionDirection, string> = {
     contain: 'Réduire la pression', redirect: 'Rediriger la trajectoire', accelerate: 'Accélérer la trajectoire',
   };
+  const [scopeFilter, setScopeFilter] = useState<'all' | 'player' | 'world'>('all');
   const dossiers = Object.values(world.strategicDossiers).sort((a, b) => rank[b.importance] - rank[a.importance] || b.updatedAt.localeCompare(a.updatedAt));
-  const scheduledReviews = useMemo(() => new globalThis.Map(rankStrategicDossierReviews(world).map((review) => [review.dossierId, review])), [world]);
+  const filteredDossiers = dossiers.filter((dossier) => {
+    if (scopeFilter === 'all') return true;
+    const scope = dossierScopeFor(world, dossier);
+    return scopeFilter === 'player' ? scope === 'player_involved' : scope !== 'player_involved';
+  });
+  const scheduledReviews = useMemo(() => new globalThis.Map([
+    ...rankStrategicDossierReviews(world),
+    ...rankWorldDossierReviews(world),
+  ].map((review) => [review.dossierId, review])), [world]);
   const reviewSchedules = useMemo(() => new globalThis.Map(rankDossierReviews(world).map((review) => [review.dossierId, review])), [world]);
-  const selected = dossiers.find((dossier) => dossier.id === selectedId) ?? dossiers[0];
+  const selected = filteredDossiers.find((dossier) => dossier.id === selectedId) ?? filteredDossiers[0] ?? dossiers[0];
   const updates = selected ? dossierUpdatesSinceView(world, selected.id) : [];
   const decisionRecords = selected ? dossierDecisionRecords(selected) : [];
   const diplomaticSession = selected ? Object.values(world.diplomaticSessions).find((session) => session.linkedDossierId === selected.id) : undefined;
@@ -1373,21 +1383,29 @@ function DossiersPanel({ world, selectedId, onSelect, onWorldChange, onNotice, o
   return <div className="grid gap-4 xl:grid-cols-[.72fr_1.28fr]">
     <section className="border border-border bg-card/70">
       <div className="border-b border-border p-4"><div className="flex items-center gap-2 font-semibold"><Swords className="size-4 text-primary" /> Situations suivies</div><p className="mt-1 text-xs text-muted-foreground">Un dossier conserve sa chronologie, même lorsqu’aucune notification n’interrompt le tour.</p></div>
-      <div className="divide-y divide-border/60">{dossiers.map((dossier) => {
+      <div className="flex flex-wrap gap-2 border-b border-border/70 p-3">
+        {([
+          ['all', 'Tous les dossiers'],
+          ['player', 'Joueur / national'],
+          ['world', 'Monde / autres pays'],
+        ] as const).map(([value, label]) => <Button key={value} size="sm" variant={scopeFilter === value ? 'default' : 'outline'} onClick={() => setScopeFilter(value)}>{label}</Button>)}
+      </div>
+      <div className="divide-y divide-border/60">{filteredDossiers.map((dossier) => {
         const unread = dossierUnreadCount(world, dossier.id);
         const review = scheduledReviews.get(dossier.id);
         const schedule = reviewSchedules.get(dossier.id);
+        const scope = dossierScopeFor(world, dossier);
         return <button key={dossier.id} onClick={() => onSelect(dossier.id)} className={`w-full p-4 text-left transition-colors hover:bg-muted/30 ${selected.id === dossier.id ? 'bg-muted/30' : ''}`}>
           <div className="flex items-start justify-between gap-3"><div className="font-medium">{dossier.title}</div><span className={`font-mono text-[10px] uppercase ${dossierImportanceTone[dossier.importance]}`}>{dossier.importance}</span></div>
-          <div className="mt-1 text-xs text-muted-foreground">{dossier.phase} · {dossier.updatedAt}</div>
+          <div className="mt-1 text-xs text-muted-foreground">{dossierScopeLabel(scope)} · {dossier.phase} · {dossier.updatedAt}</div>
           <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">{dossier.followed && <span className="text-primary">Épinglé</span>}{dossier.autoTracked && <span className="text-amber-300">Suivi majeur</span>}{(dossier.escalationCount ?? 0) > 0 && <span className="text-red-300">Relances : {dossier.escalationCount}</span>}{review ? <span className={review.requiresImmediateReview ? 'text-red-300' : 'text-amber-200'}>{review.requiresImmediateReview ? 'Réévaluation prioritaire' : 'Réévaluation possible'}</span> : (dossier.importance === 'major' || dossier.importance === 'critical') && <span className="text-muted-foreground">Sous surveillance · aucun signal neuf</span>}{schedule && <span className={schedule.due ? 'text-cyan-200' : 'text-muted-foreground'}>{schedule.due ? 'Revue due' : `Prochaine revue ${schedule.nextReviewAt}`}</span>}{unread > 0 && <span className="ml-auto bg-primary/15 px-2 py-0.5 text-primary">{unread} nouveau{unread > 1 ? 'x' : ''}</span>}</div>
         </button>;
-      })}</div>
+      })}{filteredDossiers.length === 0 && <div className="p-6 text-sm text-muted-foreground">Aucun dossier dans cette file pour le moment.</div>}</div>
     </section>
     <section className="space-y-4">
       <AutonomousProgramsPanel world={world} />
       <div className="border border-border bg-card/70 p-4">
-        <div className="flex flex-wrap items-start justify-between gap-3"><div><div className={`font-mono text-[10px] uppercase tracking-wider ${dossierImportanceTone[selected.importance]}`}>{selected.kind} · {selected.sleepingAt ? 'en sommeil' : selected.status}</div><h2 className="mt-1 text-xl font-semibold">{selected.title}</h2></div><div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => onWorldChange(setDossierFollowed(world, selected.id, !selected.followed))}>{selected.followed ? <PinOff className="size-4" /> : <Pin className="size-4" />}{selected.followed ? 'Ne plus épingler' : 'Épingler'}</Button>{selected.sleepingAt && <Button variant="outline" onClick={() => { onWorldChange(reactivateDossier(world, selected.id)); onNotice('Dossier réactivé dans le suivi actif.'); }}>Réactiver le dossier</Button>}{(selected.importance === 'moderate' || selected.importance === 'major' || selected.importance === 'critical') && <Button onClick={askDossierAI} disabled={dossierAIStatus === 'loading'}>{dossierAIStatus === 'loading' ? <LoaderCircle className="size-4 animate-spin" /> : <BrainCircuit className="size-4" />}Demander des options à l’IA</Button>}</div></div>
+        <div className="flex flex-wrap items-start justify-between gap-3"><div><div className={`font-mono text-[10px] uppercase tracking-wider ${dossierImportanceTone[selected.importance]}`}>{dossierScopeLabel(dossierScopeFor(world, selected))} · {selected.kind} · {selected.sleepingAt ? 'en sommeil' : selected.status}</div><h2 className="mt-1 text-xl font-semibold">{selected.title}</h2></div><div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => onWorldChange(setDossierFollowed(world, selected.id, !selected.followed))}>{selected.followed ? <PinOff className="size-4" /> : <Pin className="size-4" />}{selected.followed ? 'Ne plus épingler' : 'Épingler'}</Button>{selected.sleepingAt && <Button variant="outline" onClick={() => { onWorldChange(reactivateDossier(world, selected.id)); onNotice('Dossier réactivé dans le suivi actif.'); }}>Réactiver le dossier</Button>}{(selected.importance === 'moderate' || selected.importance === 'major' || selected.importance === 'critical') && <Button onClick={askDossierAI} disabled={dossierAIStatus === 'loading'}>{dossierAIStatus === 'loading' ? <LoaderCircle className="size-4 animate-spin" /> : <BrainCircuit className="size-4" />}Demander des options à l’IA</Button>}</div></div>
         <p className="mt-3 text-sm text-muted-foreground">{selected.publicSummary}</p>
         <div className="mt-4 grid gap-2 sm:grid-cols-4"><Stat label="Phase" value={selected.phase} /><Stat label="Tendance" value={selected.trend} /><Stat label="Acteurs" value={selected.actorIds.map((id) => world.countries[id]?.flag ?? id).join(' ')} /><Stat label="Relances" value={String(selected.escalationCount ?? 0)} detail={selected.lastEscalatedAt ? `dernière : ${selected.lastEscalatedAt}` : 'aucune'} /></div>
         {selected.playerStance && <div className="mt-3 border-l-2 border-primary pl-3 text-sm"><b>Position du joueur :</b> {selected.playerStance}</div>}

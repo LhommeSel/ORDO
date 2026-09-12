@@ -1,10 +1,12 @@
 import type { DossierImportance, ISODate, StrategicDossier, WorldAction, WorldState } from '../types';
+import { dossierScopeFor, type DossierScope } from '../dossier-scope';
 
 const importanceRank: Record<DossierImportance, number> = { minor: 0, moderate: 1, major: 2, critical: 3 };
 
 export type StrategicDossierReview = {
   dossierId: string;
   importance: Extract<DossierImportance, 'major' | 'critical'>;
+  scope: DossierScope;
   urgency: number;
   requiresImmediateReview: boolean;
   reasons: string[];
@@ -193,6 +195,7 @@ export function rankStrategicDossierReviews(state: WorldState, limit = 4): Strat
         review: {
           dossierId: dossier.id,
           importance: dossier.importance,
+          scope: dossierScopeFor(state, dossier),
           urgency,
           requiresImmediateReview: hasPendingDecision || strongestSignal >= 28 || (dossier.importance === 'critical' && strongestSignal > 0),
           reasons,
@@ -203,7 +206,61 @@ export function rankStrategicDossierReviews(state: WorldState, limit = 4): Strat
     })
     // Un dossier calme n'est pas supprimé : il est seulement retiré de la voie
     // IA du mois. Il reste consultable dans l'interface et peut être épinglé.
-    .filter(({ review }) => review.reasons.length > 0 && !(
+    .filter(({ review }) => review.scope === 'player_involved' && review.reasons.length > 0 && !(
+      monthsSince(state.strategicDossiers[review.dossierId].lastAutonomousReviewAt ?? state.strategicDossiers[review.dossierId].updatedAt, state.currentDate) < 2
+      && !review.requiresImmediateReview
+    ))
+    .sort((left, right) => Number(right.review.requiresImmediateReview) - Number(left.review.requiresImmediateReview)
+      || right.review.urgency - left.review.urgency
+      || left.rotation - right.rotation
+      || left.review.dossierId.localeCompare(right.review.dossierId))
+    .map(({ review }) => review)
+    .slice(0, limit);
+}
+
+/** File autonome des dossiers majeurs sans lien direct avec le pays joué. */
+export function rankWorldDossierReviews(state: WorldState, limit = 4): StrategicDossierReview[] {
+  return Object.values(state.strategicDossiers ?? {})
+    .filter((dossier): dossier is StrategicDossier & { importance: 'major' | 'critical' } =>
+      dossier.status !== 'resolved' && !dossier.sleepingAt && importanceRank[dossier.importance] >= importanceRank.major,
+    )
+    .map((dossier) => {
+      const lastReview = dossier.lastAutonomousReviewAt ?? dossier.updatedAt;
+      const signals = meaningfulSignalsSince(state, dossier, lastReview);
+      const scope = dossierScopeFor(state, dossier);
+      const isUnreviewed = !dossier.lastAutonomousReviewAt;
+      const hasPendingDecision = dossier.pendingDecisions.length > 0 || dossier.entries.some((entry) => entry.requiresDecision && hasDateAfter(entry.date, lastReview));
+      const strongestSignal = Math.max(0, ...signals);
+      const totalSignals = signals.reduce<number>((sum, signal) => sum + signal, 0);
+      const escalating = dossier.trend === 'escalating';
+      const urgency = Math.min(100,
+        (dossier.importance === 'critical' ? 42 : 24)
+        + (hasPendingDecision ? 42 : 0)
+        + (isUnreviewed ? 28 : 0)
+        + Math.min(32, totalSignals)
+        + (escalating && strongestSignal > 0 ? 12 : 0),
+      );
+      const reasons = [
+        ...(hasPendingDecision ? ['décision autonome à suivre'] : []),
+        ...(isUnreviewed ? ['dossier mondial encore jamais réévalué par le pouls'] : []),
+        ...(strongestSignal >= 28 ? ['action ou choc directement lié aux acteurs du dossier'] : []),
+        ...(strongestSignal > 0 && strongestSignal < 28 ? ['mouvement concret des acteurs concernés'] : []),
+        ...(escalating && strongestSignal > 0 ? ['tendance d’escalade confirmée par un changement récent'] : []),
+      ];
+      return {
+        review: {
+          dossierId: dossier.id,
+          importance: dossier.importance,
+          scope,
+          urgency,
+          requiresImmediateReview: hasPendingDecision || strongestSignal >= 28 || (dossier.importance === 'critical' && strongestSignal > 0),
+          reasons,
+          actorIds: dossier.actorIds.filter((id) => Boolean(state.countries[id])).slice(0, 6),
+        },
+        rotation: rotationRank(state.currentDate.slice(0, 7), dossier.id),
+      };
+    })
+    .filter(({ review }) => review.scope !== 'player_involved' && review.reasons.length > 0 && !(
       monthsSince(state.strategicDossiers[review.dossierId].lastAutonomousReviewAt ?? state.strategicDossiers[review.dossierId].updatedAt, state.currentDate) < 2
       && !review.requiresImmediateReview
     ))

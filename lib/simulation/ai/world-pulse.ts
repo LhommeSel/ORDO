@@ -16,6 +16,7 @@ import {
   activeMajorDossierCount,
   dossierImportanceValue,
   rankStrategicDossierReviews,
+  rankWorldDossierReviews,
   type StrategicDossierReview,
 } from './dossier-scheduler';
 import { rankWorldAttention, type WorldAttentionTarget } from './world-attention';
@@ -32,15 +33,17 @@ function pulseFacts(
   kind: WorldPulseKind,
   recentPlayerActions: WorldPulseContext['recentPlayerActions'],
   strategicDossierQueue: StrategicDossierReview[],
+  worldDossierQueue: StrategicDossierReview[],
   autonomyFocus: WorldAttentionTarget[],
 ): { facts: WorldPulseFact[]; omittedFactCount: number; approximateInputTokens: number } {
   const targetIds = new Set(recentPlayerActions.flatMap((action) => [action.actorId, ...action.targetIds]));
-  const scheduledDossierIds = new Set(strategicDossierQueue.map((review) => review.dossierId));
-  const scheduledDossierActors = new Set(strategicDossierQueue.flatMap((review) => review.actorIds));
+  const scheduledReviews = [...strategicDossierQueue, ...worldDossierQueue];
+  const scheduledDossierIds = new Set(scheduledReviews.map((review) => review.dossierId));
+  const scheduledDossierActors = new Set(scheduledReviews.flatMap((review) => review.actorIds));
   const explorationActorIds = new Set(autonomyFocus.flatMap((focus) => focus.countryIds));
   const energyPattern = /\b(énergie|energet|pétrole|petrole|gaz|hydrocarbure|carburant|raffinerie|approvisionnement)\b/i;
   const recentEnergySignal = recentPlayerActions.some((action) => action.kind === 'energy' || energyPattern.test(action.intent));
-  const scheduledEnergyDossier = strategicDossierQueue.some((review) => {
+  const scheduledEnergyDossier = scheduledReviews.some((review) => {
     const dossier = state.strategicDossiers[review.dossierId];
     return dossier ? energyPattern.test(`${dossier.title} ${dossier.publicSummary} ${dossier.entries.slice(-3).map((entry) => entry.summary).join(' ')}`) : false;
   });
@@ -99,13 +102,15 @@ function createContext(
   const player = state.countries[state.playerCountryId];
   const autonomyFocus = kind === 'world_autonomy' ? rankWorldAttention(state, recentPlayerActions) : [];
   const strategicDossierQueue = kind === 'world_autonomy' ? rankStrategicDossierReviews(state) : [];
-  const selection = pulseFacts(state, kind, recentPlayerActions, strategicDossierQueue, autonomyFocus);
+  const worldDossierQueue = kind === 'world_autonomy' ? rankWorldDossierReviews(state) : [];
+  const selection = pulseFacts(state, kind, recentPlayerActions, strategicDossierQueue, worldDossierQueue, autonomyFocus);
   const visibleActorIds = new Set(selection.facts.flatMap((fact) => fact.entityIds));
   const rankedCountries = Object.values(state.countries).slice().sort((a, b) => b.weight - a.weight).map((country) => country.id);
   const guidedCountryIds = unique([
     state.playerCountryId,
     ...recentPlayerActions.flatMap((action) => [action.actorId, ...action.targetIds]),
     ...strategicDossierQueue.flatMap((review) => review.actorIds),
+    ...worldDossierQueue.flatMap((review) => review.actorIds),
     ...autonomyFocus.flatMap((focus) => focus.countryIds),
     ...rankedCountries,
   ]).filter((id) => Boolean(state.countries[id]) && visibleActorIds.has(id)).slice(0, 16);
@@ -131,6 +136,7 @@ function createContext(
     recentPlayerActions,
     engineGuidance,
     strategicDossierQueue,
+    worldDossierQueue,
     autonomyFocus,
     ...selection,
   };
@@ -352,7 +358,10 @@ export function applyWorldPulseAnswer(
   const manifestedAnchorIds: string[] = [];
   const autonomousInputs: Array<{ input: AutonomousProgramInput; id: string }> = [];
   let projectedMajorCount = activeMajorDossierCount(state);
-  const scheduledDossierIds = new Set(item.context.strategicDossierQueue.map((review) => review.dossierId));
+  const scheduledDossierIds = new Set([
+    ...item.context.strategicDossierQueue,
+    ...item.context.worldDossierQueue,
+  ].map((review) => review.dossierId));
   const demotedDossierIds = new Set<string>();
 
   answer.proposals.forEach((proposal, index) => {
@@ -382,6 +391,11 @@ export function applyWorldPulseAnswer(
     // monde a changé depuis la compilation du contexte IA.
     if (requestedDossierId !== null && !existing) return;
     const dossierId = existing ? existing.id : `${item.id}-dossier-${index + 1}`;
+    const requestedParentDossierId = proposal.parentDossierId
+      ? normalizeWorldPulseDossierId(proposal.parentDossierId)
+      : null;
+    const parentDossierId = requestedParentDossierId && requestedParentDossierId !== dossierId
+      && state.strategicDossiers[requestedParentDossierId] ? requestedParentDossierId : undefined;
     const wakesSleeping = Boolean(existing?.sleepingAt);
     const currentImportance = existing?.importance;
     const raisesMajorCount = importanceRank[proposal.importance] >= importanceRank.major
@@ -453,6 +467,7 @@ export function applyWorldPulseAnswer(
             pendingDecisions,
             ...(wakesSleeping ? { sleepingAt: undefined, reactivatedAt: state.currentDate, status: 'active' as const } : {}),
             ...(decisionRecords ? { decisionRecords } : {}),
+            ...(parentDossierId ? { parentDossierId } : {}),
             ...(item.kind === 'world_autonomy' ? {
               lastAutonomousReviewAt: state.currentDate,
               // L'action de pouls va être ajoutée juste après l'état courant.
@@ -472,6 +487,7 @@ export function applyWorldPulseAnswer(
         startedAt: state.currentDate, updatedAt: state.currentDate, phase: proposal.phase.trim(), trend: proposal.trend,
         publicSummary: proposal.summary.trim(), followed: false,
         autoTracked: importanceRank[effectiveImportance] >= importanceRank.major,
+        ...(parentDossierId ? { parentDossierId } : {}),
         ...(item.kind === 'world_autonomy' ? {
           lastAutonomousReviewAt: state.currentDate,
           lastAutonomousReviewActionCount: state.actions.length + 1,

@@ -1,5 +1,5 @@
 import type { AIContextDomain } from '../simulation/ai/context';
-import type { CommonActionCategory, DossierImportance, DossierKind, ISODate } from '../simulation/types';
+import type { CommonActionCategory, DossierImportance, DossierKind, DossierScope, ISODate } from '../simulation/types';
 import type { AdvisorAIUsage } from './contracts';
 
 /**
@@ -8,7 +8,8 @@ import type { AdvisorAIUsage } from './contracts';
  * n'y a aucune action récente à interpréter. Les réponses restent purement
  * déclaratives jusqu'à leur validation par lib/simulation/ai/world-pulse.ts.
  */
-export const ORDO_WORLD_PULSE_SCHEMA_VERSION = 2 as const;
+// Version 3 ajoute les files de périmètre des dossiers et le lien parent.
+export const ORDO_WORLD_PULSE_SCHEMA_VERSION = 3 as const;
 
 export type WorldPulseKind = 'player_reaction' | 'world_autonomy';
 
@@ -40,6 +41,7 @@ export type WorldPulseAttentionTarget = {
 export type WorldPulseStrategicDossier = {
   dossierId: string;
   importance: 'major' | 'critical';
+  scope: DossierScope;
   urgency: number;
   requiresImmediateReview: boolean;
   reasons: string[];
@@ -65,6 +67,8 @@ export type WorldPulseContext = {
   recentPlayerActions: WorldPulseActionContext[];
   engineGuidance: WorldPulseActorGuidance[];
   strategicDossierQueue: WorldPulseStrategicDossier[];
+  /** Dossiers majeurs sans lien direct avec le pays joué. */
+  worldDossierQueue: WorldPulseStrategicDossier[];
   autonomyFocus: WorldPulseAttentionTarget[];
   facts: WorldPulseFact[];
   omittedFactCount: number;
@@ -96,6 +100,8 @@ export type WorldPulseRelationEffect = {
 
 export type WorldPulseProposal = {
   dossierId: string | null;
+  /** Dossier parent lorsqu’une conséquence locale est rattachée à une crise plus large. */
+  parentDossierId?: string | null;
   /** Identifiant d’un ancrage historique dont l’IA propose la manifestation. */
   historicalAnchorId?: string | null;
   title: string;
@@ -145,6 +151,9 @@ export function normalizeWorldPulseAnswerDossierIds(answer: WorldPulseAnswer): W
     proposals: answer.proposals.map((proposal) => ({
       ...proposal,
       dossierId: normalizeWorldPulseDossierId(proposal.dossierId),
+      parentDossierId: proposal.parentDossierId === undefined || proposal.parentDossierId === null
+        ? proposal.parentDossierId
+        : normalizeWorldPulseDossierId(proposal.parentDossierId),
     })),
   };
 }
@@ -209,6 +218,7 @@ function isAttentionTarget(value: unknown): value is WorldPulseAttentionTarget {
 function isStrategicDossier(value: unknown): value is WorldPulseStrategicDossier {
   return isRecord(value)
     && isText(value.dossierId, 120, 1) && (value.importance === 'major' || value.importance === 'critical')
+    && (value.scope === 'world' || value.scope === 'national' || value.scope === 'player_involved')
     && isNumber(value.urgency, 0, 100) && typeof value.requiresImmediateReview === 'boolean'
     && isTextArray(value.reasons, 5, 220) && isTextArray(value.actorIds, 6, 80);
 }
@@ -220,6 +230,7 @@ function isContext(value: unknown): value is WorldPulseContext {
     && Array.isArray(value.recentPlayerActions) && value.recentPlayerActions.length <= 16 && value.recentPlayerActions.every(isAction)
     && Array.isArray(value.engineGuidance) && value.engineGuidance.length >= 1 && value.engineGuidance.length <= 16 && value.engineGuidance.every(isGuidance)
     && Array.isArray(value.strategicDossierQueue) && value.strategicDossierQueue.length <= 4 && value.strategicDossierQueue.every(isStrategicDossier)
+    && Array.isArray(value.worldDossierQueue) && value.worldDossierQueue.length <= 4 && value.worldDossierQueue.every(isStrategicDossier)
     && Array.isArray(value.autonomyFocus) && value.autonomyFocus.length <= 6 && value.autonomyFocus.every(isAttentionTarget)
     && Array.isArray(value.facts) && value.facts.length >= 1 && value.facts.length <= 110 && value.facts.every(isFact)
     && isNumber(value.omittedFactCount, 0, 100_000) && isNumber(value.approximateInputTokens, 1, 25_000);
@@ -263,6 +274,7 @@ export function isWorldPulseAnswer(value: unknown, kind: WorldPulseKind): value 
       && (autonomousAction.operation === undefined || (typeof autonomousAction.operation === 'string'
         && ['contact', 'cooperation', 'defense_pact', 'mediation', 'information_sharing'].includes(autonomousAction.operation))));
     return (proposal.dossierId === null || isText(proposal.dossierId, 120, 1))
+      && (proposal.parentDossierId === undefined || proposal.parentDossierId === null || isText(proposal.parentDossierId, 120, 1))
       && (proposal.historicalAnchorId === undefined || proposal.historicalAnchorId === null || isText(proposal.historicalAnchorId, 120, 1))
       && isText(proposal.title, 180, 1)
       && typeof proposal.kind === 'string' && dossierKinds.includes(proposal.kind as DossierKind)
@@ -291,9 +303,10 @@ const relationEffectSchema = {
 
 const proposalSchema = {
   type: 'object', additionalProperties: false,
-  required: ['dossierId', 'historicalAnchorId', 'title', 'kind', 'importance', 'actorIds', 'regionTags', 'phase', 'trend', 'summary', 'requiresPlayerDecision', 'playerDecision', 'factIds', 'relationEffects', 'autonomousAction'],
+  required: ['dossierId', 'parentDossierId', 'historicalAnchorId', 'title', 'kind', 'importance', 'actorIds', 'regionTags', 'phase', 'trend', 'summary', 'requiresPlayerDecision', 'playerDecision', 'factIds', 'relationEffects', 'autonomousAction'],
   properties: {
     dossierId: { anyOf: [{ type: 'string', maxLength: 120 }, { type: 'null' }] },
+    parentDossierId: { anyOf: [{ type: 'string', maxLength: 120 }, { type: 'null' }] },
     historicalAnchorId: { anyOf: [{ type: 'string', maxLength: 120 }, { type: 'null' }] },
     title: { type: 'string', maxLength: 180 }, kind: { type: 'string', enum: dossierKinds }, importance: { type: 'string', enum: importance },
     actorIds: { type: 'array', minItems: 1, maxItems: 6, items: { type: 'string', maxLength: 80 } },

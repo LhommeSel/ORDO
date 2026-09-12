@@ -36,7 +36,7 @@ import { applyWorldPulseAnswer, createWorldPulseRequest, executeWorldPulse } fro
 import { parseWorldPulseRequest } from '../ai/world-pulse-contracts';
 import { runMinorEventCycle } from './minor-events';
 import { rankWorldAttention } from './ai/world-attention';
-import { activeMajorDossierCount, rankDossierReviews, rankStrategicDossierReviews } from './ai/dossier-scheduler';
+import { activeMajorDossierCount, rankDossierReviews, rankStrategicDossierReviews, rankWorldDossierReviews } from './ai/dossier-scheduler';
 import { commitWorldAction } from './ledger';
 import { addDiplomaticDialogueParticipant, applyDiplomaticDialogueAIAnswer, openDiplomaticDialogue, openDiplomaticDialogueForDossier, requestDiplomaticDialogueAI, resolveDiplomaticDialogueResponse, sendDiplomaticDialogueMessage } from './diplomacy-dialogue';
 import { applyDiplomaticMeetingAIAnswer, diplomaticBriefFromDialogue, proposeDiplomaticMeeting, requestDiplomaticMeetingAI, reviseDiplomaticAgreementDraft, signDiplomaticAgreementDraft } from './diplomatic-negotiation';
@@ -672,6 +672,33 @@ test('un pouls IA valide traverse toute la boucle et matérialise une initiative
   assert.ok(Object.values(result.state.actionPrograms).some((program) => program.actorId === 'USA' && program.linkedDossierId === 'current-dotcom-exuberance'));
 });
 
+test('une conséquence autonome peut rester rattachée à son dossier mondial parent', () => {
+  const state = createFrance2000World();
+  const request = createWorldPulseRequest(state, state.actions.length, 1, 'test-dossier-parent');
+  const autonomy = request.pulses.find((item) => item.kind === 'world_autonomy');
+  assert.ok(autonomy);
+  if (!autonomy) return;
+  const fact = autonomy.context.facts.find((item) => item.id === 'dossier:current-dotcom-exuberance');
+  assert.ok(fact);
+  if (!fact) return;
+  const applied = applyWorldPulseAnswer(state, autonomy, {
+    headline: 'Déclinaison nationale',
+    synthesis: 'Une tension globale produit une conséquence locale identifiable.',
+    requestedFactIds: [fact.id],
+    proposals: [{
+      dossierId: null,
+      parentDossierId: 'dossier:current-dotcom-exuberance',
+      title: 'Conséquence nationale de la tension technologique',
+      kind: 'economic', importance: 'moderate', actorIds: ['FRA'], regionTags: ['Europe'],
+      phase: 'Réponse nationale', trend: 'stable',
+      summary: 'Paris ouvre une revue interne liée à la tension mondiale.',
+      requiresPlayerDecision: false, playerDecision: null, factIds: [fact.id], relationEffects: [],
+    }],
+  });
+  const created = applied.state.strategicDossiers[applied.createdDossierIds[0] ?? ''];
+  assert.equal(created?.parentDossierId, 'current-dotcom-exuberance');
+});
+
 test('une réponse tardive du pouls conserve les actions faites pendant son calcul', async () => {
   const initial = createFrance2000World();
   const request = createWorldPulseRequest(initial, initial.actions.length, 1, 'test-world-pulse-rebase');
@@ -766,6 +793,50 @@ test('les dossiers majeurs calmes quittent la file IA, mais une décision en att
   const autonomy = request.pulses.find((candidate) => candidate.kind === 'world_autonomy');
   assert.ok(autonomy?.context.strategicDossierQueue.some((candidate) => candidate.dossierId === dotcom.id));
   assert.ok(parseWorldPulseRequest(request));
+});
+
+test('les files de dossiers séparent le pays joué des crises autonomes du monde', () => {
+  const initial = createFrance2000World();
+  const source = initial.strategicDossiers['current-dotcom-exuberance'];
+  assert.ok(source);
+  if (!source) return;
+  const worldDossier = {
+    ...source,
+    id: 'test-world-major',
+    title: 'Crise mondiale de démonstration',
+    actorIds: ['USA', 'DEU'],
+    scope: 'world' as const,
+    pendingDecisions: ['Choisir une trajectoire autonome.'],
+    lastAutonomousReviewAt: undefined,
+  };
+  const playerDossier = {
+    ...source,
+    id: 'test-player-major',
+    title: 'Arbitrage national de démonstration',
+    actorIds: ['FRA', 'DEU'],
+    scope: 'player_involved' as const,
+    pendingDecisions: ['Choisir une réponse française.'],
+    lastAutonomousReviewAt: undefined,
+  };
+  const state = {
+    ...initial,
+    strategicDossiers: {
+      ...initial.strategicDossiers,
+      [worldDossier.id]: worldDossier,
+      [playerDossier.id]: playerDossier,
+    },
+  };
+  const playerQueue = rankStrategicDossierReviews(state);
+  const worldQueue = rankWorldDossierReviews(state);
+  assert.ok(playerQueue.some((review) => review.dossierId === playerDossier.id));
+  assert.equal(playerQueue.some((review) => review.dossierId === worldDossier.id), false);
+  assert.ok(worldQueue.some((review) => review.dossierId === worldDossier.id));
+  assert.equal(worldQueue.some((review) => review.dossierId === playerDossier.id), false);
+  const autonomy = createWorldPulseRequest(state, state.actions.length, 1, 'test-dossier-scope').pulses
+    .find((candidate) => candidate.kind === 'world_autonomy');
+  assert.ok(autonomy?.context.strategicDossierQueue.some((review) => review.dossierId === playerDossier.id));
+  assert.ok(autonomy?.context.worldDossierQueue.some((review) => review.dossierId === worldDossier.id));
+  assert.ok(parseWorldPulseRequest(createWorldPulseRequest(state, state.actions.length, 1, 'test-dossier-scope-parse')));
 });
 
 test('la file stratégique fait tourner les dossiers majeurs ex æquo au fil des mois', () => {
