@@ -596,6 +596,7 @@ export function createWorld2000(requestedPlayerCountryId: CountryId = 'FRA'): Wo
     actionPrograms: {},
     militaryTheaters: createMilitaryTheaters2000(),
     militaryBases: createMilitaryBases2000(),
+    warZones: {},
     diplomaticSessions: {},
     diplomaticDialogues: {},
     sectors: createStrategicSectors2000(allCountries, structuralProfiles, macroEconomies, sectors),

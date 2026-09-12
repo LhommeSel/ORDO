@@ -8,6 +8,7 @@ import type {
   WorldState,
 } from '../types';
 import { militaryBasesForCountry, militaryTheatersForCountry } from '../military-theaters';
+import { warZonesForCountry } from '../war-zones';
 
 export type AIContextDomain =
   | 'overview'
@@ -235,6 +236,15 @@ export function collectFacts(state: WorldState): AIContextFact[] {
       sourcePath: `militaryBases.${country.id}`,
       statement: `${country.name}: ${militaryBases.map((base) => `base ${base.location} (${base.hostCountryId}), ${base.assignedPersonnelThousands.toFixed(1)} k/${base.capacityThousands.toFixed(1)} k, statut ${base.status}, accès ${base.access}`).join(' ; ')}.`,
     });
+    const warZones = warZonesForCountry(state, country.id);
+    if (warZones.length) add({
+      id: `country:${country.id}:war-zones`, domain: 'military',
+      entityIds: [country.id, ...warZones.flatMap((zone) => zone.countryIds)],
+      topicTags: ['militaire', 'conflit', 'front', 'zone-de-guerre', 'economie'],
+      importance: 93, confidence: 100, visibility: 'public',
+      sourcePath: `warZones.${country.id}`,
+      statement: `${country.name}: ${warZones.map((zone) => `${zone.name}, intensité ${zone.intensity}, perturbation économique ${zone.economicDisruptionPct.toFixed(0)} %, ravitaillement ${Math.round(zone.supplyMultiplier * 100)} %, statut ${zone.status}`).join(' ; ')}.`,
+    });
   }
 
   for (const [key, relation] of Object.entries(state.relations)) add({ id: `relation:${key}`, domain: 'diplomacy', entityIds: [relation.from, relation.to], topicTags: ['relation', 'confiance', 'commerce', 'securite'], importance: 82, confidence: 95, visibility: 'public', sourcePath: `relations.${key}`, statement: `${relation.from} → ${relation.to}: relation ${relation.relation.toFixed(0)}, confiance ${relation.trust.toFixed(0)}, commerce ${relation.tradeIntensity.toFixed(0)}, alignement sécuritaire ${relation.securityAlignment.toFixed(0)}.` });
@@ -270,6 +280,13 @@ export function collectFacts(state: WorldState): AIContextFact[] {
     add({ id: `dossier:${dossier.id}`, domain: 'dossier', entityIds: dossier.actorIds, topicTags: [dossier.kind, ...dossier.regionTags], importance: { minor: 45, moderate: 65, major: 85, critical: 100 }[dossier.importance], confidence: 90, visibility: 'public', sourcePath: `strategicDossiers.${dossier.id}`, observedAt: dossier.updatedAt, statement: `${dossier.title}: ${dossier.publicSummary} Phase ${dossier.phase}; tendance ${dossier.trend}; ${dossier.pendingDecisions.length} décision(s) en attente; ${dossier.escalationCount ?? 0} relance(s) du moteur${dossier.sleepingAt ? `; dossier en sommeil depuis ${dossier.sleepingAt}` : ''}.` });
     for (const entry of dossier.entries.slice(-4)) add({ id: `dossier-entry:${entry.id}`, domain: 'dossier', entityIds: entry.actorIds, topicTags: [dossier.kind, entry.importance], importance: { minor: 40, moderate: 60, major: 82, critical: 98 }[entry.importance], confidence: 90, visibility: entry.visibility === 'public' ? 'public' : entry.visibility === 'secret' ? 'secret' : 'internal', ownerCountryId: state.playerCountryId, sourcePath: `strategicDossiers.${dossier.id}.entries.${entry.id}`, observedAt: entry.date, statement: `${entry.title}: ${entry.summary}` });
   }
+  for (const zone of Object.values(state.warZones ?? {})) add({
+    id: `war-zone:${zone.id}`, domain: 'military', entityIds: zone.countryIds,
+    topicTags: ['conflit', 'front', 'zone-de-guerre', zone.intensity],
+    importance: zone.intensity === 'critical' ? 100 : zone.intensity === 'high' ? 94 : 82,
+    confidence: 100, visibility: 'public', sourcePath: `warZones.${zone.id}`, observedAt: zone.updatedAt,
+    statement: `${zone.name}: zone de guerre ${zone.status}, intensité ${zone.intensity}; pays concernés ${zone.countryIds.join(', ')}; territoires suivis ${zone.territoryIds.length}; perturbation économique ${zone.economicDisruptionPct.toFixed(0)} %; multiplicateur de ravitaillement ${Math.round(zone.supplyMultiplier * 100)} %.`,
+  });
   for (const reaction of Object.values(state.stakeholderReactions ?? {})) add({ id: `reaction:${reaction.id}`, domain: 'actor', entityIds: [reaction.countryId, reaction.groupId, reaction.targetId], topicTags: ['defiance', 'groupe', reaction.level], importance: { low: 40, moderate: 60, important: 82, critical: 100 }[reaction.level], confidence: 92, visibility: reaction.visibility === 'public' ? 'public' : reaction.visibility === 'secret' ? 'secret' : 'internal', ownerCountryId: reaction.countryId, sourcePath: `stakeholderReactions.${reaction.id}`, observedAt: reaction.updatedAt, statement: `${reaction.label}: défiance ${reaction.level}, tendance ${reaction.trend}; causes ${reaction.causes.join(', ')}.` });
   for (const actor of Object.values(state.powerActors ?? {})) if (actor.visibility !== 'unknown') add({ id: `actor:${actor.id}`, domain: 'actor', entityIds: [actor.countryId, actor.id, actor.stakeholderGroupId], topicTags: ['personnalite', actor.role, ...actor.ideologyTags], importance: Math.max(50, actor.influence), confidence: actor.visibility === 'public' ? 95 : 65, visibility: actor.visibility === 'public' ? 'public' : 'internal', ownerCountryId: actor.countryId, sourcePath: `powerActors.${actor.id}`, observedAt: actor.updatedAt, statement: `${actor.name}, ${actor.position}: objectif immédiat ${actor.immediateObjective}; personnalité ${actor.personalityTags.join(', ')}.` });
   for (const change of state.ledger.slice(-80)) add({ id: `change:${change.id}`, domain: change.path.startsWith('macro') ? 'economy' : change.path.startsWith('relations') ? 'diplomacy' : change.path.startsWith('energy') ? 'energy' : change.path.includes('dossier') ? 'dossier' : 'overview', entityIds: [change.actorId], topicTags: ['changement', ...words(change.path)], importance: change.origin === 'player' ? 88 : 58, confidence: 100, visibility: change.visibility === 'public' ? 'public' : change.visibility === 'secret' ? 'secret' : 'internal', ownerCountryId: change.actorId, sourcePath: `ledger.${change.id}`, observedAt: change.date, statement: `${compact(change.reason, 360)} (${change.path}: ${compact(change.before, 80)} → ${compact(change.after, 120)}).` });

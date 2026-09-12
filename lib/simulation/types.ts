@@ -1245,6 +1245,35 @@ export type MilitaryTheater = {
   currentOperation?: MilitaryTheaterOperation;
 };
 
+/**
+ * Zone de guerre légère : une maille opérationnelle entre le dossier
+ * diplomatique et le front tactique. Elle porte uniquement les effets
+ * économiques et logistiques nécessaires au bac à sable ; elle ne simule pas
+ * chaque bataille.
+ */
+export type WarZoneIntensity = 'low' | 'moderate' | 'high' | 'critical';
+export type WarZoneStatus = 'active' | 'resolved';
+
+export type WarZone = {
+  id: string;
+  name: string;
+  countryIds: CountryId[];
+  territoryIds: string[];
+  theaterIds: string[];
+  intensity: WarZoneIntensity;
+  economicDisruptionPct: number;
+  supplyMultiplier: number;
+  status: WarZoneStatus;
+  startedAt: ISODate;
+  updatedAt: ISODate;
+  expectedEndAt?: ISODate;
+  dossierId?: string;
+  /** Valeurs restaurées automatiquement lorsque le dossier se termine. */
+  baselineGrowthAnnualPct: Partial<Record<CountryId, number>>;
+  baselineInflationAnnualPct: Partial<Record<CountryId, number>>;
+  baselineSupplyCoverageMonths: Partial<Record<string, number>>;
+};
+
 export type WorldEffect =
   | { kind: 'date_set'; date: ISODate; reason: string; visibility?: Visibility }
   | { kind: 'processed_stop_add'; stopId: string; reason: string; visibility?: Visibility }
@@ -1297,7 +1326,9 @@ export type WorldEffect =
   | { kind: 'military_theater_add'; theater: MilitaryTheater; reason: string; visibility?: Visibility }
   | { kind: 'military_theater_patch'; theaterId: string; patch: Partial<MilitaryTheater>; reason: string; visibility?: Visibility }
   | { kind: 'military_base_add'; base: MilitaryBase; reason: string; visibility?: Visibility }
-  | { kind: 'military_base_patch'; baseId: string; patch: Partial<MilitaryBase>; reason: string; visibility?: Visibility };
+  | { kind: 'military_base_patch'; baseId: string; patch: Partial<MilitaryBase>; reason: string; visibility?: Visibility }
+  | { kind: 'war_zone_add'; warZone: WarZone; reason: string; visibility?: Visibility }
+  | { kind: 'war_zone_patch'; warZoneId: string; patch: Partial<WarZone>; reason: string; visibility?: Visibility };
 
 export type ActionDraft = {
   kind: ActionKind;
@@ -1456,6 +1487,7 @@ export type WorldState = {
   actionPrograms: Record<string, ActionProgram>;
   militaryTheaters: Record<string, MilitaryTheater>;
   militaryBases: Record<string, MilitaryBase>;
+  warZones: Record<string, WarZone>;
   diplomaticSessions: Record<string, DiplomaticSession>;
   diplomaticDialogues: Record<string, DiplomaticDialogue>;
   sectors: Record<string, StrategicSectorState>;

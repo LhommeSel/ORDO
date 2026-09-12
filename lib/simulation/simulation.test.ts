@@ -45,6 +45,7 @@ import { authorizeArmamentProspect, createAutomaticArmamentProspects, rankArmame
 import { advancePoliticalCycles, assessPoliticalSupport, choosePoliticalCampaignStrategy, politicalCampaignDecisionPrompt, politicalCycleStops } from './political-cycles';
 import { nationalReformEffects, reformStateKey } from './reforms';
 import { advanceMilitaryTheaterAccess, militaryBasesForCountry, militaryTheatersForCountry } from './military-theaters';
+import { advanceWarZones, warZonesForCountry } from './war-zones';
 
 test('le scénario 2000 charge un monde cohérent et jouable', () => {
   const state = createFrance2000World();
@@ -2074,4 +2075,38 @@ test('un même dossier majeur calme bénéficie d’un délai entre deux rééva
   assert.equal(rankStrategicDossierReviews(nextMonth).some((review) => review.dossierId === dotcom.id), false);
   const afterCooldown = { ...reviewed, currentDate: '2000-03-01' as const };
   assert.equal(rankStrategicDossierReviews(afterCooldown).some((review) => review.dossierId === dotcom.id), false);
+});
+
+test('un dossier de conflit actif crée une zone de guerre et transmet un choc temporaire', () => {
+  const initial = createFrance2000World();
+  const template = Object.values(initial.strategicDossiers)[0];
+  assert.ok(template);
+  if (!template) return;
+  const dossier = {
+    ...structuredClone(template),
+    id: 'fixture-war-zone', title: 'Crise frontalière franco-allemande', kind: 'conflict' as const,
+    status: 'active' as const, importance: 'major' as const, actorIds: ['FRA', 'DEU'],
+    regionTags: ['Europe'], phase: 'Front contesté', trend: 'escalating' as const,
+    publicSummary: 'Un affrontement régional menace les échanges et la sécurité.',
+    startedAt: '2000-01-01' as const, updatedAt: '2000-01-01' as const,
+    pendingDecisions: [], commitments: [], entries: [], relatedCurrentIds: [], relatedActionIds: [],
+  };
+  const conflictState = { ...initial, strategicDossiers: { ...initial.strategicDossiers, [dossier.id]: dossier } };
+  const baselineGrowth = conflictState.macroEconomies.FRA.realGrowthAnnualPct;
+  const created = advanceWarZones(conflictState);
+  const zone = created.warZones['war-zone-fixture-war-zone'];
+  assert.ok(zone);
+  if (!zone) return;
+  assert.equal(zone.intensity, 'high');
+  assert.deepEqual(warZonesForCountry(created, 'FRA').map((item) => item.id), [zone.id]);
+  const impacted = advanceWarZones(created);
+  assert.ok(impacted.macroEconomies.FRA.realGrowthAnnualPct < baselineGrowth);
+  assert.equal(impacted.warZones[zone.id].economicDisruptionPct, 14);
+
+  const resolved = advanceWarZones({
+    ...impacted,
+    strategicDossiers: { ...impacted.strategicDossiers, [dossier.id]: { ...dossier, status: 'resolved' as const, updatedAt: '2000-02-01' as const } },
+  });
+  assert.equal(resolved.warZones[zone.id].status, 'resolved');
+  assert.equal(resolved.macroEconomies.FRA.realGrowthAnnualPct, baselineGrowth);
 });

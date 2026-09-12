@@ -15,6 +15,7 @@ import { advanceDossierEffects } from './dossier-effects';
 import { compactWorldForSave } from './persistence';
 import { advancePoliticalCycles } from './political-cycles';
 import { advanceMilitaryTheaterAccess } from './military-theaters';
+import { advanceWarZones } from './war-zones';
 import { summarizeTurnResolution, type TurnResolutionSummary } from './core/turn-orchestrator';
 import type { ISODate, SimulationStop, WorldEffect, WorldState } from './types';
 
@@ -155,6 +156,9 @@ function simulationPhases(
     // Les dossiers actifs alimentent d'abord les canaux de transmission ; le
     // macro-modèle les absorbe ensuite pendant la même frontière mensuelle.
     { id: 'dossier-effects', advance: (state, context) => context.reachedMonthBoundary ? advanceDossierEffects(state) : state },
+    // Les conflits actifs disposent d'une maille dédiée : ils ne sont pas
+    // relégués derrière la rotation des événements secondaires.
+    { id: 'war-zones', advance: (state, context) => context.reachedMonthBoundary ? advanceWarZones(state) : state },
     { id: 'macroeconomy', advance: (state, context) => advanceMacroeconomy(state, context.elapsedMonths) },
     {
       id: 'country-autonomy',

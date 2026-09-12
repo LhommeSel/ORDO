@@ -593,6 +593,34 @@ function applyEffect(state: WorldState, action: WorldAction, effect: WorldEffect
     return appendChange(next, action, effect, `militaryBases.${effect.baseId}`, before, after);
   }
 
+  if (effect.kind === 'war_zone_add') {
+    const warZones = state.warZones ?? {};
+    const before = warZones[effect.warZone.id] ?? null;
+    const raw = before ?? effect.warZone;
+    const after = {
+      ...raw,
+      economicDisruptionPct: Number(clamp(raw.economicDisruptionPct, 0, 60).toFixed(2)),
+      supplyMultiplier: Number(clamp(raw.supplyMultiplier, 0.2, 1.2).toFixed(3)),
+    };
+    const next = { ...state, warZones: { ...warZones, [effect.warZone.id]: after } };
+    return appendChange(next, action, effect, `warZones.${effect.warZone.id}`, before, after);
+  }
+
+  if (effect.kind === 'war_zone_patch') {
+    const warZone = state.warZones?.[effect.warZoneId];
+    if (!warZone) return state;
+    const before = Object.fromEntries(Object.keys(effect.patch).map((key) => [key, warZone[key as keyof typeof warZone]]));
+    const raw = { ...warZone, ...effect.patch };
+    const afterZone = {
+      ...raw,
+      economicDisruptionPct: Number(clamp(raw.economicDisruptionPct, 0, 60).toFixed(2)),
+      supplyMultiplier: Number(clamp(raw.supplyMultiplier, 0.2, 1.2).toFixed(3)),
+    };
+    const after = Object.fromEntries(Object.keys(effect.patch).map((key) => [key, afterZone[key as keyof typeof afterZone]]));
+    const next = { ...state, warZones: { ...state.warZones, [effect.warZoneId]: afterZone } };
+    return appendChange(next, action, effect, `warZones.${effect.warZoneId}`, before, after);
+  }
+
   const product = state.armamentProducts[effect.productId];
   if (!product) return state;
   const after = { ...product, ...effect.patch };

@@ -203,6 +203,8 @@ function WorldPanel({ world, onWorldChange, onNotice }: {
 
       <EventFeedPanel feed={feed} />
 
+      <WarZonePanel world={world} />
+
       <div className="border border-border bg-card/70 p-4">
         <div className="flex items-center gap-2 font-semibold"><CheckCircle2 className="size-4 text-primary" /> Programmes en cours</div>
         <p className="mt-1 text-xs text-muted-foreground">Une intention engagée reste ici jusqu’à sa résolution. Ses moyens sont libérés automatiquement à l’issue du programme.</p>
@@ -238,6 +240,21 @@ function WorldPanel({ world, onWorldChange, onNotice }: {
         <ul className="mt-3 space-y-1 text-xs text-muted-foreground">{politicalTest.obstacles.map((item) => <li key={item}>— {item}</li>)}</ul>
       </div>
     </aside>
+  </div>;
+}
+
+const warZoneIntensityLabels = { low: 'Faible', moderate: 'Modérée', high: 'Forte', critical: 'Critique' } as const;
+const warZoneIntensityTones = { low: 'text-sky-300', moderate: 'text-amber-300', high: 'text-orange-300', critical: 'text-red-300' } as const;
+
+function WarZonePanel({ world }: { world: WorldState }) {
+  const zones = Object.values(world.warZones ?? {}).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  return <div className="border border-border bg-card/70 p-4">
+    <div className="flex items-center gap-2 font-semibold"><Shield className="size-4 text-red-300" /> Zones de guerre</div>
+    <p className="mt-1 text-xs text-muted-foreground">Une maille territoriale légère relie les conflits aux effets économiques et au ravitaillement. Elle ne simule pas chaque bataille.</p>
+    <div className="mt-4 space-y-2">{zones.length ? zones.map((zone) => <div key={zone.id} className="border border-border/70 bg-background/30 p-3">
+      <div className="flex flex-wrap items-start justify-between gap-2"><div><div className="font-medium">{zone.name}</div><div className="mt-1 text-xs text-muted-foreground">{zone.countryIds.map((id) => world.countries[id]?.name ?? id).join(' · ')} · {zone.territoryIds.length} territoire(s) suivi(s)</div></div><span className={`font-mono text-[10px] uppercase ${warZoneIntensityTones[zone.intensity]}`}>{zone.status === 'resolved' ? 'Résolue' : warZoneIntensityLabels[zone.intensity]}</span></div>
+      <div className="mt-3 grid gap-2 text-xs sm:grid-cols-3"><div><div className="text-muted-foreground">Perturbation PIB / activité</div><div className="font-mono text-amber-200">-{zone.economicDisruptionPct.toFixed(0)} %</div></div><div><div className="text-muted-foreground">Ravitaillement</div><div className="font-mono text-sky-200">{Math.round(zone.supplyMultiplier * 100)} % du nominal</div></div><div><div className="text-muted-foreground">Dernière revue</div><div className="font-mono">{zone.updatedAt}</div></div></div>
+    </div>) : <div className="border border-dashed border-border p-4 text-xs text-muted-foreground">Aucune zone de guerre structurée. Un dossier de conflit actif à au moins deux pays en créera une à la prochaine frontière mensuelle.</div>}</div>
   </div>;
 }
 

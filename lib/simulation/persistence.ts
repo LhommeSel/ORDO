@@ -315,6 +315,7 @@ export function deserializeWorld(raw: string): WorldState {
     actionPrograms: restored.actionPrograms ?? {},
     militaryTheaters: { ...baseline.militaryTheaters, ...restored.militaryTheaters },
     militaryBases: { ...baseline.militaryBases, ...restored.militaryBases },
+    warZones: { ...baseline.warZones, ...restored.warZones },
     diplomaticSessions: restored.diplomaticSessions ?? {},
     diplomaticDialogues: restored.diplomaticDialogues ?? {},
   };
