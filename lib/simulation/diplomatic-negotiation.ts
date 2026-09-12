@@ -358,7 +358,60 @@ export function requestDiplomaticMeetingAI(state: WorldState, draftId: string) {
   const counterparts = draft.participantIds.filter((id) => id !== state.playerCountryId && Boolean(state.countries[id]));
   if (!counterparts.length) return { ok: false as const, state, error: 'Aucun participant étranger ne peut répondre à ce projet.' };
   const names = counterparts.map((id) => state.countries[id]?.name ?? id).join(', ');
-  const recentTurns = dialogue.turns.slice(-8).map((item) => ({ speakerId: item.speakerId, date: item.date, kind: item.kind, publicMessage: item.publicMessage }));
+  const recentTurns = dialogue.turns.slice(-6).map((item) => ({ speakerId: item.speakerId, date: item.date, kind: item.kind, publicMessage: compact(item.publicMessage, 480) }));
+  const dossierId = dialogue.linkedDossierId ?? meetingDossierId(dialogue.id);
+  const dossier = state.strategicDossiers?.[dossierId];
+  const currentPositions = meeting.participantPositions?.length
+    ? meeting.participantPositions
+    : dialogue.lastResponse?.participantPositions ?? [];
+  const dossierContext = dossier ? {
+    id: dossier.id,
+    title: dossier.title,
+    kind: dossier.kind,
+    importance: dossier.importance,
+    phase: dossier.phase,
+    trend: dossier.trend,
+    publicSummary: compact(dossier.publicSummary, 700),
+    playerStance: compact(dossier.playerStance ?? '', 500),
+    commitments: dossier.commitments.slice(-4).map((item) => compact(item, 260)),
+    pendingDecisions: (dossier.decisionRecords?.filter((item) => item.status === 'pending').map((item) => item.prompt) ?? dossier.pendingDecisions).slice(-4).map((item) => compact(item, 260)),
+    recentEntries: dossier.entries.slice(-5).map((entry) => ({
+      date: entry.date,
+      title: compact(entry.title, 180),
+      summary: compact(entry.summary, 360),
+      importance: entry.importance,
+      actorIds: entry.actorIds,
+    })),
+  } : null;
+  const previousMeetings = (dialogue.meetingIds ?? [])
+    .map((id) => state.diplomaticMeetings?.[id])
+    .filter((item): item is DiplomaticMeeting => Boolean(item && item.id !== meeting.id))
+    .slice(-2)
+    .map((item) => ({
+      id: item.id,
+      mode: item.mode,
+      status: item.status,
+      scheduledAt: item.scheduledAt,
+      agenda: item.agenda.slice(0, 4).map((entry) => compact(entry, 160)),
+      counterpartDecision: item.counterpartDecision ?? 'pending',
+      participantPositions: (item.participantPositions ?? []).map((position) => ({
+        participantId: position.participantId,
+        kind: position.kind,
+        position: compact(position.position, 260),
+        acceptedTerms: position.acceptedTerms.slice(0, 5),
+        rejectedTerms: position.rejectedTerms.slice(0, 5),
+        conditionalTerms: position.conditionalTerms.slice(0, 5),
+      })),
+    }));
+  const participantPositionContext = currentPositions.map((position) => ({
+    participantId: position.participantId,
+    kind: position.kind,
+    position: compact(position.position, 320),
+    acceptedTerms: position.acceptedTerms.slice(0, 5),
+    rejectedTerms: position.rejectedTerms.slice(0, 5),
+    conditionalTerms: position.conditionalTerms.slice(0, 5),
+    rationale: position.rationale ? compact(position.rationale, 260) : undefined,
+  }));
   const job: GeneralAIJob = {
     id: `diplomacy-meeting:${meeting.id}:${state.sequence + 1}`,
     kind: 'diplomacy', schemaVersion: 1, priority: 'normal', budgetTier: 'standard', status: 'pending', requestedAt: state.currentDate, attempts: 0,
@@ -371,7 +424,14 @@ export function requestDiplomaticMeetingAI(state: WorldState, draftId: string) {
     ],
     context: {
       meetingId: meeting.id, draftId: draft.id, dialogueId: dialogue.id, respondingCountryId: counterparts[0], participantIds: draft.participantIds,
-      recentTurns, agenda: meeting.agenda, draft: { title: draft.title, summary: draft.summary, domain: draft.domain, terms: draft.terms, unresolvedConditions: draft.unresolvedConditions },
+      recentTurns, agenda: meeting.agenda.slice(0, 6).map((entry) => compact(entry, 220)), draft: { title: compact(draft.title, 180), summary: compact(draft.summary, 600), domain: draft.domain, terms: draft.terms, unresolvedConditions: draft.unresolvedConditions.slice(0, 6).map((entry) => compact(entry, 260)) },
+      dossierId,
+      dossierContext,
+      negotiationHistory: {
+        currentMeeting: { mode: meeting.mode, status: meeting.status, scheduledAt: meeting.scheduledAt, participantPositions: participantPositionContext },
+        previousMeetings,
+        openQuestions: dossierContext?.pendingDecisions ?? [],
+      },
       playerIntent: `Obtenir une réponse distincte de chaque participant (${names}) au projet final sans signer automatiquement.`,
     },
   };

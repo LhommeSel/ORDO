@@ -256,6 +256,38 @@ export function collectFacts(state: WorldState): AIContextFact[] {
     const last = dialogue.turns.at(-1);
     add({ id: `diplomatic-dialogue:${dialogue.id}`, domain: 'diplomacy', entityIds: dialogue.participantIds, topicTags: ['dialogue', 'diplomatie', dialogue.kind, dialogue.status], importance: dialogue.status === 'closed' ? 52 : 94, confidence: 100, visibility: 'internal', ownerCountryId: dialogue.initiatorId, sourcePath: `diplomaticDialogues.${dialogue.id}`, observedAt: dialogue.updatedAt, statement: `Dialogue ${names}: statut ${dialogue.status}, ${dialogue.turns.length} échange(s), prochain intervenant ${state.countries[dialogue.activeSpeakerId]?.name ?? dialogue.activeSpeakerId}; dernier message ${last ? compact(last.publicMessage, 360) : 'aucun'}.` });
     for (const turn of dialogue.turns.slice(-6)) add({ id: `diplomatic-dialogue-turn:${turn.id}`, domain: 'diplomacy', entityIds: dialogue.participantIds, topicTags: ['dialogue', 'message', turn.kind], importance: dialogue.status === 'awaiting_ai' ? 90 : 76, confidence: 100, visibility: 'internal', ownerCountryId: dialogue.initiatorId, sourcePath: `diplomaticDialogues.${dialogue.id}.turns.${turn.id}`, observedAt: turn.date, statement: `${state.countries[turn.speakerId]?.name ?? turn.speakerId}: ${compact(turn.publicMessage, 600)}` });
+    const participantPositions = dialogue.lastResponse?.participantPositions ?? [];
+    if (participantPositions.length) add({
+      id: `diplomatic-dialogue-positions:${dialogue.id}`,
+      domain: 'diplomacy', entityIds: dialogue.participantIds,
+      topicTags: ['dialogue', 'positions', 'contre-proposition', 'lignes rouges'],
+      importance: 92, confidence: 100, visibility: 'internal', ownerCountryId: dialogue.initiatorId,
+      sourcePath: `diplomaticDialogues.${dialogue.id}.lastResponse.participantPositions`, observedAt: dialogue.updatedAt,
+      statement: `Positions individuelles dans ${dialogue.id}: ${participantPositions.map((position) => `${state.countries[position.participantId]?.name ?? position.participantId}=${position.kind}; acquis ${position.acceptedTerms.join(', ') || 'aucun'}; refusés ${position.rejectedTerms.join(', ') || 'aucun'}; conditions ${position.conditionalTerms.join(', ') || 'aucune'}; position ${compact(position.position, 260)}`).join(' | ')}`,
+    });
+  }
+  for (const meeting of Object.values(state.diplomaticMeetings ?? {})) {
+    const names = meeting.participantIds.map((id) => state.countries[id]?.name ?? id).join(', ');
+    const positions = meeting.participantPositions ?? [];
+    add({
+      id: `diplomatic-meeting:${meeting.id}`, domain: 'diplomacy', entityIds: meeting.participantIds,
+      topicTags: ['rencontre', 'diplomatie', meeting.mode, meeting.status, meeting.counterpartDecision ?? 'pending'],
+      importance: meeting.status === 'scheduled' ? 95 : meeting.counterpartDecision === 'refused' ? 86 : 78,
+      confidence: 100, visibility: 'internal', ownerCountryId: meeting.participantIds[0],
+      sourcePath: `diplomaticMeetings.${meeting.id}`, observedAt: meeting.scheduledAt ?? meeting.proposedAt,
+      statement: `Rencontre ${names}: mode ${meeting.mode}, statut ${meeting.status}, décision ${meeting.counterpartDecision ?? 'pending'}, agenda ${meeting.agenda.join(', ') || 'à définir'}${positions.length ? `; positions : ${positions.map((position) => `${state.countries[position.participantId]?.name ?? position.participantId}=${position.kind} (${compact(position.position, 220)}; conditions ${position.conditionalTerms.join(', ') || 'aucune'})`).join(' | ')}` : '; aucune position finale enregistrée'}.`,
+    });
+  }
+  for (const draft of Object.values(state.diplomaticAgreementDrafts ?? {})) {
+    const names = draft.participantIds.map((id) => state.countries[id]?.name ?? id).join(', ');
+    add({
+      id: `diplomatic-draft:${draft.id}`, domain: 'diplomacy', entityIds: draft.participantIds,
+      topicTags: ['projet', 'accord', 'negociation', draft.domain, draft.stage, ...(draft.unresolvedConditions.length ? ['conditions-ouvertes'] : [])],
+      importance: draft.stage === 'final_proposal' ? 98 : draft.stage === 'signed' ? 84 : draft.stage === 'rejected' ? 76 : 88,
+      confidence: 100, visibility: 'internal', ownerCountryId: state.playerCountryId,
+      sourcePath: `diplomaticAgreementDrafts.${draft.id}`, observedAt: draft.updatedAt,
+      statement: `Projet « ${compact(draft.title, 180)} » entre ${names}: étape ${draft.stage}, décision ${draft.counterpartDecision ?? 'pending'}, résumé ${compact(draft.summary, 360)}; termes ${compact(Object.entries(draft.terms).map(([key, value]) => `${key}=${value}`).join(', '), 420) || 'aucun'}; conditions ouvertes ${draft.unresolvedConditions.join(' | ') || 'aucune'}.`,
+    });
   }
   for (const node of Object.values(state.energyNodes)) add({ id: `energy-node:${node.id}`, domain: 'energy', entityIds: [node.countryId], topicTags: [node.resource, 'production', 'capacite', 'reserves'], importance: 72, confidence: 82, visibility: 'public', sourcePath: `energyNodes.${node.id}`, statement: `${node.label} (${node.countryId}, ${node.resource}): production ${node.annualProduction}, capacité ${node.annualCapacity}, réserves prouvées ${node.provenReserves}, coût d'extraction ${node.extractionCost}.` });
   for (const contract of Object.values(state.energyContracts)) add({ id: `energy-contract:${contract.id}`, domain: 'energy', entityIds: [contract.sellerId, contract.buyerId], topicTags: [contract.resource, 'contrat', 'importation', 'exportation'], importance: 78, confidence: 95, visibility: contract.status === 'active' ? 'public' : 'internal', ownerCountryId: contract.buyerId, sourcePath: `energyContracts.${contract.id}`, statement: `Contrat ${contract.resource} ${contract.sellerId} → ${contract.buyerId}: volume annuel ${contract.annualVolume}, statut ${contract.status}, échéance ${contract.endDate}.` });

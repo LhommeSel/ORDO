@@ -246,6 +246,25 @@ test('une contre-proposition ouvre un dossier ciblé et différencie les relatio
   const greeceBefore = meeting.state.relations['GRC:FRA']?.relation ?? 50;
   assert.equal(meetingAnswered.state.relations['TUR:FRA']?.relation, turkeyBefore + 2);
   assert.equal(meetingAnswered.state.relations['GRC:FRA']?.relation, greeceBefore + 1);
+
+  // Une nouvelle rencontre doit recevoir le dossier et l'historique, plutôt
+  // que de repartir du seul intitulé du projet.
+  const revised = reviseDiplomaticAgreementDraft(meetingAnswered.state, meeting.draftId, {
+    summary: 'Partage des recettes sans reconnaissance de souveraineté sur les zones disputées.',
+  });
+  assert.equal(revised.ok, true);
+  if (!revised.ok) return;
+  const resumed = requestDiplomaticMeetingAI(revised.state, meeting.draftId);
+  assert.equal(resumed.ok, true);
+  if (!resumed.ok) return;
+  const resumedJob = resumed.state.aiJobs[resumed.jobId] as GeneralAIJob | undefined;
+  const resumedContext = resumedJob?.context as Record<string, unknown> | undefined;
+  assert.equal(resumedContext?.dossierId, dossier?.id);
+  const negotiationHistory = resumedContext?.negotiationHistory as { previousMeetings?: unknown[] } | undefined;
+  assert.ok(negotiationHistory && Array.isArray(negotiationHistory.previousMeetings));
+  const resumedPacket = compileContextForAIJob(resumed.state, resumedJob!);
+  assert.ok(resumedPacket.knownFacts.some((item) => item.id === `dossier:${dossier?.id}`));
+  assert.ok(resumedPacket.knownFacts.some((item) => item.id === `diplomatic-dialogue-positions:${opened.dialogueId}`));
 });
 
 test('une révision invalide la réponse précédente et permet de rouvrir un refus', () => {
