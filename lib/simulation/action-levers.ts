@@ -118,7 +118,7 @@ export function inferActionLever(category: CommonActionCategory, text: string): 
     if (/\b(austerite|consolidation|assainir|reduire|baisser|maitriser)\b.*\b(deficit|dette|depense)|\bequilibre budgetaire\b/.test(value)) return 'fiscal_consolidation';
     if (/\b(relance|stimulus|soutenir la demande|commande publique)\b/.test(value)) return 'fiscal_stimulus';
     if (/\bexport|\bprospection commerciale|\bsoutien commercial|\bvendre a l etranger/.test(value)) return 'trade_promotion';
-    if (/\b(reserve strategique|stockage|securite energetique|resilience energetique|diversifier).*(gaz|petrole|energie)|\b(gaz|petrole|energie).*(reserve|stockage|resilience)\b/.test(value)) return 'energy_resilience';
+    if (/\b(reserve strategique|stockage|securite energetique|resilience energetique|securis\w*|diversifier).*(gaz|petrole|energie)|\b(gaz|petrole|energie).*(reserve|stockage|resilience|securis\w*)\b/.test(value)) return 'energy_resilience';
     if (/\b(semi conduct|puce|electron|nucleaire|engrais|acier|pharma|chantier naval|telecom|machine outil|armement|filiere strategique)\b/.test(value)) return 'strategic_sector';
     if (/\b(reindustr|industrie|industriel|capacite de production|usine|filiere)\b/.test(value)) return 'industrial_capacity';
     return 'economic_general';

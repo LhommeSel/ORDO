@@ -236,18 +236,43 @@ function isContext(value: unknown): value is WorldPulseContext {
     && isNumber(value.omittedFactCount, 0, 100_000) && isNumber(value.approximateInputTokens, 1, 25_000);
 }
 
+/**
+ * Les onglets ouverts avant le déploiement de la séparation des dossiers
+ * peuvent encore poster les contrats v1/v2. On les élève localement vers le
+ * contrat courant afin qu'une session longue ne soit pas interrompue par un
+ * simple décalage de bundle. Les champs ajoutés sont neutres : une ancienne
+ * file stratégique est une file du pays joué, et l'ancienne version n'a pas
+ * encore de file mondiale.
+ */
+function migrateLegacyWorldPulseRequest(value: unknown): unknown {
+  if (!isRecord(value) || (value.schemaVersion !== 1 && value.schemaVersion !== 2)) return value;
+  const pulses = Array.isArray(value.pulses) ? value.pulses.map((item) => {
+    if (!isRecord(item) || !isRecord(item.context)) return item;
+    const context = item.context;
+    const strategicDossierQueue = Array.isArray(context.strategicDossierQueue)
+      ? context.strategicDossierQueue.map((review) => isRecord(review) && review.scope === undefined
+        ? { ...review, scope: 'player_involved' }
+        : review)
+      : [];
+    const worldDossierQueue = Array.isArray(context.worldDossierQueue) ? context.worldDossierQueue : [];
+    return { ...item, context: { ...context, strategicDossierQueue, worldDossierQueue } };
+  }) : value.pulses;
+  return { ...value, schemaVersion: ORDO_WORLD_PULSE_SCHEMA_VERSION, pulses };
+}
+
 export function parseWorldPulseRequest(value: unknown): WorldPulseRequest | null {
-  if (!isRecord(value) || value.schemaVersion !== ORDO_WORLD_PULSE_SCHEMA_VERSION
-    || !isText(value.requestId, 80, 8) || !isText(value.sessionId, 80, 8) || !isText(value.pulseId, 120, 8)
-    || !Array.isArray(value.pulses) || value.pulses.length < 1 || value.pulses.length > 2) return null;
-  const items = value.pulses;
+  const migrated = migrateLegacyWorldPulseRequest(value);
+  if (!isRecord(migrated) || migrated.schemaVersion !== ORDO_WORLD_PULSE_SCHEMA_VERSION
+    || !isText(migrated.requestId, 80, 8) || !isText(migrated.sessionId, 80, 8) || !isText(migrated.pulseId, 120, 8)
+    || !Array.isArray(migrated.pulses) || migrated.pulses.length < 1 || migrated.pulses.length > 2) return null;
+  const items = migrated.pulses;
   if (!items.every((item) => isRecord(item)
     && isText(item.id, 120, 1)
     && (item.kind === 'player_reaction' || item.kind === 'world_autonomy')
     && isContext(item.context))) return null;
   const kinds = new Set(items.map((item) => item.kind));
-  if (!kinds.has('world_autonomy') || kinds.size !== value.pulses.length) return null;
-  return value as WorldPulseRequest;
+  if (!kinds.has('world_autonomy') || kinds.size !== migrated.pulses.length) return null;
+  return migrated as WorldPulseRequest;
 }
 
 function isRelationEffect(value: unknown): value is WorldPulseRelationEffect {

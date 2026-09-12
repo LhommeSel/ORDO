@@ -34,11 +34,15 @@ function requestedTargetLabel(text: string) {
 
 export function interpretPlayerIntent(state: WorldState, text: string): PlayerIntent {
   const normalized = normalize(text);
-  const resource: EnergyResource | undefined = /\b(gaz|gazier|gaziere|gnl)\b/.test(normalized)
+  const resource: EnergyResource | undefined = /\b(gaz|gazi\w*|gnl)\b/.test(normalized)
     ? 'gas'
-    : /\b(petrole|petrolier|petroliere|brent|baril)\b/.test(normalized) ? 'oil' : undefined;
+    : /\b(petrol\w*|brent|baril)\b/.test(normalized) ? 'oil' : undefined;
   const energyLanguage = Boolean(resource) || /\b(energie|energetique|approvisionnement)\b/.test(normalized);
-  const contractLanguage = /\b(contrat|accord|negocier|negociation|acheter|importer|securiser|fournisseur)\b/.test(normalized);
+  // « sécurisation des approvisionnements » est une formulation courante du
+  // joueur pour demander un contrat sans employer le mot contrat. On garde
+  // une racine ciblée (securis*) pour ne pas transformer une simple question
+  // sur les importations en négociation énergétique.
+  const contractLanguage = /\b(contrat|accord|negoci\w*|acheter|importer|securis\w*|fournisseur)\b/.test(normalized);
   const kind = energyLanguage && contractLanguage ? 'energy_contract' : 'general_advice';
   const modeledId = countryMentionedInText(state, text);
   const modeled = modeledId ? state.countries[modeledId] : undefined;

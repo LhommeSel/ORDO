@@ -1508,6 +1508,54 @@ test('une demande libre identifie le pays et la ressource sans sélecteur', () =
   assert.equal(answer.plans[0].execution?.supplierId, 'DZA');
 });
 
+test('une demande de sécurisation gazière reste bien un contrat de gaz', () => {
+  const state = createFrance2000World();
+  const text = 'Demander à l’Algérie une sécurisation de nos approvisionnements gaziers pour réduire la vulnérabilité énergétique.';
+  const answer = answerAdvisorQuestion(state, text);
+  assert.equal(answer.interpretation.kind, 'energy_contract');
+  assert.equal(answer.interpretation.resource, 'gas');
+  assert.equal(answer.interpretation.targetId, 'DZA');
+  assert.equal(answer.plans.length, 1);
+  assert.equal(answer.plans[0].execution?.supplierId, 'DZA');
+  assert.equal(answer.plans[0].execution?.resource, 'gas');
+  const prepared = prepareCommonAction(state, text);
+  assert.equal(prepared.ok, true);
+  if (!prepared.ok) return;
+  assert.equal(prepared.action.lever, 'energy_resilience');
+});
+
+test('un ancien onglet de pouls v1/v2 est migré sans perdre sa mission', () => {
+  const state = createFrance2000World();
+  const current = createWorldPulseRequest(state, state.actions.length, 1, 'legacy-pulse-v2-session');
+  const legacyV2 = JSON.parse(JSON.stringify(current)) as Record<string, unknown>;
+  legacyV2.schemaVersion = 2;
+  for (const item of legacyV2.pulses as Array<Record<string, unknown>>) {
+    const context = item.context as Record<string, unknown>;
+    delete context.worldDossierQueue;
+    if (Array.isArray(context.strategicDossierQueue)) {
+      for (const review of context.strategicDossierQueue as Array<Record<string, unknown>>) delete review.scope;
+    }
+  }
+  assert.ok(parseWorldPulseRequest(legacyV2));
+
+  const prepared = prepareCommonAction(state, 'Ouvrir une coopération technologique avec l’Allemagne.');
+  assert.equal(prepared.ok, true);
+  if (!prepared.ok) return;
+  const launched = launchCommonAction(state, prepared.action);
+  assert.equal(launched.ok, true);
+  if (!launched.ok) return;
+  const currentV1 = createWorldPulseRequest(launched.state, state.actions.length, 1, 'legacy-pulse-v1-session');
+  const legacyV1 = JSON.parse(JSON.stringify(currentV1)) as Record<string, unknown>;
+  legacyV1.schemaVersion = 1;
+  for (const item of legacyV1.pulses as Array<Record<string, unknown>>) {
+    const context = item.context as Record<string, unknown>;
+    delete context.strategicDossierQueue;
+    delete context.worldDossierQueue;
+  }
+  assert.equal((legacyV1.pulses as unknown[]).length, 2);
+  assert.ok(parseWorldPulseRequest(legacyV1));
+});
+
 test('sans partenaire imposé, le moteur classe plusieurs fournisseurs réels', () => {
   const state = createFrance2000World();
   const answer = answerAdvisorQuestion(state, 'Je veux sécuriser un contrat gazier de long terme.');
