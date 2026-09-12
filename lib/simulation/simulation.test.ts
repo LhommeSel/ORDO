@@ -402,6 +402,35 @@ test('plusieurs avances successives conservent des files de dossiers joueur et m
   assert.ok(state.strategicDossiers['multi-advance-player']);
 });
 
+test('la boucle locale de douze mois fait avancer économie, monde autonome et événements mineurs', () => {
+  const initial = createFrance2000World();
+  let state: WorldState = initial;
+  let minorEvents = 0;
+  let changedBriefings = 0;
+  for (let month = 1; month <= 12; month += 1) {
+    const requestedDate = new Date(Date.UTC(2000, month, 1)).toISOString().slice(0, 10) as ISODate;
+    const before = state;
+    const result = advanceWorld(before, requestedDate);
+    assert.equal(result.audit.ok, true);
+    state = result.state;
+    minorEvents += state.actions.slice(before.actions.length).filter((action) => action.metadata?.minorEvent === true).length;
+    const briefing = buildTurnBriefing(before, state);
+    if (briefing.playerHighlights.length > 0 || briefing.worldHighlights.length > 0) changedBriefings += 1;
+    const autonomy = createWorldPulseRequest(state, state.actions.length, 1, `twelve-month-loop-${month}`).pulses
+      .find((pulse) => pulse.kind === 'world_autonomy');
+    assert.ok(autonomy);
+    if (!autonomy) continue;
+    const playerDossiers = new Set(autonomy.context.strategicDossierQueue.map((review) => review.dossierId));
+    const worldDossiers = new Set(autonomy.context.worldDossierQueue.map((review) => review.dossierId));
+    assert.equal([...playerDossiers].some((id) => worldDossiers.has(id)), false);
+    assert.ok(autonomy.context.approximateInputTokens > 0);
+  }
+  assert.equal(state.currentDate, '2001-01-01');
+  assert.ok(minorEvents >= 12);
+  assert.ok(changedBriefings >= 1);
+  assert.notEqual(state.macroEconomies.FRA.realGdpBillion2000Usd, initial.macroEconomies.FRA.realGdpBillion2000Usd);
+});
+
 test('le moteur limite les conséquences systémiques simultanées à quatre dossiers', () => {
   const state = structuredClone(createFrance2000World());
   const template = state.strategicDossiers['current-dotcom-exuberance'];
