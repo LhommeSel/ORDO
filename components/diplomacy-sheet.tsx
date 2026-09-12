@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 
-import { Bot, Check, Clock3, MessageSquareText, Route, ShieldCheck, UserRoundCog } from 'lucide-react';
+import { Bot, CalendarDays, Check, Clock3, FileText, Handshake, MessageSquareText, Route, ShieldCheck, UserRoundCog } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -71,6 +71,32 @@ type DiplomaticResponseResolution = {
   summary: string;
 };
 
+type DiplomaticBriefView = {
+  source: 'local' | 'ai';
+  generatedAt: string;
+  summary: string;
+  pointsOfAgreement: string[];
+  openPoints: string[];
+  recommendedChanges: string[];
+  suggestedMeeting?: 'official' | 'discreet' | 'technical';
+};
+
+type DiplomaticMeetingView = {
+  mode: 'official' | 'discreet' | 'technical';
+  status: string;
+  scheduledAt?: string;
+  agenda: string[];
+};
+
+type DiplomaticAgreementDraftView = {
+  title: string;
+  domain: string;
+  stage: 'framework' | 'final_proposal' | 'signed' | 'rejected';
+  summary: string;
+  terms: Record<string, string | number>;
+  unresolvedConditions: string[];
+};
+
 type QuickReply = { label: string; value: string };
 
 type DialogueSummary = {
@@ -98,6 +124,12 @@ type DiplomacySheetProps = {
   messages: SheetMessage[];
   structuredResponse?: StructuredDiplomaticResponse;
   responseResolution?: DiplomaticResponseResolution;
+  brief?: DiplomaticBriefView;
+  briefLoading?: boolean;
+  onRequestBrief?: () => void;
+  onProposeMeeting?: (mode: 'official' | 'discreet' | 'technical') => void;
+  meeting?: DiplomaticMeetingView;
+  agreementDraft?: DiplomaticAgreementDraftView;
   onResolveResponse?: (decision: 'accept' | 'refuse' | 'request_revision' | 'acknowledge') => void;
   draft: string;
   onDraftChange: (value: string) => void;
@@ -158,6 +190,8 @@ const dialogueStatusLabel = (status: string) => ({
   closed: 'Canal fermé',
 }[status] ?? status);
 
+const dialogueHasResponse = (messages: SheetMessage[]) => messages.some((message) => message.author === 'foreign');
+
 const agreementTypeLabels: Record<StructuredDiplomaticResponse['agreementType'], string> = {
   industrial_cooperation: 'Coopération industrielle', energy_cooperation: 'Coopération énergétique', information_sharing: 'Partage d’informations',
   security_cooperation: 'Coopération de sécurité', political_guarantee: 'Garantie politique',
@@ -181,6 +215,12 @@ export function DiplomacySheet({
   messages,
   structuredResponse,
   responseResolution,
+  brief,
+  briefLoading = false,
+  onRequestBrief,
+  onProposeMeeting,
+  meeting,
+  agreementDraft,
   onResolveResponse,
   draft,
   onDraftChange,
@@ -250,6 +290,17 @@ export function DiplomacySheet({
               <span className="text-3xl" aria-hidden="true">{selectedCountry.flag}</span>
               <div className="min-w-0 flex-1"><p className="font-mono text-[8px] tracking-[0.12em] text-muted-foreground">CANAL {participantCount > 2 ? 'MULTILATÉRAL' : 'BILATÉRAL'} CHIFFRÉ</p><h2>{playerCountryName} — {selectedCountry.name}</h2>{participantCount > 2 && <p className="mt-1 text-[11px] text-muted-foreground">Participants : {participantIds.filter((id) => id !== selectedCountry.id).map((id) => countries.find((country) => country.id === id)?.name ?? id).join(', ')}</p>}{statusLabel && <p className="mt-1 text-xs text-sky-300">{statusLabel}</p>}{activeSpeakerLabel && <p className="mt-1 text-xs text-amber-300">Prochain intervenant : {activeSpeakerLabel}</p>}{onAddParticipant && participantOptions.length > 0 && <div className="mt-2 flex flex-wrap items-center gap-2"><select aria-label="Ajouter un pays au canal" value={participantToAdd} onChange={(event) => setParticipantToAdd(event.target.value)} className="border border-border bg-background px-2 py-1 text-xs">{participantOptions.map((country) => <option key={country.id} value={country.id}>{country.flag} {country.name}</option>)}</select><Button type="button" size="sm" variant="outline" onClick={() => { if (participantToAdd) onAddParticipant(participantToAdd); }}>Ajouter au canal</Button></div>}</div>
             </div>
+
+            {(brief || onRequestBrief) && <section className="border-b border-border bg-muted/10 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="flex items-center gap-2 font-mono text-[9px] tracking-[0.1em] text-primary"><FileText className="size-3.5" /> SYNTHÈSE DE NÉGOCIATION</p>
+                {onRequestBrief && <Button type="button" size="sm" variant="outline" onClick={onRequestBrief} disabled={briefLoading || !dialogueHasResponse(messages)}>{briefLoading ? 'Synthèse en cours…' : 'Résumer avec l’IA'}</Button>}
+              </div>
+              {brief ? <div className="mt-2 space-y-2 text-xs"><p>{brief.summary}</p><div className="grid gap-2 sm:grid-cols-3"><div><b>Acquis</b><ul>{brief.pointsOfAgreement.map((item) => <li key={item}>— {item}</li>)}</ul></div><div><b>À régler</b><ul>{brief.openPoints.map((item) => <li key={item}>— {item}</li>)}</ul></div><div><b>Ajustements</b><ul>{brief.recommendedChanges.map((item) => <li key={item}>— {item}</li>)}</ul></div></div><p className="text-[10px] text-muted-foreground">Synthèse {brief.source === 'ai' ? 'IA' : 'locale'} · {brief.generatedAt}</p></div> : <p className="mt-2 text-xs text-muted-foreground">La synthèse sépare les lignes rouges du futur projet d’accord. Elle ne signe rien.</p>}
+              {brief && onProposeMeeting && !meeting && <div className="mt-3 flex flex-wrap gap-2 border-t border-border/70 pt-2"><span className="flex items-center gap-1 text-[10px] text-muted-foreground"><CalendarDays className="size-3" /> Convoquer une rencontre</span><Button type="button" size="sm" variant="outline" onClick={() => onProposeMeeting(brief.suggestedMeeting ?? 'official')}>Officielle</Button><Button type="button" size="sm" variant="outline" onClick={() => onProposeMeeting('discreet')}>Discrète</Button><Button type="button" size="sm" variant="outline" onClick={() => onProposeMeeting('technical')}>Technique</Button></div>}
+              {meeting && <div className="mt-3 border-t border-border/70 pt-2 text-xs"><p className="flex items-center gap-1 font-medium"><Handshake className="size-3.5 text-primary" /> Rencontre {meeting.mode === 'official' ? 'officielle' : meeting.mode === 'discreet' ? 'discrète' : 'technique'} · {meeting.status}</p><p className="mt-1 text-muted-foreground">Prévue le {meeting.scheduledAt ?? 'à confirmer'}. La rencontre produit un projet, pas une signature automatique.</p><ul className="mt-1">{meeting.agenda.map((item) => <li key={item}>— {item}</li>)}</ul></div>}
+              {agreementDraft && <div className="mt-3 border-t border-primary/30 pt-2 text-xs"><p className="font-medium">Projet d’accord · {agreementDraft.domain} · {agreementDraft.stage === 'final_proposal' ? 'proposition finale' : agreementDraft.stage}</p><p className="mt-1">{agreementDraft.summary}</p><dl className="mt-2 grid gap-1 sm:grid-cols-2">{Object.entries(agreementDraft.terms).map(([key, value]) => <div key={key}><dt className="inline text-muted-foreground">{key} : </dt><dd className="inline">{value}</dd></div>)}</dl>{agreementDraft.unresolvedConditions.length > 0 && <p className="mt-2 text-amber-200">Conditions à arbitrer : {agreementDraft.unresolvedConditions.join(' · ')}</p>}</div>}
+            </section>}
 
             {activeEvent && activeEvent.countryId === selectedId && !activeEvent.resolved && (
               <div className={`diplomatic-event-callout ${activeEvent.requirement}`}>

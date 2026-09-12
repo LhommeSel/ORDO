@@ -39,6 +39,7 @@ import { rankWorldAttention } from './ai/world-attention';
 import { activeMajorDossierCount, rankDossierReviews, rankStrategicDossierReviews } from './ai/dossier-scheduler';
 import { commitWorldAction } from './ledger';
 import { addDiplomaticDialogueParticipant, applyDiplomaticDialogueAIAnswer, openDiplomaticDialogue, openDiplomaticDialogueForDossier, requestDiplomaticDialogueAI, resolveDiplomaticDialogueResponse, sendDiplomaticDialogueMessage } from './diplomacy-dialogue';
+import { diplomaticBriefFromDialogue, proposeDiplomaticMeeting, reviseDiplomaticAgreementDraft } from './diplomatic-negotiation';
 import { validateCountryRegistry } from './data-validator';
 import { buildTurnBriefing } from './turn-briefing';
 import { queueAutonomousProgram } from './ai/autonomous-programs';
@@ -1847,6 +1848,58 @@ test('un groupe diplomatique peut accueillir un pays et faire tourner la parole 
   const recentTurns = (secondRequest.state.aiJobs[secondRequest.jobId].context as Record<string, unknown>).recentTurns as unknown[];
   assert.equal(recentTurns.length, 3);
   assert.equal(queryForAIJob(secondRequest.state, secondRequest.state.aiJobs[secondRequest.jobId]).tokenBudget, 7_500);
+});
+
+test('la synthèse et la rencontre restent séparées du contrat et sont persistantes', () => {
+  const initial = createFrance2000World();
+  const opened = openDiplomaticDialogue(initial, ['DEU'], 'Nous proposons une coopération industrielle progressive avec des garanties politiques.');
+  assert.equal(opened.ok, true);
+  if (!opened.ok) return;
+  const queued = requestDiplomaticDialogueAI(opened.state, opened.dialogueId);
+  assert.equal(queued.ok, true);
+  if (!queued.ok) return;
+  const answered = applyDiplomaticDialogueAIAnswer(queued.state, queued.jobId, {
+    headline: 'Position conditionnelle', assessment: 'Une réunion peut débloquer le calendrier.',
+    publicMessage: 'Nous pouvons avancer si le calendrier et les garanties sont précisés.', proposals: [], requestedFacts: [], contextFactIds: [], approximateInputTokens: 160,
+  }, {
+    scope: 'general_dialogue', kind: 'counter', agreementType: 'industrial_cooperation',
+    position: 'Nous sommes prêts à négocier une coopération industrielle, sous garanties.',
+    concessions: ['Partager certaines formations'], guaranteesRequested: ['Consultation préalable'],
+    conditions: ['Validation parlementaire'], redLines: ['Aucune obligation automatique'], timeline: 'Réunion sous trois mois.',
+  });
+  assert.equal(answered.ok, true);
+  if (!answered.ok) return;
+
+  const brief = diplomaticBriefFromDialogue(answered.state, opened.dialogueId);
+  assert.equal(brief.ok, true);
+  if (!brief.ok) return;
+  assert.equal(brief.brief.source, 'local');
+  assert.ok(brief.brief.openPoints.some((point) => point.includes('Validation parlementaire')));
+  assert.equal(brief.state.diplomaticDialogues[opened.dialogueId].briefIds?.length, 1);
+
+  const beforeTreaties = Object.keys(brief.state.treaties).length;
+  const meeting = proposeDiplomaticMeeting(brief.state, opened.dialogueId, 'official');
+  assert.equal(meeting.ok, true);
+  if (!meeting.ok) return;
+  const meetingId = meeting.meetingId;
+  const draftId = meeting.draftId;
+  assert.equal(typeof meetingId, 'string');
+  assert.equal(typeof draftId, 'string');
+  if (typeof meetingId !== 'string' || typeof draftId !== 'string') return;
+  assert.equal(Object.keys(meeting.state.treaties).length, beforeTreaties);
+  assert.equal(meeting.state.diplomaticMeetings[meetingId].status, 'scheduled');
+  assert.equal(meeting.state.diplomaticAgreementDrafts[draftId].stage, 'final_proposal');
+  assert.equal(meeting.state.diplomaticAgreementDrafts[draftId].domain, 'industrial');
+  assert.equal(meeting.state.diplomaticMeetings[meetingId].scheduledAt, '2000-02-01');
+
+  const revised = reviseDiplomaticAgreementDraft(meeting.state, draftId, { terms: { calendrier: 'Phase pilote après validation parlementaire.' } });
+  assert.equal(revised.ok, true);
+  if (!revised.ok) return;
+  assert.equal(revised.state.diplomaticAgreementDrafts[draftId].terms.calendrier, 'Phase pilote après validation parlementaire.');
+  const restored = deserializeWorld(serializeWorld(revised.state));
+  assert.deepEqual(restored.diplomaticBriefs, revised.state.diplomaticBriefs);
+  assert.deepEqual(restored.diplomaticMeetings, revised.state.diplomaticMeetings);
+  assert.deepEqual(restored.diplomaticAgreementDrafts, revised.state.diplomaticAgreementDrafts);
 });
 
 test('une position stratégique sans accord formel devient un dossier modéré non majeur', () => {

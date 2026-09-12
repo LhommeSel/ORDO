@@ -319,6 +319,46 @@ function applyEffect(state: WorldState, action: WorldAction, effect: WorldEffect
     return appendChange(next, action, effect, `diplomaticDialogues.${effect.dialogueId}`, dialogue, after);
   }
 
+  if (effect.kind === 'diplomatic_brief_add') {
+    const briefs = state.diplomaticBriefs ?? {};
+    const before = briefs[effect.brief.id] ?? null;
+    const after = before ?? effect.brief;
+    const next = { ...state, diplomaticBriefs: { ...briefs, [effect.brief.id]: after } };
+    return appendChange(next, action, effect, `diplomaticBriefs.${effect.brief.id}`, before, after);
+  }
+
+  if (effect.kind === 'diplomatic_meeting_add') {
+    const meetings = state.diplomaticMeetings ?? {};
+    const before = meetings[effect.meeting.id] ?? null;
+    const after = before ?? effect.meeting;
+    const next = { ...state, diplomaticMeetings: { ...meetings, [effect.meeting.id]: after } };
+    return appendChange(next, action, effect, `diplomaticMeetings.${effect.meeting.id}`, before, after);
+  }
+
+  if (effect.kind === 'diplomatic_meeting_patch') {
+    const meeting = state.diplomaticMeetings?.[effect.meetingId];
+    if (!meeting) return state;
+    const after = { ...meeting, ...effect.patch };
+    const next = { ...state, diplomaticMeetings: { ...state.diplomaticMeetings, [effect.meetingId]: after } };
+    return appendChange(next, action, effect, `diplomaticMeetings.${effect.meetingId}`, meeting, after);
+  }
+
+  if (effect.kind === 'diplomatic_agreement_draft_add') {
+    const drafts = state.diplomaticAgreementDrafts ?? {};
+    const before = drafts[effect.draft.id] ?? null;
+    const after = before ?? effect.draft;
+    const next = { ...state, diplomaticAgreementDrafts: { ...drafts, [effect.draft.id]: after } };
+    return appendChange(next, action, effect, `diplomaticAgreementDrafts.${effect.draft.id}`, before, after);
+  }
+
+  if (effect.kind === 'diplomatic_agreement_draft_patch') {
+    const draft = state.diplomaticAgreementDrafts?.[effect.draftId];
+    if (!draft) return state;
+    const after = { ...draft, ...effect.patch, updatedAt: state.currentDate };
+    const next = { ...state, diplomaticAgreementDrafts: { ...state.diplomaticAgreementDrafts, [effect.draftId]: after } };
+    return appendChange(next, action, effect, `diplomaticAgreementDrafts.${effect.draftId}`, draft, after);
+  }
+
   if (effect.kind === 'sector_patch') {
     const sector = state.sectors[effect.sectorId];
     if (!sector) return state;

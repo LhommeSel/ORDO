@@ -318,6 +318,9 @@ export function deserializeWorld(raw: string): WorldState {
     warZones: { ...baseline.warZones, ...restored.warZones },
     diplomaticSessions: restored.diplomaticSessions ?? {},
     diplomaticDialogues: restored.diplomaticDialogues ?? {},
+    diplomaticBriefs: restored.diplomaticBriefs ?? {},
+    diplomaticMeetings: restored.diplomaticMeetings ?? {},
+    diplomaticAgreementDrafts: restored.diplomaticAgreementDrafts ?? {},
   };
 }
 

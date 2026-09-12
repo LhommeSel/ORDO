@@ -440,6 +440,55 @@ export type DiplomaticDialogueResolution = {
   summary: string;
 };
 
+/** Synthèse consultative d'un dialogue. Elle ne constitue jamais un accord. */
+export type DiplomaticBrief = {
+  id: string;
+  dialogueId: string;
+  generatedAt: ISODate;
+  source: 'local' | 'ai';
+  summary: string;
+  pointsOfAgreement: string[];
+  openPoints: string[];
+  recommendedChanges: string[];
+  suggestedMeeting?: 'official' | 'discreet' | 'technical';
+};
+
+export type DiplomaticMeetingMode = 'official' | 'discreet' | 'technical';
+export type DiplomaticMeetingStatus = 'proposed' | 'scheduled' | 'completed' | 'cancelled';
+
+/** Rencontre qui prolonge le dialogue sans signer automatiquement un accord. */
+export type DiplomaticMeeting = {
+  id: string;
+  dialogueId: string;
+  participantIds: CountryId[];
+  mode: DiplomaticMeetingMode;
+  status: DiplomaticMeetingStatus;
+  proposedAt: ISODate;
+  scheduledAt?: ISODate;
+  agenda: string[];
+  outcomeSummary?: string;
+  draftId?: string;
+};
+
+export type DiplomaticAgreementDomain = 'energy' | 'defense' | 'industrial' | 'security' | 'political' | 'general';
+export type DiplomaticAgreementDraftStage = 'framework' | 'final_proposal' | 'signed' | 'rejected';
+
+/** Projet d'accord lisible : les termes sont volontairement simples et bornés. */
+export type DiplomaticAgreementDraft = {
+  id: string;
+  dialogueId: string;
+  meetingId: string;
+  participantIds: CountryId[];
+  domain: DiplomaticAgreementDomain;
+  stage: DiplomaticAgreementDraftStage;
+  title: string;
+  summary: string;
+  terms: Record<string, string | number>;
+  unresolvedConditions: string[];
+  createdAt: ISODate;
+  updatedAt: ISODate;
+};
+
 export type DiplomaticSession = {
   id: string;
   kind: 'energy_contract';
@@ -478,6 +527,9 @@ export type DiplomaticDialogue = {
   lastResponse?: DiplomaticDialogueResponse;
   resolution?: DiplomaticDialogueResolution;
   linkedDossierId?: string;
+  briefIds?: string[];
+  meetingIds?: string[];
+  agreementDraftIds?: string[];
 };
 
 export type CountryEnergyState = {
@@ -1333,6 +1385,11 @@ export type WorldEffect =
   | { kind: 'diplomatic_session_patch'; sessionId: string; patch: Partial<DiplomaticSession>; reason: string; visibility?: Visibility }
   | { kind: 'diplomatic_dialogue_add'; dialogue: DiplomaticDialogue; reason: string; visibility?: Visibility }
   | { kind: 'diplomatic_dialogue_patch'; dialogueId: string; patch: Partial<DiplomaticDialogue>; reason: string; visibility?: Visibility }
+  | { kind: 'diplomatic_brief_add'; brief: DiplomaticBrief; reason: string; visibility?: Visibility }
+  | { kind: 'diplomatic_meeting_add'; meeting: DiplomaticMeeting; reason: string; visibility?: Visibility }
+  | { kind: 'diplomatic_meeting_patch'; meetingId: string; patch: Partial<DiplomaticMeeting>; reason: string; visibility?: Visibility }
+  | { kind: 'diplomatic_agreement_draft_add'; draft: DiplomaticAgreementDraft; reason: string; visibility?: Visibility }
+  | { kind: 'diplomatic_agreement_draft_patch'; draftId: string; patch: Partial<DiplomaticAgreementDraft>; reason: string; visibility?: Visibility }
   | { kind: 'sector_patch'; sectorId: string; patch: Partial<StrategicSectorState>; reason: string; visibility?: Visibility }
   | { kind: 'sector_delta'; sectorId: string; delta: Partial<Record<'capacity' | 'utilization' | 'workloadMonths' | 'health' | 'foreignDependency' | 'technology', number>>; reason: string; visibility?: Visibility }
   | { kind: 'armament_patch'; productId: string; patch: Partial<ArmamentProduct>; reason: string; visibility?: Visibility }
@@ -1522,6 +1579,9 @@ export type WorldState = {
   warZones: Record<string, WarZone>;
   diplomaticSessions: Record<string, DiplomaticSession>;
   diplomaticDialogues: Record<string, DiplomaticDialogue>;
+  diplomaticBriefs: Record<string, DiplomaticBrief>;
+  diplomaticMeetings: Record<string, DiplomaticMeeting>;
+  diplomaticAgreementDrafts: Record<string, DiplomaticAgreementDraft>;
   sectors: Record<string, StrategicSectorState>;
   armamentProducts: Record<string, ArmamentProduct>;
   strategicDossiers: Record<string, StrategicDossier>;

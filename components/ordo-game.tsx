@@ -44,10 +44,13 @@ import {
   militaryBasesForCountry,
   activeWarZones,
   prepareMilitaryTheaterAction,
+  saveDiplomaticBrief,
+  proposeDiplomaticMeeting,
   nationalReformOptions, reformPositionLabel, reformStateKey,
   type AdvisorAnswer, type AdvisorQuestionKind, type EnergyAdministrativeOffer, type EnergyCounterpartResponse,
   type CommonActionCategory, type CountryId, type EnergyOfferAdjustment, type HistoricalInterventionDirection, type ISODate, type StrategicDossier, type StrategicPlan,
   type NationalReformDomain, type PoliticalCampaignStrategy, type PreparedCommonAction, type PrototypeMeasureId, type StructuralDiagnosis, type TurnBriefing, type WorldState,
+  type DiplomaticBrief, type DiplomaticMeeting, type DiplomaticAgreementDraft,
 } from '@/lib/simulation';
 import {
   createAdvisorAIRequest,
@@ -1479,8 +1482,12 @@ function DiplomacyPanel({ world, onWorldChange, onNotice, initialDialogueId }: {
   const [draft, setDraft] = useState('');
   const [isThinking, setIsThinking] = useState(false);
   const [lastAIUsage, setLastAIUsage] = useState<string | undefined>();
+  const [briefLoading, setBriefLoading] = useState(false);
   const autoStartedDialogueIds = useRef(new Set<string>());
   const dialogue = dialogueId ? world.diplomaticDialogues?.[dialogueId] : undefined;
+  const diplomaticBrief = dialogue?.briefIds?.map((id) => world.diplomaticBriefs?.[id]).filter((brief): brief is DiplomaticBrief => Boolean(brief)).at(-1);
+  const diplomaticMeeting = dialogue?.meetingIds?.map((id) => world.diplomaticMeetings?.[id]).filter((meeting): meeting is DiplomaticMeeting => Boolean(meeting)).at(-1);
+  const diplomaticAgreementDraft = dialogue?.agreementDraftIds?.map((id) => world.diplomaticAgreementDrafts?.[id]).filter((draft): draft is DiplomaticAgreementDraft => Boolean(draft)).at(-1);
   useEffect(() => {
     if (!initialDialogueId || !world.diplomaticDialogues?.[initialDialogueId]) return;
     const target = world.diplomaticDialogues[initialDialogueId];
@@ -1576,6 +1583,41 @@ function DiplomacyPanel({ world, onWorldChange, onNotice, initialDialogueId }: {
     } catch { onNotice('Le serveur IA est inaccessible ; aucun effet diplomatique n’a été appliqué.'); }
     finally { setIsThinking(false); }
   };
+  const requestBrief = async () => {
+    const currentDialogue = dialogue;
+    if (!currentDialogue || !currentDialogue.lastResponse || briefLoading) return;
+    const counterpartNames = currentDialogue.participantIds.filter((id) => id !== player.id).map((id) => world.countries[id]?.name ?? id).join(', ');
+    const history = currentDialogue.turns.slice(-8).map((turn) => `${world.countries[turn.speakerId]?.name ?? turn.speakerId}: ${turn.publicMessage}`).join(' | ');
+    const question = `Synthétise le dialogue diplomatique en cours avec ${counterpartNames}. Sépare clairement les points d’accord, les points encore ouverts et trois ajustements concrets avant une rencontre. Ne signe aucun accord et ne transforme pas cette demande en contrat. Échanges : ${history}`;
+    const local = answerAdvisorQuestion(worldRef.current, question, { questionKind: 'diplomacy' });
+    setBriefLoading(true);
+    try {
+      const request = createAdvisorAIRequest(worldRef.current, question, local, worldPulseSessionId());
+      const response = await fetch('/api/ai/advisor', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request) });
+      const payload = await response.json() as AdvisorAIResponse;
+      if (!payload.ok) { onNotice(`Synthèse diplomatique indisponible : ${payload.message}`); return; }
+      const answer = payload.answer;
+      const saved = saveDiplomaticBrief(worldRef.current, currentDialogue.id, {
+        source: 'ai',
+        summary: answer.synthesis || answer.keyJudgment,
+        pointsOfAgreement: answer.claims.filter((claim) => claim.status === 'fact').map((claim) => claim.text).slice(0, 4),
+        openPoints: [...answer.blindSpots, ...answer.claims.filter((claim) => claim.status === 'inference').map((claim) => claim.text)].slice(0, 6),
+        recommendedChanges: answer.options.map((option) => `${option.title} : ${option.proposal}`).slice(0, 3),
+        suggestedMeeting: answer.options.some((option) => /technique|maintenance|volume|calendrier/i.test(`${option.title} ${option.proposal}`)) ? 'technical' : 'official',
+      });
+      if (!saved.ok) { onNotice(saved.error); return; }
+      onWorldChange(saved.state);
+      onNotice(`Synthèse diplomatique enregistrée · ${payload.usage.inputTokens} entrées · ${payload.usage.outputTokens} sorties · $${payload.usage.estimatedCostUsd.toFixed(4)}.`);
+    } catch { onNotice('Le serveur IA est inaccessible ; la synthèse locale reste disponible.'); }
+    finally { setBriefLoading(false); }
+  };
+  const proposeMeeting = (mode: 'official' | 'discreet' | 'technical') => {
+    if (!dialogue) return;
+    const result = proposeDiplomaticMeeting(worldRef.current, dialogue.id, mode);
+    if (!result.ok) { onNotice(result.error); return; }
+    onWorldChange(result.state);
+    onNotice(`Rencontre ${mode === 'official' ? 'officielle' : mode === 'discreet' ? 'discrète' : 'technique'} programmée : un projet d’accord est prêt à être révisé.`);
+  };
   useEffect(() => {
     if (!initialDialogueId || !dialogue || dialogue.id !== initialDialogueId || dialogue.status !== 'awaiting_ai' || autoStartedDialogueIds.current.has(initialDialogueId)) return;
     autoStartedDialogueIds.current.add(initialDialogueId);
@@ -1649,7 +1691,7 @@ function DiplomacyPanel({ world, onWorldChange, onNotice, initialDialogueId }: {
       </div>
       {lastAIUsage && <div className="mt-3 font-mono text-[10px] text-muted-foreground">Dernier appel : {lastAIUsage}</div>}
     </section>
-    <DeferredPanel fallback={<div className="border border-border p-4 text-sm text-muted-foreground">Chargement du centre diplomatique…</div>}><DiplomacySheet open={open} onOpenChange={setOpen} countries={sheetCountries} selectedId={selectedSheetCountry.id} participantIds={dialogue?.participantIds} participantOptions={dialogue ? participantOptions : []} onAddParticipant={dialogue ? addParticipant : undefined} dialogues={recentDialogues.slice(0, 8).map((item) => ({ id: item.id, kind: item.kind, participantIds: item.participantIds, status: item.status, label: item.participantIds.filter((id) => id !== player.id).map((id) => world.countries[id]?.name ?? id).join(', ') }))} selectedDialogueId={dialogueId} onSelectDialogue={selectDialogue} onNewDialogue={openIndependentDialogue} onSelectCountry={(id) => { if (dialogue && !dialogue.participantIds.includes(id)) return; setSelectedId(id); }} selectedCountry={selectedSheetCountry} messages={messages} structuredResponse={dialogue?.lastResponse} responseResolution={dialogue?.resolution} onResolveResponse={dialogue?.status === 'awaiting_player' && dialogue?.lastResponse && !dialogue?.resolution ? resolveResponse : undefined} draft={draft} onDraftChange={setDraft} onSend={send} isThinking={isThinking} playerCountryName={player.name} participantCount={dialogue?.participantIds.length ?? (participants.length + 1)} activeSpeakerLabel={dialogue ? (world.countries[dialogue.activeSpeakerId]?.name ?? dialogue.activeSpeakerId) : undefined} statusLabel={dialogueStatusLabel} quickReplies={dialogue?.status === 'awaiting_player' ? quickReplies : []} onQuickReply={(value) => setDraft(value)} canRequestAI={Boolean(dialogue && dialogue.status === 'awaiting_ai')} onRequestAI={askAI} aiRequestLabel={aiRequestLabel} memories={memories} agreements={agreements} onResolveEvent={() => undefined} /></DeferredPanel>
+    <DeferredPanel fallback={<div className="border border-border p-4 text-sm text-muted-foreground">Chargement du centre diplomatique…</div>}><DiplomacySheet open={open} onOpenChange={setOpen} countries={sheetCountries} selectedId={selectedSheetCountry.id} participantIds={dialogue?.participantIds} participantOptions={dialogue ? participantOptions : []} onAddParticipant={dialogue ? addParticipant : undefined} dialogues={recentDialogues.slice(0, 8).map((item) => ({ id: item.id, kind: item.kind, participantIds: item.participantIds, status: item.status, label: item.participantIds.filter((id) => id !== player.id).map((id) => world.countries[id]?.name ?? id).join(', ') }))} selectedDialogueId={dialogueId} onSelectDialogue={selectDialogue} onNewDialogue={openIndependentDialogue} onSelectCountry={(id) => { if (dialogue && !dialogue.participantIds.includes(id)) return; setSelectedId(id); }} selectedCountry={selectedSheetCountry} messages={messages} structuredResponse={dialogue?.lastResponse} responseResolution={dialogue?.resolution} brief={diplomaticBrief} briefLoading={briefLoading} onRequestBrief={dialogue ? requestBrief : undefined} onProposeMeeting={dialogue ? proposeMeeting : undefined} meeting={diplomaticMeeting} agreementDraft={diplomaticAgreementDraft} onResolveResponse={dialogue?.status === 'awaiting_player' && dialogue?.lastResponse && !dialogue?.resolution ? resolveResponse : undefined} draft={draft} onDraftChange={setDraft} onSend={send} isThinking={isThinking} playerCountryName={player.name} participantCount={dialogue?.participantIds.length ?? (participants.length + 1)} activeSpeakerLabel={dialogue ? (world.countries[dialogue.activeSpeakerId]?.name ?? dialogue.activeSpeakerId) : undefined} statusLabel={dialogueStatusLabel} quickReplies={dialogue?.status === 'awaiting_player' ? quickReplies : []} onQuickReply={(value) => setDraft(value)} canRequestAI={Boolean(dialogue && dialogue.status === 'awaiting_ai')} onRequestAI={askAI} aiRequestLabel={aiRequestLabel} memories={memories} agreements={agreements} onResolveEvent={() => undefined} /></DeferredPanel>
   </div>;
 }
 

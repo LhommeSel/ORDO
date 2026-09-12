@@ -14,6 +14,8 @@ export * from './decision-data-2000';
 export * from './decision-making';
 export * from './energy';
 export * from './energy-negotiation';
+export * from './diplomacy-dialogue';
+export * from './diplomatic-negotiation';
 export * from './intent';
 export * from './engine';
 export * from './history';
