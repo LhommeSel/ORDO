@@ -15,11 +15,12 @@ import type {
   DiplomaticMeetingMode,
   DiplomaticMeetingStatus,
   DiplomaticDialogueResponse,
+  DiplomaticParticipantPosition,
   ISODate,
   WorldEffect,
   WorldState,
 } from './types';
-import type { AIDiplomaticMove } from '../ai/job-contracts';
+import type { AIDiplomaticMove, AIGenericDiplomaticMove } from '../ai/job-contracts';
 
 const addMonths = (date: ISODate, months: number): ISODate => {
   const value = new Date(`${date}T12:00:00Z`);
@@ -28,6 +29,7 @@ const addMonths = (date: ISODate, months: number): ISODate => {
 };
 
 const unique = (items: string[]) => [...new Set(items.filter(Boolean))];
+const compact = (value: string, maximum: number) => value.replace(/\s+/g, ' ').trim().slice(0, maximum);
 
 type MeetingDecision = NonNullable<DiplomaticAgreementDraft['counterpartDecision']>;
 
@@ -186,8 +188,8 @@ export function reviseDiplomaticAgreementDraft(state: WorldState, draftId: strin
 }
 
 /**
- * Demande, après la date de rencontre, la position finale agrégée des
- * participants. L'appel reste explicite et ne signe jamais le projet.
+ * Demande, après la date de rencontre, la position finale de chaque
+ * participant. L'appel reste explicite et ne signe jamais le projet.
  */
 export function requestDiplomaticMeetingAI(state: WorldState, draftId: string) {
   const draft = state.diplomaticAgreementDrafts?.[draftId];
@@ -216,7 +218,7 @@ export function requestDiplomaticMeetingAI(state: WorldState, draftId: string) {
     context: {
       meetingId: meeting.id, draftId: draft.id, dialogueId: dialogue.id, respondingCountryId: counterparts[0], participantIds: draft.participantIds,
       recentTurns, agenda: meeting.agenda, draft: { title: draft.title, summary: draft.summary, domain: draft.domain, terms: draft.terms, unresolvedConditions: draft.unresolvedConditions },
-      playerIntent: `Obtenir la réponse agrégée de ${names} au projet final sans signer automatiquement.`,
+      playerIntent: `Obtenir une réponse distincte de chaque participant (${names}) au projet final sans signer automatiquement.`,
     },
   };
   return { ok: true as const, state: enqueueAIJob(state, job), jobId: job.id, meetingId: meeting.id };
@@ -237,43 +239,106 @@ export function applyDiplomaticMeetingAIAnswer(state: WorldState, jobId: string,
   if (meeting.status !== 'scheduled' || draft.stage !== 'final_proposal') return { ok: false as const, state, error: 'Cette rencontre ne peut plus recevoir de réponse.' };
   const publicMessage = outcome.publicMessage.trim() || outcome.assessment.trim().slice(0, 800) || 'Les participants réservent leur position.';
   const normalized = move ? normalizeDialogueMove(move, publicMessage) : null;
-  const constrained = normalized
-    ? enforceDiplomaticMove(state, draft.participantIds.find((id) => id !== state.playerCountryId) ?? state.playerCountryId, draft.participantIds, `${job.inputText ?? ''} ${draft.title} ${draft.summary} ${JSON.stringify(draft.terms)} ${meeting.agenda.join(' ')}`, normalized, publicMessage)
-    : null;
-  const effectiveMove = constrained?.move ?? normalized;
-  const effectivePublicMessage = constrained?.publicMessage ?? publicMessage;
-  const kind = effectiveMove?.kind;
-  const decision: MeetingDecision = kind === 'accept' ? 'accepted' : kind === 'counter' ? 'countered' : kind === 'refuse' ? 'refused' : 'pending';
+  const proposalText = `${job.inputText ?? ''} ${draft.title} ${draft.summary} ${JSON.stringify(draft.terms)} ${meeting.agenda.join(' ')}`;
+  const counterpartIds = draft.participantIds.filter((id) => id !== state.playerCountryId && Boolean(state.countries[id]));
+  const participantResults: Array<{ position: DiplomaticParticipantPosition; constrained?: ReturnType<typeof enforceDiplomaticMove> }> = normalized
+    ? counterpartIds.map((participantId) => {
+      const raw = normalized.participantResponses?.find((item) => item.participantId === participantId);
+      // Une réponse agrégée n’est suffisante que pour un dialogue bilatéral.
+      // En multilatéral, l’absence d’une position est un point ouvert, jamais
+      // un consentement implicite.
+      if (!raw && counterpartIds.length > 1 && normalized.kind !== 'refuse') {
+        const name = state.countries[participantId]?.name ?? participantId;
+        return {
+          position: {
+            participantId, kind: 'pending' as const,
+            position: `${name} n’a pas encore formulé de position distincte sur le projet.`,
+            acceptedTerms: [], rejectedTerms: [], conditionalTerms: [`Réponse explicite de ${name} requise.`],
+            rationale: 'Le moteur ne transforme pas une réponse agrégée en consentement individuel.',
+          },
+        };
+      }
+      const candidate: AIGenericDiplomaticMove = raw ? {
+        ...normalized,
+        kind: raw.kind === 'request_clarification' ? 'counter' : raw.kind,
+        position: raw.position,
+        acceptedTerms: raw.acceptedTerms,
+        rejectedTerms: raw.rejectedTerms,
+        conditionalTerms: raw.conditionalTerms,
+        participantResponses: undefined,
+      } : { ...normalized, participantResponses: undefined };
+      const constrained = enforceDiplomaticMove(state, participantId, draft.participantIds, proposalText, candidate, raw?.position ?? publicMessage);
+      const effective = constrained.move;
+      return {
+        constrained,
+        position: {
+          participantId,
+          kind: effective.kind === 'accept' || effective.kind === 'counter' || effective.kind === 'refuse' ? effective.kind : 'pending',
+          position: effective.position,
+          acceptedTerms: effective.acceptedTerms ?? effective.concessions,
+          rejectedTerms: effective.rejectedTerms ?? effective.redLines,
+          conditionalTerms: effective.conditionalTerms ?? [...effective.conditions, ...effective.guaranteesRequested],
+          rationale: constrained.overridden ? constrained.publicMessage : (raw?.rationale ?? 'Position individuelle enregistrée.'),
+        },
+      };
+    })
+    : [];
+  const participantPositions = participantResults.map((item) => item.position);
+  const allAccepted = participantPositions.length > 0 && participantPositions.every((item) => item.kind === 'accept');
+  const hasRefusal = participantPositions.some((item) => item.kind === 'refuse');
+  const decision: MeetingDecision = allAccepted ? 'accepted' : hasRefusal ? 'refused' : 'countered';
+  const aggregateKind: AIGenericDiplomaticMove['kind'] = decision === 'accepted' ? 'accept' : decision === 'refused' ? 'refuse' : 'counter';
+  const aggregatePosition = participantPositions.length > 0
+    ? compact(participantPositions.map((item) => `${state.countries[item.participantId]?.name ?? item.participantId} : ${item.position}`).join(' '), 900)
+    : normalized?.position ?? 'Les participants réservent leur position.';
+  const effectiveMove = normalized ? {
+    ...normalized,
+    kind: aggregateKind,
+    position: aggregatePosition,
+    acceptedTerms: unique(participantPositions.flatMap((item) => item.acceptedTerms)).slice(0, 5),
+    rejectedTerms: unique(participantPositions.flatMap((item) => item.rejectedTerms)).slice(0, 5),
+    conditionalTerms: unique(participantPositions.flatMap((item) => item.conditionalTerms)).slice(0, 5),
+    decisionScope: decision === 'accepted' ? 'substance' as const : 'principle' as const,
+    participantResponses: undefined,
+  } : null;
+  const allIssues = [...new Map(participantResults.flatMap((item) => item.constrained?.feasibility.issues ?? []).map((item) => [item.id, item])).values()];
+  const engineAdjusted = participantPositions.some((item) => item.kind === 'pending') || participantResults.some((item) => item.constrained?.overridden);
+  const participantSummary = participantPositions.map((item) => `${state.countries[item.participantId]?.name ?? item.participantId} : ${item.kind === 'accept' ? 'accord' : item.kind === 'refuse' ? 'refus' : item.kind === 'counter' ? 'contre-proposition' : 'position manquante'}`).join(' · ');
+  const effectivePublicMessage = counterpartIds.length > 1
+    ? compact(`${publicMessage} ${participantSummary}`, 1_150)
+    : participantResults[0]?.constrained?.publicMessage ?? publicMessage;
   const unresolved = effectiveMove ? unique([
     ...effectiveMove.conditions.map((item) => `Condition : ${item}`),
     ...effectiveMove.guaranteesRequested.map((item) => `Garantie : ${item}`),
     ...effectiveMove.redLines.map((item) => `Ligne rouge à préserver : ${item}`),
+    ...participantPositions.flatMap((item) => item.conditionalTerms.map((term) => `${state.countries[item.participantId]?.name ?? item.participantId} · Condition : ${term}`)),
+    ...participantPositions.flatMap((item) => item.rejectedTerms.map((term) => `${state.countries[item.participantId]?.name ?? item.participantId} · Terme refusé : ${term}`)),
   ]).slice(0, 8) : draft.unresolvedConditions;
-  const names = draft.participantIds.filter((id) => id !== state.playerCountryId).map((id) => state.countries[id]?.name ?? id).join(', ');
-  const summary = kind === 'accept'
-    ? `${names} accepte le projet présenté ; la signature reste une action explicite du joueur.`
-    : kind === 'counter'
-      ? `${names} formule une contre-proposition ; les points ouverts doivent être révisés avant toute signature.`
-      : kind === 'refuse'
-        ? `${names} refuse le projet final ; aucune mise en œuvre ne sera activée.`
-        : `${names} demande des précisions complémentaires avant de se prononcer définitivement.`;
+  const names = counterpartIds.map((id) => state.countries[id]?.name ?? id).join(', ');
+  const counterNames = participantPositions.filter((item) => item.kind === 'counter' || item.kind === 'pending').map((item) => state.countries[item.participantId]?.name ?? item.participantId).join(', ');
+  const summary = decision === 'accepted'
+    ? `${names} acceptent le projet présenté ; la signature reste une action explicite du joueur.`
+    : decision === 'countered'
+      ? `${counterNames || names} formulent des contre-propositions ou n’ont pas encore donné de position distincte ; aucun consensus n’est fabriqué.`
+      : `${participantPositions.filter((item) => item.kind === 'refuse').map((item) => state.countries[item.participantId]?.name ?? item.participantId).join(', ') || names} refusent le projet final ; aucune mise en œuvre ne sera activée.`;
   const nextDraft: DiplomaticAgreementDraft = { ...draft, counterpartDecision: decision, unresolvedConditions: decision === 'accepted' ? [] : unresolved, stage: decision === 'refused' ? 'rejected' : 'final_proposal', summary: `${draft.summary} ${summary}`, updatedAt: state.currentDate };
-  const nextMeeting: DiplomaticMeeting = { ...meeting, counterpartDecision: decision, status: decision === 'refused' ? 'completed' : 'scheduled', outcomeSummary: summary };
+  const nextMeeting: DiplomaticMeeting = { ...meeting, counterpartDecision: decision, participantPositions, status: decision === 'refused' ? 'completed' : 'scheduled', outcomeSummary: summary };
   const nextDialogue: DiplomaticDialogue = {
     ...dialogue, updatedAt: state.currentDate,
     turns: [...dialogue.turns, meetingTurn(dialogue.id, draft.participantIds.find((id) => id !== state.playerCountryId) ?? dialogue.initiatorId, dialogue.turns.length + 1, state.currentDate, effectivePublicMessage)],
     lastResponse: effectiveMove ? {
-      kind: effectiveMove.kind === 'request_clarification' || effectiveMove.kind === 'message' ? 'counter' : effectiveMove.kind,
+      kind: effectiveMove.kind,
       agreementType: effectiveMove.agreementType, position: effectiveMove.position, concessions: effectiveMove.concessions,
       guaranteesRequested: effectiveMove.guaranteesRequested, conditions: effectiveMove.conditions, redLines: effectiveMove.redLines, timeline: effectiveMove.timeline,
       acceptedTerms: effectiveMove.acceptedTerms, rejectedTerms: effectiveMove.rejectedTerms, conditionalTerms: effectiveMove.conditionalTerms,
-      decisionScope: effectiveMove.decisionScope, feasibilityIssues: constrained?.feasibility.issues,
+      decisionScope: effectiveMove.decisionScope, feasibilityIssues: allIssues,
+      participantPositions,
     } : dialogue.lastResponse,
   };
   const counterpartTargets = draft.participantIds.filter((id) => id !== state.playerCountryId);
   const relationDelta = decision === 'accepted' ? { relation: 2, trust: 2 } : decision === 'countered' ? { relation: 1, trust: 0 } : decision === 'refused' ? { relation: -4, trust: -3 } : { relation: 0, trust: 0 };
-  const effectiveOutcome: AIJobOutcome = constrained
-    ? { ...outcome, publicMessage: effectivePublicMessage, assessment: constrained.overridden ? `${outcome.assessment} Garde-fou moteur : la réponse a été ramenée à une contre-proposition compatible avec la chronologie et les lignes rouges.` : outcome.assessment }
+  const effectiveOutcome: AIJobOutcome = engineAdjusted
+    ? { ...outcome, publicMessage: effectivePublicMessage, assessment: `${outcome.assessment} Le moteur conserve une décision par participant et empêche tout consensus implicite${allIssues.length ? ' ; les lignes rouges et contraintes sont affichées.' : '.'}` }
     : outcome;
   const effects: WorldEffect[] = [
     { kind: 'diplomatic_agreement_draft_patch', draftId: draft.id, patch: nextDraft, reason: `La réponse IA des participants est enregistrée : ${meetingDecisionLabel[decision]}.`, visibility: 'player' },
@@ -282,7 +347,7 @@ export function applyDiplomaticMeetingAIAnswer(state: WorldState, jobId: string,
     ...(relationDelta.relation !== 0 || relationDelta.trust !== 0 ? counterpartTargets.map((targetId) => ({ kind: 'relation_delta' as const, from: targetId, to: state.playerCountryId, relation: relationDelta.relation, trust: relationDelta.trust, reason: `Réponse ${decision === 'accepted' ? 'favorable' : decision === 'countered' ? 'contre-proposée' : 'refusée'} au projet diplomatique.`, visibility: 'player' as const })) : []),
     { kind: 'ai_job_patch', jobId, patch: { status: 'resolved', resolvedAt: state.currentDate, attempts: job.attempts + 1, outcome: effectiveOutcome }, reason: 'La réponse IA de la rencontre est conservée dans la tâche.', visibility: 'debug' },
   ];
-  if (dialogue.linkedDossierId && state.strategicDossiers[dialogue.linkedDossierId]) effects.push({ kind: 'dossier_entry_add', dossierId: dialogue.linkedDossierId, entry: { id: `meeting-response-${meeting.id}-${state.sequence + 1}`, date: state.currentDate, title: `Réponse à la rencontre · ${decision}`, summary, importance: state.strategicDossiers[dialogue.linkedDossierId].importance, actorIds: draft.participantIds, requiresDecision: decision === 'countered' || decision === 'pending', visibility: 'player' }, reason: 'La réponse de la rencontre actualise le dossier sans effacer les conditions.', visibility: 'player' });
+  if (dialogue.linkedDossierId && state.strategicDossiers[dialogue.linkedDossierId]) effects.push({ kind: 'dossier_entry_add', dossierId: dialogue.linkedDossierId, entry: { id: `meeting-response-${meeting.id}-${state.sequence + 1}`, date: state.currentDate, title: `Réponse à la rencontre · ${decision}`, summary, importance: state.strategicDossiers[dialogue.linkedDossierId].importance, actorIds: draft.participantIds, requiresDecision: decision === 'countered', visibility: 'player' }, reason: 'La réponse de la rencontre actualise le dossier sans effacer les conditions.', visibility: 'player' });
   return { ok: true as const, state: commitWorldAction(state, { kind: 'diplomatic', actorId: draft.participantIds.find((id) => id !== state.playerCountryId) ?? state.playerCountryId, targetIds: counterpartTargets, origin: 'ai', visibility: 'player', intent: `Réponse des participants à ${draft.title}`, effects }), decision };
 }
 

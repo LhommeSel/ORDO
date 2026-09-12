@@ -69,6 +69,16 @@ export type AIGenericDiplomaticMove = {
   rejectedTerms?: string[];
   conditionalTerms?: string[];
   decisionScope?: 'dialogue_only' | 'principle' | 'substance';
+  /** En multilatéral, chaque participant doit pouvoir répondre séparément. */
+  participantResponses?: Array<{
+    participantId: string;
+    kind: 'accept' | 'counter' | 'refuse' | 'request_clarification';
+    position: string;
+    acceptedTerms: string[];
+    rejectedTerms: string[];
+    conditionalTerms: string[];
+    rationale: string;
+  }>;
 };
 
 export type AIDiplomaticMove = AIEnergyDiplomaticMove | AIGenericDiplomaticMove;
@@ -255,7 +265,15 @@ function isDiplomaticMove(value: unknown): value is AIDiplomaticMove | null {
     && (value.acceptedTerms === undefined || isStringArray(value.acceptedTerms, 5, 400))
     && (value.rejectedTerms === undefined || isStringArray(value.rejectedTerms, 5, 400))
     && (value.conditionalTerms === undefined || isStringArray(value.conditionalTerms, 5, 400))
-    && (value.decisionScope === undefined || (typeof value.decisionScope === 'string' && ['dialogue_only', 'principle', 'substance'].includes(value.decisionScope)));
+    && (value.decisionScope === undefined || (typeof value.decisionScope === 'string' && ['dialogue_only', 'principle', 'substance'].includes(value.decisionScope)))
+    && (value.participantResponses === undefined || (Array.isArray(value.participantResponses) && value.participantResponses.length <= 8 && value.participantResponses.every((item) => isRecord(item)
+      && isString(item.participantId, 80, 1)
+      && typeof item.kind === 'string' && ['accept', 'counter', 'refuse', 'request_clarification'].includes(item.kind)
+      && isString(item.position, 900, 1)
+      && isStringArray(item.acceptedTerms, 5, 400)
+      && isStringArray(item.rejectedTerms, 5, 400)
+      && isStringArray(item.conditionalTerms, 5, 400)
+      && isString(item.rationale, 500, 1))));
 }
 
 export function isAIJobAIModelAnswer(value: unknown, kind?: AIJobKind): value is AIJobAIModelAnswer {
@@ -361,6 +379,19 @@ const generalDiplomaticMoveSchema = {
     rejectedTerms: { type: 'array', maxItems: 5, items: { type: 'string', maxLength: 400 } },
     conditionalTerms: { type: 'array', maxItems: 5, items: { type: 'string', maxLength: 400 } },
     decisionScope: { type: 'string', enum: ['dialogue_only', 'principle', 'substance'] },
+    participantResponses: { type: 'array', maxItems: 8, items: {
+      type: 'object', additionalProperties: false,
+      required: ['participantId', 'kind', 'position', 'acceptedTerms', 'rejectedTerms', 'conditionalTerms', 'rationale'],
+      properties: {
+        participantId: { type: 'string', maxLength: 80 },
+        kind: { type: 'string', enum: ['accept', 'counter', 'refuse', 'request_clarification'] },
+        position: { type: 'string', maxLength: 900 },
+        acceptedTerms: { type: 'array', maxItems: 5, items: { type: 'string', maxLength: 400 } },
+        rejectedTerms: { type: 'array', maxItems: 5, items: { type: 'string', maxLength: 400 } },
+        conditionalTerms: { type: 'array', maxItems: 5, items: { type: 'string', maxLength: 400 } },
+        rationale: { type: 'string', maxLength: 500 },
+      },
+    } },
   },
 } as const;
 

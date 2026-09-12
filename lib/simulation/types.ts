@@ -422,6 +422,17 @@ export type DiplomaticAgreementType =
   | 'mediation'
   | 'defense_cooperation';
 
+/** Position d’un participant dans une réponse multilatérale. */
+export type DiplomaticParticipantPosition = {
+  participantId: CountryId;
+  kind: 'accept' | 'counter' | 'refuse' | 'pending';
+  position: string;
+  acceptedTerms: string[];
+  rejectedTerms: string[];
+  conditionalTerms: string[];
+  rationale?: string;
+};
+
 /** Position structurée affichée après une réponse IA dans un dialogue politique libre. */
 export type DiplomaticDialogueResponse = {
   kind: 'accept' | 'counter' | 'refuse' | 'request_clarification' | 'message';
@@ -437,6 +448,7 @@ export type DiplomaticDialogueResponse = {
   rejectedTerms?: string[];
   conditionalTerms?: string[];
   decisionScope?: 'dialogue_only' | 'principle' | 'substance';
+  participantPositions?: DiplomaticParticipantPosition[];
   /** Raisons déterministes affichées lorsque le moteur a ramené une acceptation à une contre-proposition. */
   feasibilityIssues?: Array<{
     id: string;
@@ -483,6 +495,8 @@ export type DiplomaticMeeting = {
   draftId?: string;
   /** Réponse agrégée des participants à la proposition finale. */
   counterpartDecision?: 'pending' | 'accepted' | 'countered' | 'refused';
+  /** Réponses conservées séparément pour éviter de fabriquer un consensus. */
+  participantPositions?: DiplomaticParticipantPosition[];
 };
 
 export type DiplomaticAgreementDomain = 'energy' | 'defense' | 'industrial' | 'security' | 'political' | 'general';

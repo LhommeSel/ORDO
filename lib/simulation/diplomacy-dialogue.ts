@@ -43,6 +43,7 @@ export function normalizeDialogueMove(move: AIDiplomaticMove, publicMessage: str
       rejectedTerms: move.rejectedTerms ?? move.redLines.slice(0, 5),
       conditionalTerms: move.conditionalTerms ?? openTerms.slice(0, 5),
       decisionScope: move.decisionScope ?? (move.kind === 'accept' && openTerms.length === 0 && move.redLines.length === 0 ? 'substance' : move.kind === 'accept' || move.kind === 'counter' ? 'principle' : 'dialogue_only'),
+      participantResponses: move.participantResponses,
     };
   }
   const position = publicMessage.trim() || 'La position de l’interlocuteur doit être précisée avant tout engagement.';
@@ -66,6 +67,7 @@ export function normalizeDialogueMove(move: AIDiplomaticMove, publicMessage: str
     rejectedTerms: [],
     conditionalTerms: move.annualVolume !== null || move.durationYears !== null ? ['Préciser séparément les paramètres techniques lors de la prochaine phase de négociation.'] : [],
     decisionScope: move.kind === 'accept' ? 'principle' : 'dialogue_only',
+    participantResponses: undefined,
   };
 }
 
@@ -546,6 +548,11 @@ export function applyDiplomaticDialogueAIAnswer(state: WorldState, jobId: string
     conditionalTerms: effectiveMove.conditionalTerms,
     decisionScope: effectiveMove.decisionScope,
     feasibilityIssues: constrained?.feasibility.issues,
+    participantPositions: constrained?.move.participantResponses?.map((item) => ({
+      participantId: item.participantId, kind: item.kind === 'request_clarification' ? 'counter' as const : item.kind,
+      position: item.position, acceptedTerms: item.acceptedTerms, rejectedTerms: item.rejectedTerms,
+      conditionalTerms: item.conditionalTerms, rationale: item.rationale,
+    })),
   } : dialogue.lastResponse;
   const nextDialogue: DiplomaticDialogue = {
     ...dialogue, status: 'awaiting_player', aiMode: 'ai', activeSpeakerId: nextSpeakerId, updatedAt: state.currentDate,

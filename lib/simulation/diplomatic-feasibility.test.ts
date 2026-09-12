@@ -5,7 +5,8 @@ import { compileContextForAIJob } from './ai/context';
 import { createWorld2000 } from './scenario-2000';
 import { deriveDiplomaticFeasibility, enforceDiplomaticMove } from './diplomatic-feasibility';
 import { evaluateHistoricalChronology } from './historical-chronology';
-import { applyDiplomaticDialogueAIAnswer, openDiplomaticDialogue, requestDiplomaticDialogueAI } from './diplomacy-dialogue';
+import { applyDiplomaticDialogueAIAnswer, openDiplomaticDialogue, requestDiplomaticDialogueAI, resolveDiplomaticDialogueResponse } from './diplomacy-dialogue';
+import { applyDiplomaticMeetingAIAnswer, proposeDiplomaticMeeting, requestDiplomaticMeetingAI } from './diplomatic-negotiation';
 import type { AIGenericDiplomaticMove } from '../ai/job-contracts';
 import type { GeneralAIJob } from './types';
 
@@ -131,4 +132,75 @@ test('cinq scénarios diplomatiques restent différenciés par leurs lignes roug
   assert.equal(results[4]?.feasibility.blockingIssues.some((item) => item.id === 'red-line:deu-debt-mutualization'), true);
   assert.ok(results[0]?.constrained.move.rejectedTerms?.length);
   assert.ok(results[4]?.constrained.move.conditionalTerms?.length);
+});
+
+test('une rencontre multilatérale exige une position distincte et applique le veto d’un participant', () => {
+  const opened = openDiplomaticDialogue(createWorld2000('FRA'), ['TUR', 'GRC'], 'Proposons une coopération énergétique en mer Égée.');
+  assert.equal(opened.ok, true);
+  if (!opened.ok) return;
+  const queued = requestDiplomaticDialogueAI(opened.state, opened.dialogueId);
+  assert.equal(queued.ok, true);
+  if (!queued.ok) return;
+  const answered = applyDiplomaticDialogueAIAnswer(queued.state, queued.jobId, {
+    headline: 'Cadre de discussion', assessment: 'Les parties sont prêtes à discuter.', publicMessage: 'Nous pouvons discuter sous garanties.', proposals: [], requestedFacts: [], contextFactIds: [], approximateInputTokens: 100,
+  }, {
+    scope: 'general_dialogue', kind: 'counter', agreementType: 'energy_cooperation', position: 'Poursuivre sous garanties.', concessions: [], guaranteesRequested: ['Déconfliction'], conditions: [], redLines: [], timeline: 'Six mois.',
+  });
+  assert.equal(answered.ok, true);
+  if (!answered.ok) return;
+  const accepted = resolveDiplomaticDialogueResponse(answered.state, opened.dialogueId, 'accept');
+  assert.equal(accepted.ok, true);
+  if (!accepted.ok) return;
+  const meeting = proposeDiplomaticMeeting(accepted.state, opened.dialogueId, 'discreet');
+  assert.equal(meeting.ok, true);
+  if (!meeting.ok || typeof meeting.meetingId !== 'string' || typeof meeting.draftId !== 'string') return;
+  const request = requestDiplomaticMeetingAI(meeting.state, meeting.draftId);
+  assert.equal(request.ok, true);
+  if (!request.ok) return;
+  const result = applyDiplomaticMeetingAIAnswer(request.state, request.jobId, {
+    headline: 'Positions divergentes', assessment: 'La Turquie accepte, la Grèce demande un ajustement territorial.', publicMessage: 'La Turquie accepte le cadre ; la Grèce demande de préserver explicitement ses droits en mer Égée.', proposals: [], requestedFacts: [], contextFactIds: [], approximateInputTokens: 180,
+  }, {
+    scope: 'general_dialogue', kind: 'accept', agreementType: 'energy_cooperation', position: 'Accord énergétique possible.', concessions: ['Partager les recettes'], guaranteesRequested: [], conditions: [], redLines: [], timeline: 'Vingt ans.',
+    participantResponses: [
+      { participantId: 'TUR', kind: 'accept', position: 'La Turquie accepte le cadre.', acceptedTerms: ['Partager les recettes'], rejectedTerms: [], conditionalTerms: [], rationale: 'Le cadre respecte ses intérêts énergétiques.' },
+      { participantId: 'GRC', kind: 'counter', position: 'La Grèce accepte sous réserve de ses droits territoriaux.', acceptedTerms: ['Partager les recettes'], rejectedTerms: ['Forage unilatéral'], conditionalTerms: ['Aucune reconnaissance de souveraineté adverse'], rationale: 'La souveraineté égéenne reste non négociable.' },
+    ],
+  });
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(result.decision, 'countered');
+  assert.deepEqual(result.state.diplomaticMeetings[meeting.meetingId].participantPositions?.map((item) => [item.participantId, item.kind]), [['TUR', 'accept'], ['GRC', 'counter']]);
+  assert.equal(result.state.diplomaticAgreementDrafts[meeting.draftId].counterpartDecision, 'countered');
+  assert.equal(Object.values(result.state.treaties).filter((treaty) => treaty.status === 'active').length, 0);
+});
+
+test('une acceptation agrégée sans réponses individuelles reste bloquée en multilatéral', () => {
+  const opened = openDiplomaticDialogue(createWorld2000('FRA'), ['TUR', 'GRC'], 'Proposons une coopération maritime.');
+  assert.equal(opened.ok, true);
+  if (!opened.ok) return;
+  const queued = requestDiplomaticDialogueAI(opened.state, opened.dialogueId);
+  assert.equal(queued.ok, true);
+  if (!queued.ok) return;
+  const answered = applyDiplomaticDialogueAIAnswer(queued.state, queued.jobId, {
+    headline: 'Accord de principe', assessment: 'Les parties envisagent un accord.', publicMessage: 'Nous acceptons le principe.', proposals: [], requestedFacts: [], contextFactIds: [], approximateInputTokens: 100,
+  }, acceptedMove);
+  assert.equal(answered.ok, true);
+  if (!answered.ok) return;
+  const accepted = resolveDiplomaticDialogueResponse(answered.state, opened.dialogueId, 'accept');
+  assert.equal(accepted.ok, true);
+  if (!accepted.ok) return;
+  const meeting = proposeDiplomaticMeeting(accepted.state, opened.dialogueId, 'discreet');
+  assert.equal(meeting.ok, true);
+  if (!meeting.ok || typeof meeting.meetingId !== 'string' || typeof meeting.draftId !== 'string') return;
+  const request = requestDiplomaticMeetingAI(meeting.state, meeting.draftId);
+  assert.equal(request.ok, true);
+  if (!request.ok) return;
+  const result = applyDiplomaticMeetingAIAnswer(request.state, request.jobId, {
+    headline: 'Consensus annoncé', assessment: 'Tous acceptent.', publicMessage: 'Tous les participants acceptent.', proposals: [], requestedFacts: [], contextFactIds: [], approximateInputTokens: 100,
+  }, { ...acceptedMove, agreementType: 'security_cooperation' });
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(result.decision, 'countered');
+  assert.equal(result.state.diplomaticMeetings[meeting.meetingId].participantPositions?.every((item) => item.kind === 'pending'), true);
+  assert.equal(result.state.diplomaticAgreementDrafts[meeting.draftId].counterpartDecision, 'countered');
 });
