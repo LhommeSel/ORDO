@@ -1,5 +1,7 @@
 import { commitWorldAction } from './ledger';
 import { powerTacticEffects } from './power-tactics';
+import { makeDossierDecision } from './dossier-decisions';
+import { qualitativeReactionLevel } from './stakeholders';
 import type {
   EmergentPowerActor,
   ISODate,
@@ -8,6 +10,7 @@ import type {
   PowerStruggleAIProposal,
   PowerStruggleAIRequest,
   PowerStruggleCampaign,
+  PowerStrugglePlayerDecision,
   PowerStruggleTactic,
   StakeholderCategory,
   StakeholderGroup,
@@ -69,6 +72,53 @@ const tacticSeverity: Record<PowerStruggleTactic, number> = {
   negotiation: 18,
   deescalation: 4,
 };
+
+export const powerStruggleDecisionLabels: Record<PowerStrugglePlayerDecision, string> = {
+  negotiate: 'Ouvrir une négociation',
+  concede: 'Accorder une concession ciblée',
+  contain: 'Contenir la contestation',
+  ignore: 'Ignorer publiquement',
+};
+
+export const powerStruggleDecisionSummaries: Record<PowerStrugglePlayerDecision, string> = {
+  negotiate: 'Réduit la tension à court terme, mais donne à l’acteur une place officielle dans la discussion.',
+  concede: 'Apaise rapidement la base contestataire au prix d’un recul politique ou budgétaire.',
+  contain: 'Protège la ligne du gouvernement, mais augmente le risque de polarisation et de rupture.',
+  ignore: 'Économise du temps politique maintenant, en laissant la pression s’accumuler.',
+};
+
+function campaignStatusFor(
+  campaign: PowerStruggleCampaign,
+  pressure: number,
+  reaction: StakeholderReaction,
+  dossierStatus?: 'emerging' | 'active' | 'deescalating' | 'resolved',
+): PowerStruggleCampaign['status'] {
+  if (dossierStatus === 'resolved') return 'resolved';
+  if (reaction.status === 'resolved' || (pressure < 35 && reaction.trend === 'falling')) return 'deescalating';
+  if (pressure >= 48 || (campaign.status === 'active' && pressure >= 35)) return 'active';
+  if (campaign.status === 'deescalating' && pressure < 48) return 'deescalating';
+  return 'emerging';
+}
+
+function campaignPhaseFor(status: PowerStruggleCampaign['status'], pressure: number) {
+  if (status === 'resolved') return 'Campagne close';
+  if (status === 'deescalating') return 'Retour au calme surveillé';
+  if (pressure >= 82) return 'Confrontation ouverte';
+  if (pressure >= 64) return 'Pression publique';
+  if (pressure >= 48) return 'Mobilisation structurée';
+  return 'Tension émergente';
+}
+
+function pressureBand(pressure: number) {
+  return pressure >= 82 ? 3 : pressure >= 64 ? 2 : pressure >= 48 ? 1 : 0;
+}
+
+function campaignTrendFor(previous: number, pressure: number, status: PowerStruggleCampaign['status']) {
+  if (status === 'deescalating') return 'deescalating' as const;
+  if (pressure >= previous + 5) return 'escalating' as const;
+  if (pressure <= previous - 5) return 'deescalating' as const;
+  return 'stable' as const;
+}
 
 function addMonths(date: ISODate, months: number): ISODate {
   const value = new Date(`${date}T12:00:00Z`);
@@ -418,7 +468,13 @@ export function applyPowerStruggleAIProposal(
   };
 }
 
-/** Le temps actualise les moyens objectifs et ne choisit jamais une nouvelle tactique. */
+/**
+ * Le temps actualise les moyens objectifs et fait évoluer la crise, mais ne
+ * choisit jamais une nouvelle tactique à la place de l'IA ou du joueur. Les
+ * seuils servent uniquement à rendre la boucle jouable : émergence → lutte
+ * active → désescalade, avec une décision explicite lorsque la pression
+ * devient politiquement coûteuse.
+ */
 export function advancePowerStruggles(state: WorldState, elapsedMonths: number) {
   if (elapsedMonths <= 0) return state;
   const effects: WorldEffect[] = [];
@@ -427,28 +483,101 @@ export function advancePowerStruggles(state: WorldState, elapsedMonths: number) 
     const reaction = state.stakeholderReactions[campaign.stakeholderReactionId];
     const group = reaction && state.stakeholderGroups[reaction.groupId];
     if (!reaction || !group) continue;
+    const dossier = state.strategicDossiers[campaign.dossierId];
     const pressure = strugglePressure(group, reaction);
     const momentum = round(clamp(campaign.momentum + (pressure - campaign.pressure) * 0.35 - elapsedMonths * 0.25));
+    const status = campaignStatusFor(campaign, pressure, reaction, dossier?.status);
+    const phaseCandidate = campaignPhaseFor(status, pressure);
+    const phaseChanged = status !== campaign.status || pressureBand(pressure) !== pressureBand(campaign.pressure);
+    const phase = phaseChanged ? phaseCandidate : campaign.phase;
+    const trend = campaignTrendFor(campaign.pressure, pressure, status);
+    const quietMonths = status === 'deescalating' ? (campaign.quietMonths ?? 0) + elapsedMonths : 0;
+    const pressureJumped = pressure >= 68 && campaign.pressure < 68;
+    const playerLed = campaign.countryId === state.playerCountryId;
+    const pendingDecision = dossier?.decisionRecords?.some((record) =>
+      record.status === 'pending' && record.sourceId === campaign.id) ?? false;
+    const decisionNeeded = Boolean(dossier && playerLed && !pendingDecision && pressureJumped);
+    const actorName = campaign.instigatorActorIds
+      .map((id) => state.powerActors[id]?.name)
+      .find(Boolean) ?? 'L’acteur émergent';
+    const patch: Partial<PowerStruggleCampaign> = {
+      pressure, momentum, status, phase, quietMonths,
+      lastAdvancedAt: state.currentDate, updatedAt: state.currentDate,
+    };
+    effects.push({
+      kind: 'power_campaign_patch', campaignId: campaign.id, patch,
+      reason: 'Les moyens de la campagne suivent l’évolution réelle de sa base institutionnelle.', visibility: 'debug',
+    });
+
+    if (dossier && phaseChanged) {
+      const importance = dossier.importance;
+      effects.push(
+        {
+          kind: 'dossier_patch', dossierId: dossier.id,
+          patch: { status, trend, phase, updatedAt: state.currentDate },
+          reason: 'La phase de la lutte de pouvoir est synchronisée avec la pression institutionnelle.', visibility: 'player',
+        },
+        {
+          kind: 'dossier_entry_add', dossierId: dossier.id,
+          entry: {
+            id: `${dossier.id}:campaign-phase:${state.currentDate}:${status}`,
+            date: state.currentDate,
+            title: status === 'active' ? 'La contestation devient active' : status === 'deescalating' ? 'La contestation entre en désescalade' : 'Une tension politique se forme',
+            summary: `${actorName} · ${phase}. Pression institutionnelle estimée : ${pressure}/100.`,
+            importance, actorIds: dossier.actorIds, requiresDecision: decisionNeeded, visibility: 'player',
+          },
+          reason: 'Le changement de phase devient lisible dans la chronologie du dossier.', visibility: 'player',
+        },
+      );
+    }
+
+    if (decisionNeeded && dossier) {
+      const prompt = `Répondre à la montée de la contestation portée par ${actorName} dans « ${dossier.title} ».`;
+      const decision = makeDossierDecision({
+        id: `${dossier.id}:power-decision:${state.currentDate}`,
+        prompt, createdAt: state.currentDate,
+        importance: dossier.importance, actorIds: dossier.actorIds,
+        sourceKind: 'player_action', sourceId: campaign.id, sourceLabel: actorName,
+      });
+      effects.push(
+        {
+          kind: 'dossier_patch', dossierId: dossier.id,
+          patch: {
+            pendingDecisions: [...new Set([...dossier.pendingDecisions, prompt])],
+            decisionRecords: [...(dossier.decisionRecords ?? []), decision],
+            updatedAt: state.currentDate,
+          },
+          reason: 'Une contestation devenue coûteuse exige un arbitrage du gouvernement joueur.', visibility: 'player',
+        },
+        {
+          kind: 'dossier_entry_add', dossierId: dossier.id,
+          entry: {
+            id: `${dossier.id}:power-decision:${state.currentDate}`,
+            date: state.currentDate, title: 'Arbitrage gouvernemental requis',
+            summary: `${actorName} a franchi un seuil de pression. Le joueur peut négocier, concéder, contenir ou ignorer.`,
+            importance: dossier.importance, actorIds: dossier.actorIds, requiresDecision: true, visibility: 'player',
+          },
+          reason: 'La crise ne s’auto-résout pas lorsque le pouvoir du joueur est directement engagé.', visibility: 'player',
+        },
+      );
+    }
+
     const due = state.currentDate >= campaign.nextAIReviewAt;
     const shifted = Math.abs(pressure - campaign.pressure) >= 10
       && campaign.aiPlan.reassessmentTriggers.includes('pressure_shift');
-    const needsReview = due || shifted || reaction.status === 'resolved';
-    effects.push({
-      kind: 'power_campaign_patch', campaignId: campaign.id,
-      patch: { pressure, momentum, lastAdvancedAt: state.currentDate, updatedAt: state.currentDate },
-      reason: 'Les moyens de la campagne suivent l’évolution réelle de sa base institutionnelle.', visibility: 'debug',
-    });
+    const needsReview = due || shifted || reaction.status === 'resolved' || phaseChanged;
     if (needsReview && !pendingRequestFor(state, reaction.id, campaign.id)) {
       const request: PowerStruggleAIRequest = {
         id: `power-ai-review:${campaign.id}:${campaign.aiPlan.revision + 1}`,
         kind: 'power_struggle', schemaVersion: 1,
-        priority: reaction.level === 'critical' ? 'urgent' : 'normal', budgetTier: 'standard', attempts: 0,
+        priority: reaction.level === 'critical' ? 'urgent' : phaseChanged ? 'normal' : 'background', budgetTier: 'standard', attempts: 0,
         purpose: 'reassess_campaign', countryId: campaign.countryId,
         reactionId: reaction.id, campaignId: campaign.id,
         status: 'pending', requestedAt: state.currentDate,
         reasons: [
           ...(due ? ['L’horizon fixé par le plan précédent est atteint.'] : []),
           ...(shifted ? [`La pression institutionnelle est passée de ${campaign.pressure} à ${pressure}.`] : []),
+          ...(phaseChanged ? [`La campagne change de phase : ${phase}.`] : []),
           ...(reaction.status === 'resolved' ? ['La contestation collective qui soutenait la campagne s’est résorbée.'] : []),
         ],
         context: compactContext(state, group, { ...reaction, defiance: reaction.defiance }, { ...campaign, pressure, momentum }),
@@ -464,6 +593,80 @@ export function advancePowerStruggles(state: WorldState, elapsedMonths: number) 
     kind: 'political', actorId: state.playerCountryId, origin: 'time',
     intent: 'Actualiser les luttes de pouvoir', visibility: 'debug', effects,
   });
+}
+
+/**
+ * Résolution locale d'un arbitrage de lutte de pouvoir. Elle permet au joueur
+ * de faire avancer un dossier sans attendre un appel Luna ; une réponse libre
+ * reste toujours possible via submitPowerStrugglePlayerResponse.
+ */
+export function resolvePowerStrugglePlayerDecision(
+  state: WorldState,
+  campaignId: string,
+  decision: PowerStrugglePlayerDecision,
+): { ok: true; state: WorldState } | { ok: false; state: WorldState; error: string } {
+  const campaign = state.powerStruggleCampaigns?.[campaignId];
+  if (!campaign || campaign.status === 'resolved') return { ok: false, state, error: 'Lutte de pouvoir introuvable ou déjà close.' };
+  if (campaign.countryId !== state.playerCountryId) return { ok: false, state, error: 'Cette lutte ne relève pas du gouvernement joueur.' };
+  const dossier = state.strategicDossiers?.[campaign.dossierId];
+  const reaction = state.stakeholderReactions[campaign.stakeholderReactionId];
+  const group = reaction && state.stakeholderGroups[reaction.groupId];
+  if (!dossier || !reaction || !group) return { ok: false, state, error: 'La base institutionnelle de cette lutte n’est plus disponible.' };
+  const record = (dossier.decisionRecords ?? []).find((item) => item.sourceId === campaignId && item.status === 'pending');
+  if (!record || !dossier.pendingDecisions.includes(record.prompt)) return { ok: false, state, error: 'Aucun arbitrage local n’est actuellement attendu pour cette lutte.' };
+
+  const strength = clamp(campaign.pressure * 0.45 + campaign.momentum * 0.3 + group.influence * 0.25) / 100;
+  const deltas: Record<PowerStrugglePlayerDecision, { defiance: number; mobilization: number; stability: number; budget: number; approval: number; compliance: number; campaignStatus: PowerStruggleCampaign['status']; trend: 'stable' | 'escalating' | 'deescalating'; phase: string }> = {
+    negotiate: { defiance: -9, mobilization: -7, stability: 0.2, budget: -0.2, approval: 0.8, compliance: 0, campaignStatus: 'active', trend: 'stable', phase: 'Négociation politique' },
+    concede: { defiance: -16, mobilization: -12, stability: 0.6, budget: -1.2, approval: -0.4, compliance: 0.2, campaignStatus: 'deescalating', trend: 'deescalating', phase: 'Compromis en mise en œuvre' },
+    contain: { defiance: 6, mobilization: 5, stability: -1.1, budget: -0.1, approval: 0.4, compliance: -0.7, campaignStatus: 'active', trend: 'escalating', phase: 'Confrontation contenue' },
+    ignore: { defiance: 4, mobilization: 5, stability: -0.6, budget: 0, approval: -1.1, compliance: -0.4, campaignStatus: 'active', trend: 'escalating', phase: 'Silence gouvernemental' },
+  };
+  const effect = deltas[decision];
+  const defiance = round(clamp(reaction.defiance + effect.defiance * strength));
+  const mobilization = round(clamp(reaction.mobilization + effect.mobilization * strength));
+  const level = qualitativeReactionLevel(defiance, reaction.level);
+  const decisionRecords = (dossier.decisionRecords ?? []).map((item) => item.id === record.id
+    ? { ...item, status: 'resolved' as const, resolvedAt: state.currentDate, resolutionChannel: 'local_action' as const }
+    : item);
+  const pendingDecisions = dossier.pendingDecisions.filter((prompt) => prompt !== record.prompt);
+  const actorName = campaign.instigatorActorIds.map((id) => state.powerActors[id]?.name).find(Boolean) ?? 'L’acteur émergent';
+  const summaries: Record<PowerStrugglePlayerDecision, string> = {
+    negotiate: `Le gouvernement ouvre une négociation avec ${actorName}. La contestation baisse légèrement, mais l’acteur obtient une place reconnue dans le processus.`,
+    concede: `Le gouvernement accorde une concession ciblée à ${actorName}. La mobilisation recule, au prix d’un coût budgétaire et d’un recul politique limités.`,
+    contain: `Le gouvernement choisit de contenir ${actorName}. La réforme est maintenue, mais la pression et la polarisation augmentent.`,
+    ignore: `Le gouvernement ignore publiquement ${actorName}. Aucun moyen supplémentaire n’est engagé, mais la contestation gagne du temps et de la visibilité.`,
+  };
+  const effects: WorldEffect[] = [
+    {
+      kind: 'stakeholder_reaction_patch', reactionId: reaction.id,
+      patch: { defiance, mobilization, level, trend: effect.trend === 'stable' ? 'falling' : effect.trend === 'deescalating' ? 'falling' : 'rising', updatedAt: state.currentDate, status: level === 'low' ? 'subsiding' : 'active' },
+      reason: 'L’arbitrage du gouvernement modifie directement la base de mobilisation de la contestation.', visibility: 'player',
+    },
+    { kind: 'metric_delta', countryId: campaign.countryId, metric: 'stability', delta: effect.stability * strength, reason: summaries[decision], visibility: 'player' },
+    ...(effect.budget ? [{ kind: 'metric_delta' as const, countryId: campaign.countryId, metric: 'budget' as const, delta: effect.budget * strength, reason: 'La réponse politique mobilise ou économise une marge budgétaire limitée.', visibility: 'player' as const }] : []),
+    {
+      kind: 'politics_patch', countryId: campaign.countryId,
+      patch: { publicApproval: round(clamp(state.countries[campaign.countryId].politics.publicApproval + effect.approval * strength)), administrativeCompliance: round(clamp(state.countries[campaign.countryId].politics.administrativeCompliance + effect.compliance * strength)) },
+      reason: 'La réponse modifie la crédibilité et la capacité d’exécution du gouvernement.', visibility: 'player',
+    },
+    {
+      kind: 'power_campaign_patch', campaignId,
+      patch: { status: effect.campaignStatus, phase: effect.phase, quietMonths: effect.campaignStatus === 'deescalating' ? 1 : 0, lastPlayerDecision: decision, lastPlayerDecisionAt: state.currentDate, pressure: strugglePressure(group, { ...reaction, defiance, mobilization }), momentum: round(clamp(campaign.momentum + (effect.campaignStatus === 'deescalating' ? -8 : decision === 'ignore' ? 4 : -3) * strength)), updatedAt: state.currentDate },
+      reason: 'Le choix du joueur devient la nouvelle phase de la campagne sans supprimer la possibilité d’une réévaluation IA.', visibility: 'player',
+    },
+    {
+      kind: 'dossier_patch', dossierId: dossier.id,
+      patch: { pendingDecisions, decisionRecords, playerStance: powerStruggleDecisionLabels[decision], status: effect.campaignStatus === 'deescalating' ? 'deescalating' : 'active', trend: effect.trend, phase: effect.phase, updatedAt: state.currentDate },
+      reason: 'L’arbitrage est retiré de la file d’attente et inscrit dans la trajectoire du dossier.', visibility: 'player',
+    },
+    {
+      kind: 'dossier_entry_add', dossierId: dossier.id,
+      entry: { id: `${dossier.id}:player-decision:${state.currentDate}:${decision}`, date: state.currentDate, title: powerStruggleDecisionLabels[decision], summary: summaries[decision], importance: dossier.importance, actorIds: dossier.actorIds, requiresDecision: false, visibility: 'player' },
+      reason: 'Le choix politique est conservé dans la chronologie du dossier.', visibility: 'player',
+    },
+  ];
+  return { ok: true, state: commitWorldAction(state, { kind: 'political', actorId: state.playerCountryId, targetIds: campaign.instigatorActorIds, origin: 'player', visibility: 'player', intent: powerStruggleDecisionLabels[decision], effects }) };
 }
 
 export function pendingPowerStruggleAIRequests(state: WorldState) {

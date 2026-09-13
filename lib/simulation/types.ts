@@ -995,7 +995,19 @@ export type PowerStruggleCampaign = {
   lastAdvancedAt: ISODate;
   createdAt: ISODate;
   updatedAt: ISODate;
+  /** Nombre de frontières mensuelles passées en phase de désescalade. */
+  quietMonths?: number;
+  /** Dernier arbitrage explicite du joueur, lorsqu'il dirige le pays concerné. */
+  lastPlayerDecision?: PowerStrugglePlayerDecision;
+  lastPlayerDecisionAt?: ISODate;
 };
+
+/**
+ * Réponses courtes du joueur à une lutte de pouvoir. Elles ne remplacent pas
+ * le dialogue libre avec l'IA : elles offrent un levier local, prévisible et
+ * peu coûteux pour que la crise puisse réellement évoluer sans appel payant.
+ */
+export type PowerStrugglePlayerDecision = 'negotiate' | 'concede' | 'contain' | 'ignore';
 
 export type PowerStruggleAIRequestPurpose =
   | 'materialize_actor'

@@ -29,6 +29,7 @@ import {
   launchCommonAction, prepareCommonAction, prepareDossierDelegation,
   nodeAvailableExport, nodeBookedVolume, nodeExpansionPotential,
   reactivateDossier, resolveDossierDecision, resolveDiplomaticDialogueResponse, sendEnergyOffer, startEnergyNegotiationAI, visibleLedger, visibleStakeholderReactions,
+  powerStruggleDecisionLabels, powerStruggleDecisionSummaries, resolvePowerStrugglePlayerDecision,
   loadWorldFromBrowser, saveWorldToBrowser,
   openDiplomaticDialogue, openDiplomaticDialogueForDossier, sendDiplomaticDialogueMessage, requestDiplomaticDialogueAI, addDiplomaticDialogueParticipant,
   structuralDiagnosisGroups,
@@ -51,7 +52,7 @@ import {
   nationalReformOptions, reformPositionLabel, reformStateKey,
   type AdvisorAnswer, type AdvisorQuestionKind, type EnergyAdministrativeOffer, type EnergyCounterpartResponse,
   type CommonActionCategory, type CountryId, type EnergyOfferAdjustment, type HistoricalInterventionDirection, type ISODate, type StrategicDossier, type StrategicPlan,
-  type NationalReformDomain, type PoliticalCampaignStrategy, type PreparedCommonAction, type PrototypeMeasureId, type StructuralDiagnosis, type TurnBriefing, type WorldState,
+  type NationalReformDomain, type PoliticalCampaignStrategy, type PreparedCommonAction, type PrototypeMeasureId, type PowerStrugglePlayerDecision, type StructuralDiagnosis, type TurnBriefing, type WorldState,
   type DiplomaticBrief, type DiplomaticMeeting, type DiplomaticAgreementDraft,
 } from '@/lib/simulation';
 import { dossierScopeFor, dossierScopeLabel } from '@/lib/simulation/dossier-scope';
@@ -1305,6 +1306,15 @@ function DossiersPanel({ world, selectedId, onSelect, onWorldChange, onNotice, o
       : campaignAssessment.supportScore - campaignAssessment.threshold < -8 ? 'Alternance plutôt favorable'
         : 'Scrutin indécis'
     : 'Projection indisponible';
+  const powerCampaign = selected?.kind === 'power_struggle'
+    ? Object.values(world.powerStruggleCampaigns ?? {}).find((campaign) => campaign.dossierId === selected.id)
+    : undefined;
+  const powerActors = powerCampaign
+    ? powerCampaign.instigatorActorIds.map((id) => world.powerActors?.[id]).filter((actor): actor is NonNullable<typeof actor> => Boolean(actor))
+    : [];
+  const powerDecisionRecord = powerCampaign && selected
+    ? (selected.decisionRecords ?? []).find((record) => record.sourceId === powerCampaign.id && record.status === 'pending' && selected.pendingDecisions.includes(record.prompt))
+    : undefined;
   const chooseCampaignStrategy = (strategy: PoliticalCampaignStrategy) => {
     const next = choosePoliticalCampaignStrategy(world, strategy);
     if (next === world) {
@@ -1460,6 +1470,11 @@ function DossiersPanel({ world, selectedId, onSelect, onWorldChange, onNotice, o
         {selected.parentDossierId && <p className="mt-3 border-l-2 border-sky-300/70 pl-3 text-xs text-sky-100">Conséquence rattachée à <button type="button" className="font-semibold underline decoration-dotted underline-offset-2 hover:text-white" onClick={() => onSelect(selected.parentDossierId!)}>{world.strategicDossiers[selected.parentDossierId]?.title ?? selected.parentDossierId}</button>.</p>}
         <div className="mt-4 grid gap-2 sm:grid-cols-4"><Stat label="Phase" value={selected.phase} /><Stat label="Tendance" value={selected.trend} /><Stat label="Acteurs" value={selected.actorIds.map((id) => world.countries[id]?.flag ?? id).join(' ')} /><Stat label="Relances" value={String(selected.escalationCount ?? 0)} detail={selected.lastEscalatedAt ? `dernière : ${selected.lastEscalatedAt}` : 'aucune'} /></div>
         {selected.playerStance && <div className="mt-3 border-l-2 border-primary pl-3 text-sm"><b>Position du joueur :</b> {selected.playerStance}</div>}
+        {powerCampaign && <div className="mt-4 border border-violet-400/35 bg-violet-400/5 p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3"><div><div className="font-mono text-[10px] uppercase tracking-wider text-violet-200">Lutte de pouvoir · acteur émergent</div><p className="mt-1 text-xs text-muted-foreground">Le moteur fait évoluer la pression ; l’IA ne choisit une nouvelle tactique que lors d’une réévaluation nécessaire.</p></div><div className="text-right font-mono text-[10px] text-violet-100">pression {powerCampaign.pressure.toFixed(0)}/100 · momentum {powerCampaign.momentum.toFixed(0)}/100</div></div>
+          {powerActors.length > 0 && <div className="mt-3 grid gap-2 sm:grid-cols-2">{powerActors.map((actor) => <div key={actor.id} className="border border-violet-300/25 bg-background/25 p-3 text-xs"><div className="flex items-center justify-between gap-2"><b>{actor.name}</b><span className="font-mono text-[10px] text-muted-foreground">{actor.visibility === 'public' ? 'public' : actor.visibility === 'identified' ? 'identifié' : actor.visibility === 'suspected' ? 'suspecté' : 'inconnu'}</span></div><p className="mt-1 text-muted-foreground">{actor.position}</p><div className="mt-2 flex flex-wrap gap-1">{actor.personalityTags.map((tag) => <span key={tag} className="border border-violet-300/25 px-1.5 py-0.5 text-[10px] text-violet-100">{tag}</span>)}</div><p className="mt-2"><b>Objectif immédiat :</b> {actor.immediateObjective}</p><p className="mt-1 text-muted-foreground"><b>Influence :</b> {actor.influence}/100 · <b>Légitimité :</b> {actor.legitimacy}/100</p></div>)}</div>}
+          {powerDecisionRecord && <div className="mt-3 border-t border-violet-300/25 pt-3"><div className="text-sm font-semibold text-violet-100">Arbitrage requis</div><p className="mt-1 text-xs text-muted-foreground">{powerDecisionRecord.prompt}</p><div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">{(Object.keys(powerStruggleDecisionLabels) as PowerStrugglePlayerDecision[]).map((decision) => <Button key={decision} type="button" size="sm" variant="outline" className="h-auto min-h-16 justify-start px-3 py-2 text-left" title={powerStruggleDecisionSummaries[decision]} onClick={() => { const result = resolvePowerStrugglePlayerDecision(world, powerCampaign.id, decision); if (!result.ok) { onNotice(result.error); return; } onWorldChange(result.state); onNotice(`${powerStruggleDecisionLabels[decision]} enregistrée dans le dossier.`); }}><span><span className="block font-semibold">{powerStruggleDecisionLabels[decision]}</span><span className="mt-1 block text-[10px] font-normal text-muted-foreground">{powerStruggleDecisionSummaries[decision]}</span></span></Button>)}</div><p className="mt-2 text-[10px] text-muted-foreground">Ces choix sont locaux et prévisibles. Pour une réponse plus nuancée, utilisez ensuite « Demander des options à l’IA » ou le dialogue du dossier.</p></div>}
+        </div>}
         {dossierImpact?.active && <div className="mt-4 border border-amber-400/30 bg-amber-300/5 p-3 text-xs">
           <div className="flex flex-wrap items-center justify-between gap-2"><div className="font-mono text-[10px] uppercase tracking-wider text-amber-200">Pressions systémiques</div><span className="font-mono text-[10px] text-emerald-300">Amortissement vérifiable : −{dossierImpact.mitigationPct}%</span></div>
           <p className="mt-2 text-muted-foreground">Effets bornés, appliqués à la frontière mensuelle puis transmis par le moteur économique et relationnel. Ils disparaissent progressivement lorsque le dossier se résorbe.</p>

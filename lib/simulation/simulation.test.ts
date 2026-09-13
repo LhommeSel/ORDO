@@ -17,14 +17,15 @@ import { evaluateStrategicAction, selectStrategicAction } from './decision-makin
 import { reviewCountryStrategy } from './autonomy';
 import { countrySheet, defenseReferenceForCountry, defenseReferences2000ForValidation } from './country-sheet';
 import { MAX_STRATEGIC_SECTOR_WORKLOAD_MONTHS } from './types';
-import type { GovernmentMeasure, ISODate, StrategicActionCandidate, WorldState } from './types';
+import type { EmergentPowerActor, GovernmentMeasure, ISODate, PowerStruggleCampaign, StakeholderReaction, StrategicActionCandidate, StrategicDossier, WorldState } from './types';
 import { createFrance2000World, createWorld2000 } from './scenario-2000';
 import { deriveStructuralDiagnostics } from './structural-diagnostics';
 import {
   enactGovernmentMeasure, enactPrototypeGovernmentMeasure, stakeholderPressureByChannel, visibleStakeholderReactions,
 } from './stakeholders';
 import {
-  applyPowerStruggleAIProposal, detectPowerStruggleOpportunities, pendingPowerStruggleAIRequests,
+  advancePowerStruggles, applyPowerStruggleAIProposal, detectPowerStruggleOpportunities, pendingPowerStruggleAIRequests,
+  resolvePowerStrugglePlayerDecision,
   submitPowerStrugglePlayerResponse,
 } from './power-struggles';
 import { interpretPlayerIntent, rankEnergySuppliers } from './intent';
@@ -2169,6 +2170,74 @@ test('une opposition systémique attend l’IA puis devient un acteur et un doss
   const responseRequest = pendingPowerStruggleAIRequests(answered.state)[0];
   assert.equal(responseRequest.purpose, 'react_to_player');
   assert.ok(responseRequest.context.playerResponse?.includes('consultation technique'));
+});
+
+function powerStruggleFixture(): { state: WorldState; campaignId: string; reactionId: string } {
+  const state = createFrance2000World();
+  const reactionId = 'test-power-reaction';
+  const actorId = 'test-power-actor';
+  const campaignId = 'test-power-campaign';
+  const dossierId = 'test-power-dossier';
+  const reaction: StakeholderReaction = {
+    id: reactionId, countryId: 'FRA', groupId: 'FRA-military-command', targetId: 'FRA', subjectId: 'test-reform',
+    label: 'Défiance du haut commandement', defiance: 90, mobilization: 88, level: 'critical', trend: 'rising',
+    causes: ['Réforme militaire jugée incompatible avec la doctrine du pays'], likelyConsequences: ['Fuites et critiques publiques'],
+    relatedMeasureIds: ['test-reform'], createdAt: '2000-01-01', updatedAt: '2000-01-01', decayPerMonth: 0.4, status: 'active', visibility: 'public',
+  };
+  const actor: EmergentPowerActor = {
+    id: actorId, countryId: 'FRA', stakeholderGroupId: 'FRA-military-command', name: 'Général Marc Delaunay', role: 'military_officer',
+    position: 'chef de cellule doctrinale', fictionalAlternateHistory: true, ideologyTags: ['atlantiste'], personalityTags: ['inflexible'],
+    deepObjective: 'Préserver la cohérence stratégique des armées', immediateObjective: 'Obtenir un moratoire sur la réforme', influence: 72, legitimacy: 66,
+    loyaltyToRegime: 92, loyaltyToGovernment: 30, riskTolerance: 35, visibility: 'identified', status: 'active', campaignIds: [campaignId], createdAt: '2000-01-01', updatedAt: '2000-01-01',
+  };
+  const campaign: PowerStruggleCampaign = {
+    id: campaignId, countryId: 'FRA', subjectId: 'test-reform', stakeholderReactionId: reactionId, instigatorActorIds: [actorId], targetId: 'FRA',
+    dossierId, status: 'emerging', pressure: 30, momentum: 25, escalation: 12, phase: 'Tension émergente', deepObjective: actor.deepObjective,
+    aiPlan: { revision: 1, generatedAt: '2000-01-01', strategy: 'Faire pression dans le cadre institutionnel.', immediateObjective: actor.immediateObjective,
+      acceptableCompromise: 'Un moratoire limité', personalRedLine: 'Aucune rupture extraconstitutionnelle', currentTactic: 'private_lobbying',
+      publicMove: 'Des réserves circulent dans l’état-major.', reassessmentTriggers: ['player_response', 'pressure_shift'], reviewAfterMonths: 3 },
+    nextAIReviewAt: '2000-04-01', lastAdvancedAt: '2000-01-01', createdAt: '2000-01-01', updatedAt: '2000-01-01',
+  };
+  const dossier: StrategicDossier = {
+    id: dossierId, title: 'Réforme militaire · contestation du haut commandement', kind: 'power_struggle', status: 'emerging', importance: 'major',
+    actorIds: ['FRA', actorId], regionTags: ['FRA'], startedAt: '2000-01-01', updatedAt: '2000-01-01', phase: 'Tension émergente', trend: 'escalating',
+    publicSummary: 'Une opposition militaire émerge.', followed: true, autoTracked: true, commitments: [], pendingDecisions: [], decisionRecords: [], relatedCurrentIds: [], relatedActionIds: [],
+    entries: [{ id: `${dossierId}:opening`, date: '2000-01-01', title: 'Ouverture', summary: 'Une opposition est détectée.', importance: 'major', actorIds: ['FRA', actorId], requiresDecision: false, visibility: 'player' }],
+  };
+  return {
+    state: {
+      ...state,
+      stakeholderReactions: { ...state.stakeholderReactions, [reactionId]: reaction },
+      powerActors: { ...state.powerActors, [actorId]: actor },
+      powerStruggleCampaigns: { ...state.powerStruggleCampaigns, [campaignId]: campaign },
+      strategicDossiers: { ...state.strategicDossiers, [dossierId]: dossier },
+    }, campaignId, reactionId,
+  };
+}
+
+test('une lutte de pouvoir change de phase et ouvre un arbitrage joueur', () => {
+  const fixture = powerStruggleFixture();
+  const advanced = advancePowerStruggles(fixture.state, 1);
+  const campaign = advanced.powerStruggleCampaigns[fixture.campaignId];
+  const dossier = advanced.strategicDossiers[campaign.dossierId];
+  assert.equal(campaign.status, 'active');
+  assert.equal(dossier.status, 'active');
+  assert.equal(dossier.phase, 'Confrontation ouverte');
+  assert.equal(dossier.decisionRecords?.some((record) => record.sourceId === fixture.campaignId && record.status === 'pending'), true);
+  assert.ok(Object.values(advanced.aiJobs).some((job) => job.kind === 'power_struggle' && job.purpose === 'reassess_campaign'));
+});
+
+test('un arbitrage local réduit la mobilisation sans signer un accord automatique', () => {
+  const fixture = powerStruggleFixture();
+  const advanced = advancePowerStruggles(fixture.state, 1);
+  const before = advanced.stakeholderReactions[fixture.reactionId].defiance;
+  const resolved = resolvePowerStrugglePlayerDecision(advanced, fixture.campaignId, 'negotiate');
+  assert.equal(resolved.ok, true);
+  if (!resolved.ok) return;
+  assert.ok(resolved.state.stakeholderReactions[fixture.reactionId].defiance < before);
+  assert.equal(resolved.state.strategicDossiers[advanced.powerStruggleCampaigns[fixture.campaignId].dossierId].pendingDecisions.length, 0);
+  assert.equal(resolved.state.powerStruggleCampaigns[fixture.campaignId].lastPlayerDecision, 'negotiate');
+  assert.equal(Object.values(resolved.state.treaties).some((treaty) => treaty.id === fixture.campaignId), false);
 });
 
 test('les tensions émergentes sont plafonnées par passage pour préserver le budget IA', () => {
