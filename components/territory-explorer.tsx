@@ -8,7 +8,7 @@ import type { Territory } from '@/lib/simulation/territory-types';
 import { territoryEconomicShare, territorySummary } from '@/lib/simulation/territories';
 import { territorySources } from '@/lib/simulation/territory-data-france-2000';
 import { territoryMapCatalog } from '@/lib/territory-map-catalog';
-import { assetMonthlyOutput, assetOperationalOutput } from '@/lib/simulation/territorial-assets';
+import { assetMonthlyOutput, assetOperationalOutput, operateTerritorialAsset, type TerritorialAssetActionKind } from '@/lib/simulation/territorial-assets';
 
 const numbers = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 });
 const decimals = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 });
@@ -107,7 +107,7 @@ function RegionalMap({ regions, selected, onSelect, geometryUrl, world }: {
   </div>;
 }
 
-export function TerritoryExplorer({ world, countryId }: { world: WorldState; countryId: string }) {
+export function TerritoryExplorer({ world, countryId, onWorldChange, onNotice }: { world: WorldState; countryId: string; onWorldChange?: (world: WorldState) => void; onNotice?: (message: string) => void }) {
   const territorial = world.territorial;
   const groups: { id: string; label: string; geometryUrl?: string }[] = territoryMapCatalog[countryId]?.groups ?? [{ id: 'national', label: 'Ensemble national' }];
   const [groupId, setGroupId] = useState(groups[0].id);
@@ -120,6 +120,14 @@ export function TerritoryExplorer({ world, countryId }: { world: WorldState; cou
   const summary = territorySummary(territorial, countryId);
   const share = selected ? territoryEconomicShare(territorial, selected) : null;
   const assets = selected ? Object.values(territorial.assets).filter((a) => a.territoryId === selected.id) : [];
+  const canOperate = countryId === world.playerCountryId && Boolean(onWorldChange);
+  const operate = (assetId: string, kind: TerritorialAssetActionKind) => {
+    if (!onWorldChange) return;
+    const result = operateTerritorialAsset(world, assetId, kind);
+    if (!result.ok) { onNotice?.(result.error); return; }
+    onWorldChange(result.state);
+    onNotice?.(result.message);
+  };
   const normalize = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
   return <section className="territory-explorer" aria-label="Découpage territorial">
     <header><h3>Territoires · {world.countries[countryId]?.name ?? countryId}</h3>
@@ -146,9 +154,17 @@ export function TerritoryExplorer({ world, countryId }: { world: WorldState; cou
             <div><dt>Part du PIB national</dt><dd>{share === null ? 'Hors périmètre national' : `${decimals.format(share)} %`}</dd></div>
             <div><dt>Souveraineté / contrôle</dt><dd>{territorial.entities[selected.sovereignCountryId]?.name} / {territorial.entities[selected.controllerEntityId]?.name}</dd></div></dl>
           <h5>Actifs recensés ({assets.length})</h5>
-          {assets.length ? <ul>{assets.map((asset) => <li key={asset.id}><b>{asset.kind === 'port' || asset.kind === 'passage' || asset.kind === 'airport' ? '■' : '●'} {asset.name}</b> — {asset.operatorEntityId ? territorial.entities[asset.operatorEntityId]?.name : 'Opérateur à documenter'} · {asset.status === 'closed' ? 'fermé / arrêté au lancement' : assetOperationLabel(asset) ?? 'inventaire sans capacité chiffrée'}</li>)}</ul>
+          {assets.length ? <ul>{assets.map((asset) => <li key={asset.id}><b>{asset.kind === 'port' || asset.kind === 'passage' || asset.kind === 'airport' ? '■' : '●'} {asset.name}</b> — {asset.operatorEntityId ? territorial.entities[asset.operatorEntityId]?.name : 'Opérateur à documenter'} · {asset.status === 'closed' ? 'fermé / arrêté au lancement' : assetOperationLabel(asset) ?? 'inventaire sans capacité chiffrée'}
+            {asset.operation && <div className="mt-2 flex flex-wrap gap-1">{canOperate && <>
+              <Button size="sm" variant="outline" disabled={asset.status === 'closed' || asset.operation.deployed >= asset.operation.maximum - 0.001} onClick={() => operate(asset.id, 'mobilize')}>Mobiliser</Button>
+              <Button size="sm" variant="outline" disabled={asset.status === 'closed' || asset.operation.availabilityPct >= 99.9} onClick={() => operate(asset.id, 'maintain')}>Entretenir</Button>
+              <Button size="sm" variant="outline" disabled={asset.status === 'closed'} onClick={() => operate(asset.id, 'invest')}>Étendre</Button>
+              <Button size="sm" variant="outline" disabled={asset.status === 'closed'} onClick={() => operate(asset.id, 'close')}>Suspendre</Button>
+              {(asset.status !== 'operating' || asset.operation.availabilityPct < 95) && <Button size="sm" variant="outline" onClick={() => operate(asset.id, 'repair')}>Réparer</Button>}
+            </>}</div>}
+          </li>)}</ul>
             : <p>Aucun actif recensé dans ce premier lot — cela ne signifie pas que le territoire n’en possède pas.</p>}
-          <p className="territory-help">Les actifs sans capacité restent un inventaire localisé. Les actifs énergétiques chiffrés ont un débit mensuel dérivé ; seuls ceux marqués comme raccordés au registre influencent les flux.</p>
+          <p className="territory-help">Les actifs sans capacité restent un inventaire localisé. Les actifs énergétiques chiffrés ont un débit mensuel dérivé ; seuls ceux marqués comme raccordés au registre influencent les flux. Les boutons d’exploitation apparaissent uniquement pour le pays joué.</p>
           <details><summary>Méthode et sources</summary><p>{selected.note}</p>
             {selected.referenceYear && <p>Population de référence {selected.referenceYear} : {numbers.format(selected.referencePopulation ?? 0)}. La population affichée est recalée sur le total actuel de la partie.</p>}
             <p>À ce stade, les évolutions nationales sont réparties proportionnellement. Pas encore de croissance régionale autonome ni de transfert territorial jouable.</p>

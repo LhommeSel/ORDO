@@ -266,6 +266,27 @@ function applyEffect(state: WorldState, action: WorldAction, effect: WorldEffect
     return appendChange(next, action, effect, `energyNodes.${effect.nodeId}`, node, after);
   }
 
+  if (effect.kind === 'territorial_asset_patch') {
+    const asset = state.territorial.assets[effect.assetId];
+    if (!asset) return state;
+    const currentOperation = asset.operation;
+    const operationPatch = effect.patch.operation;
+    const rawOperation = currentOperation && operationPatch ? { ...currentOperation, ...operationPatch } : currentOperation;
+    const operation = rawOperation ? {
+      ...rawOperation,
+      maximum: Math.max(0.001, rawOperation.maximum),
+      deployed: Math.min(Math.max(0, rawOperation.deployed), Math.max(0.001, rawOperation.maximum)),
+      availabilityPct: clamp(rawOperation.availabilityPct),
+    } : undefined;
+    const after = {
+      ...asset,
+      ...(effect.patch.status ? { status: effect.patch.status } : {}),
+      ...(operation ? { operation, capacity: { value: operation.maximum, unit: operation.unit } } : {}),
+    };
+    const next = { ...state, territorial: { ...state.territorial, assets: { ...state.territorial.assets, [asset.id]: after } } };
+    return appendChange(next, action, effect, `territorial.assets.${asset.id}`, asset, after);
+  }
+
   if (effect.kind === 'energy_stock_delta') {
     const energy = state.countryEnergy[effect.countryId];
     if (!energy) return state;

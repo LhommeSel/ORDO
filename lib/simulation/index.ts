@@ -33,6 +33,7 @@ export * from './political-identity-data-2000';
 export * from './power-struggles';
 export * from './power-tactics';
 export * from './scenario-2000';
+export * from './territorial-assets';
 export * from './structural-data-2000';
 export * from './structural-diagnostics';
 export * from './stakeholder-data-2000';

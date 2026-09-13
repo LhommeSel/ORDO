@@ -411,7 +411,7 @@ function ReformsPanel({ world, onWorldChange, onNotice }: { world: WorldState; o
   </div>;
 }
 
-function MapPanel({ world }: { world: WorldState }) {
+function MapPanel({ world, onWorldChange, onNotice }: { world: WorldState; onWorldChange: (world: WorldState) => void; onNotice: (message: string) => void }) {
   const [selectedCountryId, setSelectedCountryId] = useState(world.playerCountryId);
   const [deploymentQuery, setDeploymentQuery] = useState('');
   const selected = world.countries[selectedCountryId];
@@ -489,7 +489,7 @@ function MapPanel({ world }: { world: WorldState }) {
       <div className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">États actifs · sélectionnez un pays pour ses territoires</div>
       <div className="mt-2 flex flex-wrap gap-2">{activeCountries.map((country) => <button key={country.id} onClick={() => setSelectedCountryId(country.id)} className={`border px-2 py-1 text-xs transition-colors ${selectedCountryId === country.id ? 'border-primary bg-primary/10 text-foreground' : 'border-border bg-muted/20 text-muted-foreground hover:border-primary'}`}>{country.flag} {country.name}</button>)}</div>
     </div>
-    {selected && <DeferredPanel fallback={<div className="border-t border-border p-4 text-sm text-muted-foreground">Chargement du référentiel territorial…</div>}><TerritoryExplorer key={selectedCountryId} world={world} countryId={selectedCountryId} /></DeferredPanel>}
+    {selected && <DeferredPanel fallback={<div className="border-t border-border p-4 text-sm text-muted-foreground">Chargement du référentiel territorial…</div>}><TerritoryExplorer key={selectedCountryId} world={world} countryId={selectedCountryId} onWorldChange={onWorldChange} onNotice={onNotice} /></DeferredPanel>}
   </section>;
 }
 
@@ -1963,7 +1963,7 @@ export default function Home() {
     {lastBriefing && <TurnBriefingPanel briefing={lastBriefing} onOpenDossier={openDossier} />}
     <div className="mx-auto max-w-[1600px] p-4 lg:p-6">
       {panel === 'world' && <><WorldPanel world={world} onWorldChange={updateWorld} onNotice={setNotice} /><div className="mt-4"><WorldPulseAuditPanel entries={pulseAudit} onClear={clearPulseAudit} /></div></>}
-      {panel === 'map' && <MapPanel world={world} />}
+      {panel === 'map' && <MapPanel world={world} onWorldChange={updateWorld} onNotice={setNotice} />}
       {panel === 'economy' && <EconomyPanel world={world} />}
       {panel === 'energy' && <EnergyPanel world={world} />}
       {panel === 'industry' && <IndustryPanel world={world} onWorldChange={updateWorld} onNotice={setNotice} />}

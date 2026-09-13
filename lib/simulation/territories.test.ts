@@ -8,7 +8,7 @@ import { regionalizeCountry, territorySummary } from './territories';
 import type { WorldState } from './types';
 import { europeMacroTerritoryDatasets, europeanTerritorialCountryIds } from './territory-data-europe-macro';
 import { europePriorityAssetCountryIds } from './territory-data-europe';
-import { assetMonthlyOutput, assetOperationalOutput, nodeOperationalProduction } from './territorial-assets';
+import { assetMonthlyOutput, assetOperationalOutput, nodeOperationalProduction, operateTerritorialAsset } from './territorial-assets';
 import { energyBalance, nodePhysicalExportCapacity } from './energy';
 
 test('parcours territorial : France, carte, 12 mois, sauvegarde et extension à un autre pays', async () => {
@@ -144,4 +144,25 @@ test('les actifs énergétiques ont une capacité dérivée et raccordent les n�
   assert.ok(Math.abs(energyBalance(world, 'FRA', 'oil')!.available - 92) < 0.1, 'le raccord français modifie le bilan de départ');
   assert.ok(Math.abs(energyBalance(world, 'FRA', 'gas')!.available - 46) < 0.1, 'le raccord gazier français modifie le bilan de départ');
   console.log(`Couche opérationnelle validée : ${energyAssets.length} actifs énergétiques, ${linked.length} raccords au registre, débit mensuel dérivé et bilans France conservés. Aucun appel IA.`);
+});
+
+test('les actions d’actifs modifient la disponibilité et restent limitées au pays joué', () => {
+  const world = createFrance2000World();
+  const baseline = energyBalance(world, 'FRA', 'gas')!.available;
+  const closed = operateTerritorialAsset(world, 'asset:FRA:lacq', 'close');
+  assert.equal(closed.ok, true);
+  assert.equal(closed.state.territorial.assets['asset:FRA:lacq'].status, 'closed');
+  assert.ok(energyBalance(closed.state, 'FRA', 'gas')!.available < baseline, 'la fermeture ne réduit pas le bilan gazier');
+  const repaired = operateTerritorialAsset(closed.state, 'asset:FRA:lacq', 'repair');
+  assert.equal(repaired.ok, true);
+  assert.equal(repaired.state.territorial.assets['asset:FRA:lacq'].status, 'operating');
+  assert.ok(energyBalance(repaired.state, 'FRA', 'gas')!.available > energyBalance(closed.state, 'FRA', 'gas')!.available, 'la réparation ne restaure pas de débit');
+  const beforeExpansion = repaired.state.energyNodes['fra-gas'].annualCapacity;
+  const expanded = operateTerritorialAsset(repaired.state, 'asset:FRA:lacq', 'invest');
+  assert.equal(expanded.ok, true);
+  assert.ok(expanded.state.energyNodes['fra-gas'].annualCapacity > beforeExpansion, 'l’extension ne progresse pas dans le registre');
+  const foreign = operateTerritorialAsset(world, 'asset:GBR:bacton', 'maintain');
+  assert.equal(foreign.ok, false);
+  assert.match(foreign.error, /souverain/i);
+  console.log('Actions d’actifs validées : fermeture, réparation et extension affectent le registre ; contrôle de souveraineté actif.');
 });

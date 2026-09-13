@@ -1,5 +1,7 @@
 import type { TerritorialState } from './territory-types';
 
+import type { TerritorialAssetOperation } from './territory-types';
+
 export type ISODate = `${number}-${number}-${number}`;
 export type CountryId = string;
 export type EntityId = string;
@@ -1413,6 +1415,7 @@ export type WorldEffect =
   | { kind: 'energy_contract_add'; contract: EnergyContract; reason: string; visibility?: Visibility }
   | { kind: 'energy_contract_patch'; contractId: string; patch: Partial<EnergyContract>; reason: string; visibility?: Visibility }
   | { kind: 'energy_node_patch'; nodeId: string; patch: Partial<EnergyNode>; reason: string; visibility?: Visibility }
+  | { kind: 'territorial_asset_patch'; assetId: string; patch: { status?: 'operating' | 'closed' | 'damaged'; operation?: Partial<TerritorialAssetOperation> }; reason: string; visibility?: Visibility }
   | { kind: 'energy_stock_delta'; countryId: CountryId; resource: EnergyResource; delta: number; reason: string; visibility?: Visibility }
   | { kind: 'diplomatic_session_add'; session: DiplomaticSession; reason: string; visibility?: Visibility }
   | { kind: 'diplomatic_session_patch'; sessionId: string; patch: Partial<DiplomaticSession>; reason: string; visibility?: Visibility }
