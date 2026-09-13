@@ -1,9 +1,44 @@
 import { activateEnergyContract, energyBalance, nodeBookedVolume, nodeExpansionPotential, producerNodes, proposeEnergyContract } from './energy';
 import { commitWorldAction } from './ledger';
 import { selectStrategicAction } from './decision-making';
-import type { CountryId, DecisionSignal, ISODate, StrategicActionCandidate, WorldState } from './types';
+import type { CountryId, DecisionSignal, EconomicShock, ISODate, StrategicActionCandidate, StrategicDossier, WorldState } from './types';
 
 const daysBetween = (a: ISODate, b: ISODate) => Math.max(0, Math.round((new Date(`${b}T12:00:00Z`).getTime() - new Date(`${a}T12:00:00Z`).getTime()) / 86_400_000));
+
+/** Un choc suffisamment sérieux donne la priorité aux pays qu'il atteint. */
+function activeCrisisFor(state: WorldState, countryId: CountryId): EconomicShock | undefined {
+  return state.worldEconomy.activeShocks
+    .filter((shock) => Math.abs(shock.intensity) >= 55
+      && (shock.affectedCountryIds.length === 0 || shock.affectedCountryIds.includes(countryId)))
+    .sort((left, right) => Math.abs(right.intensity) - Math.abs(left.intensity)
+      || right.remainingMonths - left.remainingMonths)[0];
+}
+
+function autonomousCrisisDossier(state: WorldState, buyerId: CountryId, sellerId: CountryId, shock: EconomicShock, resource: 'oil' | 'gas'): StrategicDossier | null {
+  // Un même choc et un même acheteur ne doivent pas ouvrir un dossier par
+  // fournisseur : les contrats successifs restent dans le registre énergétique
+  // tandis que le dossier conserve la crise diplomatique de fond.
+  const id = `autonomous-crisis-${shock.id}-${buyerId}`;
+  if (state.strategicDossiers[id]) return null;
+  const buyer = state.countries[buyerId];
+  const seller = state.countries[sellerId];
+  if (!buyer || !seller) return null;
+  const playerInvolved = buyerId === state.playerCountryId || sellerId === state.playerCountryId;
+  const importance = Math.abs(shock.intensity) >= 70 ? 'major' : 'moderate';
+  const resourceLabel = resource === 'gas' ? 'gaz' : 'pétrole';
+  const summary = `La crise « ${shock.label} » pousse ${buyer.name} à sécuriser du ${resourceLabel} auprès de ${seller.name}. Les volumes et la dépendance créent un enjeu diplomatique durable.`;
+  return {
+    id, title: `Coordination énergétique · ${buyer.name}–${seller.name}`, kind: 'cooperation', status: 'active', importance,
+    scope: playerInvolved ? 'player_involved' : 'world', actorIds: [buyerId, sellerId], regionTags: [], startedAt: state.currentDate,
+    updatedAt: state.currentDate, phase: 'Sécurisation des approvisionnements', trend: 'escalating', publicSummary: summary,
+    followed: playerInvolved, autoTracked: true, commitments: [`Contrat autonome de ${resourceLabel} à formaliser avec ${seller.name}.`],
+    pendingDecisions: playerInvolved && importance === 'major' ? ['Décider si la sécurisation énergétique doit devenir un engagement diplomatique plus large.'] : [],
+    relatedCurrentIds: [], relatedActionIds: [], entries: [{
+      id: `${id}-${state.currentDate}`, date: state.currentDate, title: 'Ouverture du dossier diplomatique', summary,
+      importance, actorIds: [buyerId, sellerId], requiresDecision: playerInvolved && importance === 'major', visibility: 'player',
+    }],
+  };
+}
 
 export function strategicAttentionScore(state: WorldState, countryId: CountryId) {
   const country = state.countries[countryId];
@@ -18,7 +53,10 @@ export function strategicAttentionScore(state: WorldState, countryId: CountryId)
   const playerInteraction = Object.values(state.relations).some((relation) =>
     relation.from === state.playerCountryId && relation.to === countryId && relation.memories.length > 0,
   ) ? 12 : 0;
-  return country.weight * 0.42 + Math.min(25, daysSinceReview / 12) + vulnerabilityPressure + energyPressure + playerInteraction + capacityPressure * 8;
+  const crisisPressure = state.worldEconomy.activeShocks
+    .filter((shock) => shock.affectedCountryIds.length === 0 || shock.affectedCountryIds.includes(countryId))
+    .reduce((sum, shock) => sum + Math.abs(shock.intensity) * (shock.affectedCountryIds.length > 0 ? 0.45 : 0.12), 0);
+  return country.weight * 0.42 + Math.min(25, daysSinceReview / 12) + vulnerabilityPressure + energyPressure + playerInteraction + capacityPressure * 8 + Math.min(30, crisisPressure);
 }
 
 function reviewEnergy(state: WorldState, countryId: CountryId) {
@@ -78,7 +116,19 @@ function reviewEnergy(state: WorldState, countryId: CountryId) {
     });
     if (!proposed.ok) continue;
     const activated = activateEnergyContract(proposed.state, id, countryId, 'local_rule');
-    if (activated.ok) next = activated.state;
+    if (activated.ok) {
+      next = activated.state;
+      const crisis = activeCrisisFor(next, countryId);
+      const sellerId = next.energyContracts[id]?.sellerId;
+      if (crisis && sellerId) {
+        const dossier = autonomousCrisisDossier(next, countryId, sellerId, crisis, resource);
+        if (dossier) next = commitWorldAction(next, {
+          kind: 'diplomatic', actorId: countryId, targetIds: [sellerId], origin: 'local_rule', visibility: 'player',
+          intent: `Ouvrir un dossier diplomatique sur la crise énergétique avec ${sellerId}`,
+          effects: [{ kind: 'dossier_add', dossier, reason: 'Une réponse autonome à une crise énergétique ouvre un suivi diplomatique lorsque les intérêts d’approvisionnement se croisent.', visibility: 'player' }],
+        });
+      }
+    }
   }
   // Un producteur proche de la saturation ne « vend » pas sans fin : il ouvre
   // une revue d'expansion, visible dans le registre, avant toute hausse future.
@@ -147,10 +197,13 @@ export function reviewCountryStrategy(state: WorldState, countryId: CountryId) {
 }
 
 export function runAutonomyCycle(state: WorldState, reviews = 4) {
+  const crisisCountries = new Set(state.worldEconomy.activeShocks
+    .filter((shock) => Math.abs(shock.intensity) >= 55 && shock.affectedCountryIds.length > 0)
+    .flatMap((shock) => shock.affectedCountryIds));
   const selected = Object.keys(state.countries)
     .filter((countryId) => countryId !== state.playerCountryId)
     .map((countryId) => ({ countryId, score: strategicAttentionScore(state, countryId) }))
-    .sort((a, b) => b.score - a.score)
+    .sort((a, b) => Number(crisisCountries.has(b.countryId)) - Number(crisisCountries.has(a.countryId)) || b.score - a.score)
     .slice(0, reviews);
   let next = state;
   for (const { countryId } of selected) next = reviewCountryStrategy(next, countryId);

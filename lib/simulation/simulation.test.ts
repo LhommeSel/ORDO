@@ -1614,6 +1614,34 @@ test('un État autonome comble aussi une réserve énergétique trop faible', ()
   assert.ok(Object.values(reviewed.energyContracts).some((contract) => contract.buyerId === 'POL' && contract.resource === 'gas'));
 });
 
+test('une crise énergétique sur plusieurs mois se propage et déclenche une réponse diplomatique autonome', () => {
+  const initial = createFrance2000World();
+  const baseline = advanceWorld(structuredClone(initial), '2000-07-01').state;
+  let crisis = structuredClone(initial);
+  crisis.countryEnergy.POL.strategicStocks.gas = 0;
+  crisis = addEconomicShock(crisis, {
+    id: 'multi-month-gas-crisis', label: 'Rupture gazière en Europe centrale', channel: 'energy', intensity: 88,
+    remainingMonths: 15, decayPerMonth: 0.02, affectedCountryIds: ['POL'], productFamily: 'energy', source: 'local_rule',
+  });
+
+  for (const date of ['2000-02-01', '2000-03-01', '2000-04-01', '2000-05-01', '2000-06-01', '2000-07-01'] as const) {
+    crisis = advanceWorld(crisis, date).state;
+  }
+
+  const shock = crisis.worldEconomy.activeShocks.find((item) => item.id === 'multi-month-gas-crisis');
+  assert.ok(shock && shock.remainingMonths < 15 && shock.intensity < 88);
+  assert.ok(crisis.worldEconomy.globalGrowthAnnualPct < baseline.worldEconomy.globalGrowthAnnualPct);
+  assert.ok(crisis.macroEconomies.POL.realGrowthAnnualPct < baseline.macroEconomies.POL.realGrowthAnnualPct);
+  const contracts = Object.values(crisis.energyContracts).filter((contract) => contract.buyerId === 'POL' && contract.resource === 'gas' && contract.status === 'active');
+  assert.ok(contracts.length >= 1);
+  const diplomaticDossiers = Object.values(crisis.strategicDossiers).filter((dossier) => dossier.id.startsWith('autonomous-crisis-multi-month-gas-crisis-POL'));
+  assert.equal(diplomaticDossiers.length, 1);
+  assert.equal(diplomaticDossiers[0]?.kind, 'cooperation');
+  assert.deepEqual(diplomaticDossiers[0]?.actorIds.length, 2);
+  assert.ok(diplomaticDossiers[0]?.entries.some((entry) => entry.title === 'Ouverture du dossier diplomatique'));
+  assert.ok(crisis.actions.some((action) => action.intent.includes('Ouvrir un dossier diplomatique sur la crise énergétique')));
+});
+
 test('une demande libre identifie le pays et la ressource sans sélecteur', () => {
   const state = createFrance2000World();
   const answer = answerAdvisorQuestion(state, 'Je veux négocier un contrat gazier de long terme avec l’Algérie.');
