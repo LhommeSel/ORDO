@@ -9,7 +9,23 @@ export const MAX_ARMAMENT_BACKLOG_MONTHS = 36;
 export function advanceIndustrySystem(state: WorldState, elapsedMonths: number) {
   let next = state;
   for (const sector of Object.values(state.sectors)) {
-    if (sector.modelingLevel === 'aggregate') continue;
+    // Même une filière agrégée doit résorber son carnet : on ne simule pas
+    // son utilisation fine, mais une commande ne peut pas rester bloquée
+    // indéfiniment simplement parce que le pays n'a pas d'inventaire détaillé.
+    if (sector.modelingLevel === 'aggregate') {
+      if (sector.workloadMonths <= 0) continue;
+      const workloadMonths = Math.max(0, sector.workloadMonths - elapsedMonths);
+      next = commitWorldAction(next, {
+        kind: 'industrial', actorId: sector.countryId, origin: 'time', intent: `Résorber la charge agrégée de ${sector.sector}`,
+        visibility: 'debug',
+        effects: [{
+          kind: 'sector_patch', sectorId: sector.id,
+          patch: { workloadMonths: Number(workloadMonths.toFixed(2)) },
+          reason: 'Le carnet agrégé se résorbe avec les livraisons, même sans détail usine par usine.', visibility: 'debug',
+        }],
+      });
+      continue;
+    }
     const workloadMonths = Math.max(0, sector.workloadMonths - elapsedMonths);
     const targetUtilization = workloadMonths >= 18 ? 92 : workloadMonths >= 6 ? 70 : workloadMonths > 0 ? 48 : 28;
     const maxMove = elapsedMonths * (targetUtilization > sector.utilization ? 2.2 : 1.4);

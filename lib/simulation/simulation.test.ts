@@ -44,7 +44,7 @@ import { applyDiplomaticMeetingAIAnswer, diplomaticBriefFromDialogue, proposeDip
 import { validateCountryRegistry } from './data-validator';
 import { buildTurnBriefing } from './turn-briefing';
 import { queueAutonomousProgram } from './ai/autonomous-programs';
-import { authorizeArmamentProspect, createAutomaticArmamentProspects, MAX_ARMAMENT_BACKLOG_MONTHS, rankArmamentProspectBuyers, rejectArmamentProspect } from './industry';
+import { advanceIndustrySystem, authorizeArmamentProspect, createAutomaticArmamentProspects, MAX_ARMAMENT_BACKLOG_MONTHS, rankArmamentProspectBuyers, rejectArmamentProspect } from './industry';
 import { advancePoliticalCycles, assessPoliticalSupport, choosePoliticalCampaignStrategy, politicalCampaignDecisionPrompt, politicalCycleStops } from './political-cycles';
 import { nationalReformEffects, reformStateKey } from './reforms';
 import { advanceMilitaryTheaterAccess, militaryBasesForCountry, militaryTheatersForCountry } from './military-theaters';
@@ -1422,6 +1422,18 @@ test('la charge des filières stratégiques est bornée par le registre commun',
     effects: [{ kind: 'sector_patch', sectorId: semiconductors.id, patch: { workloadMonths: 500 }, reason: 'Test de borne par patch.' }],
   });
   assert.equal(patched.sectors[semiconductors.id].workloadMonths, MAX_STRATEGIC_SECTOR_WORKLOAD_MONTHS);
+});
+
+test('les filières agrégées résorbent aussi leur carnet sans inventaire artificiel', () => {
+  const initial = createFrance2000World();
+  const aggregate = initial.sectors['AGO-defense'];
+  const loaded = commitWorldAction(initial, {
+    kind: 'industrial', actorId: 'AGO', origin: 'local_rule', intent: 'Inscrire une commande agrégée',
+    effects: [{ kind: 'sector_delta', sectorId: aggregate.id, delta: { workloadMonths: 12 }, reason: 'Test du carnet agrégé.' }],
+  });
+  assert.equal(loaded.sectors[aggregate.id].workloadMonths, 12);
+  const advanced = advanceIndustrySystem(loaded, 5);
+  assert.equal(advanced.sectors[aggregate.id].workloadMonths, 7);
 });
 
 test('une consolidation réussie peut réellement rendre la posture budgétaire négative', () => {
