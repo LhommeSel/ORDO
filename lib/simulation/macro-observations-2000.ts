@@ -20,6 +20,8 @@ export type MacroObservation2000 = {
   industrySharePctGdp: number;
 };
 
+export type PartialMacroObservation2000 = Partial<MacroObservation2000>;
+
 export const worldBankWdi2000Source = {
   id: 'world-bank-wdi-2000',
   provider: 'Banque mondiale — World Development Indicators (WDI)',
@@ -111,6 +113,20 @@ export const remainingCoreWdi2000: Record<'NLD' | 'PAK' | 'ISR' | 'LBY' | 'NER',
   ISR: { realGdpBillion2000Usd: 136.410, realGrowthAnnualPct: 8.592, populationMillions: 6.289000, populationGrowthAnnualPct: 2.642, inflationAnnualPct: 1.033, unemploymentPct: 11.102, fixedInvestmentSharePctGdp: 24.167, exportSharePctGdp: 33.796, importSharePctGdp: 34.602, industrySharePctGdp: 23.047 },
   LBY: { realGdpBillion2000Usd: 38.271, realGrowthAnnualPct: 3.679, populationMillions: 5.305021, populationGrowthAnnualPct: 1.653, inflationAnnualPct: -2.900, unemploymentPct: 19.275, fixedInvestmentSharePctGdp: 11.637, exportSharePctGdp: 31.558, importSharePctGdp: 13.723, industrySharePctGdp: 58.000 },
   NER: { realGdpBillion2000Usd: 2.242, realGrowthAnnualPct: -1.208, populationMillions: 11.509630, populationGrowthAnnualPct: 3.467, inflationAnnualPct: 2.900, unemploymentPct: 1.427, fixedInvestmentSharePctGdp: 12.899, exportSharePctGdp: 14.340, importSharePctGdp: 20.373, industrySharePctGdp: 18.098 },
+};
+
+/**
+ * Observation partielle : le WDI publie population, croissance démographique
+ * et chômage pour la Corée du Nord, mais pas de PIB ni de comptes extérieurs
+ * comparables. Les autres variables restent volontairement sur l'archétype
+ * ORDO afin d'éviter de transformer des estimations en faux chiffres précis.
+ */
+export const partialWdi2000: Record<'PRK', PartialMacroObservation2000> = {
+  PRK: { populationMillions: 23.665910, populationGrowthAnnualPct: 0.714, unemploymentPct: 3.653 },
+};
+
+export const wdiPartiallyObservedIndicatorCodes: Record<string, string[]> = {
+  PRK: ['SP.POP.TOTL', 'SP.POP.GROW', 'SL.UEM.TOTL.ZS'],
 };
 
 /** Séries WDI absentes en 2000 et remplacées par une calibration ORDO. */

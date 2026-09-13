@@ -13,7 +13,7 @@ import type {
 } from './types';
 import { nationalBaseline2000 } from './national-baseline-2000';
 import { globalNationalBaseline2000 } from './global-baseline-2000';
-import { africaMiddleEastWdi2000, americasWdi2000, asiaPacificWdi2000, europeWdi2000, remainingCoreWdi2000, wdiCalibratedIndicatorCodes, wdiObservedCountryIds, worldBankWdi2000Source } from './macro-observations-2000';
+import { africaMiddleEastWdi2000, americasWdi2000, asiaPacificWdi2000, europeWdi2000, partialWdi2000, remainingCoreWdi2000, wdiCalibratedIndicatorCodes, wdiObservedCountryIds, wdiPartiallyObservedIndicatorCodes, worldBankWdi2000Source } from './macro-observations-2000';
 
 type Baseline = {
   gdp: number; growth: number; population: number; populationGrowth: number;
@@ -187,6 +187,17 @@ for (const [countryId, observation] of Object.entries({ ...americasWdi2000, ...e
   };
 }
 
+for (const [countryId, observation] of Object.entries(partialWdi2000) as [CountryId, Partial<typeof americasWdi2000[keyof typeof americasWdi2000]>][]) {
+  const existing = baseline[countryId];
+  if (!existing) throw new Error(`Observation WDI partielle sans fiche macro : ${countryId}`);
+  baseline[countryId] = {
+    ...existing,
+    ...(observation.populationMillions === undefined ? {} : { population: observation.populationMillions }),
+    ...(observation.populationGrowthAnnualPct === undefined ? {} : { populationGrowth: observation.populationGrowthAnnualPct }),
+    ...(observation.unemploymentPct === undefined ? {} : { unemployment: observation.unemploymentPct }),
+  };
+}
+
 /** Paramètres de simulation : ils restent distincts des observations WDI. */
 Object.assign(calibration, {
   CAN: { workingAge: 67.1, participation: 66.5, migration: 6.0, debt: 82, revenue: 40, spending: 42.5, rate: 5.5, privateDebt: 104, reserves: 3.2, agriculture: 2.1, extractive: 6.1, publicServices: 19 } satisfies Calibration,
@@ -299,6 +310,8 @@ function createBankingSystem(countryId: CountryId): BankingSystemState {
 export function createMacroEconomies2000(): Record<CountryId, MacroeconomicState> {
   return Object.fromEntries(Object.entries(baseline).map(([countryId, item]) => {
     const c = calibration[countryId];
+    const partialWdi = Object.prototype.hasOwnProperty.call(partialWdi2000, countryId);
+    const hasWdiObservation = wdiObservedCountryIds.includes(countryId) || partialWdi;
     const potential = potentialGrowth(item);
     const outputGap = clamp((item.growth - potential) * 0.35, -2.5, 2.5);
     const governmentConsumption = Math.max(8, c.spending - (['FRA', 'DEU', 'ITA'].includes(countryId) ? 27 : 20));
@@ -331,13 +344,13 @@ export function createMacroEconomies2000(): Record<CountryId, MacroeconomicState
       policy: createPolicy(countryId, item),
       sectors: createSectors(countryId, item), products: createProducts(countryId, item),
       source: {
-        provider: wdiObservedCountryIds.includes(countryId)
+        provider: hasWdiObservation
           ? worldBankWdi2000Source.provider
           : globalNationalBaseline2000.some((entry) => entry.id === countryId)
             ? 'Catalogue mondial ORDO — archétype de scénario 2000 ; à enrichir par séries nationales'
             : 'Banque mondiale — WDI pour le socle ; calibration ORDO pour les stocks non directement observés', observationYear: 2000,
-        indicatorCodes: wdiObservedCountryIds.includes(countryId)
-          ? [...worldBankWdi2000Source.indicatorCodes]
+        indicatorCodes: hasWdiObservation
+          ? partialWdi ? [...(wdiPartiallyObservedIndicatorCodes[countryId] ?? [])] : [...worldBankWdi2000Source.indicatorCodes]
           : ['NY.GDP.MKTP.CD', 'NY.GDP.MKTP.KD.ZG', 'SP.POP.TOTL', 'SP.POP.GROW', 'FP.CPI.TOTL.ZG', 'SL.UEM.TOTL.ZS', 'NE.GDI.FTOT.ZS', 'NE.EXP.GNFS.ZS', 'NE.IMP.GNFS.ZS', 'NV.IND.TOTL.ZS'],
         estimatedIndicatorCodes: [
           'ORDO_OUTPUT_GAP', 'ORDO_SECTOR_CAPACITY', 'ORDO_PRODUCT_BALANCE', 'ORDO_FINANCIAL_STRESS',
