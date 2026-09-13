@@ -3,6 +3,8 @@ import { pickSeeded } from './random';
 import type { ArmamentProduct, WorldState } from './types';
 
 const clamp = (value: number, minimum = 0, maximum = 100) => Math.min(maximum, Math.max(minimum, value));
+/** Fenêtre de planification lisible : trois ans de carnet au maximum. */
+export const MAX_ARMAMENT_BACKLOG_MONTHS = 36;
 
 export function advanceIndustrySystem(state: WorldState, elapsedMonths: number) {
   let next = state;
@@ -103,17 +105,21 @@ export function authorizeArmamentProspect(state: WorldState, productId: string, 
   if (!product || !prospect) return { ok: false as const, state, error: 'Prospect industriel inconnu.' };
   if (product.countryId !== actorId) return { ok: false as const, state, error: 'Seul le gouvernement du pays producteur peut autoriser cette exportation.' };
   if (!['approval_required', 'negotiating'].includes(prospect.status)) return { ok: false as const, state, error: 'Ce dossier n’est plus ouvert.' };
-  const updatedProspects = product.prospects.map((item) => item.id === prospectId ? { ...item, status: 'won' as const } : item);
+  const remainingMonths = Math.max(0, MAX_ARMAMENT_BACKLOG_MONTHS - product.backlogMonths);
+  const authorizedQuantity = Math.min(prospect.quantity, Math.max(0, product.annualCapacity * remainingMonths / 12));
+  if (authorizedQuantity < 1) return { ok: false as const, state, error: `Carnet saturé : aucune capacité n’est disponible avant ${MAX_ARMAMENT_BACKLOG_MONTHS} mois.` };
+  const roundedQuantity = Math.max(1, Math.floor(authorizedQuantity));
+  const updatedProspects = product.prospects.map((item) => item.id === prospectId ? { ...item, quantity: roundedQuantity, status: 'won' as const } : item);
   const client = product.clients.find((item) => item.countryId === prospect.countryId);
   const updatedClients = client
-    ? product.clients.map((item) => item.countryId === prospect.countryId ? { ...item, quantity: item.quantity + prospect.quantity } : item)
-    : [...product.clients, { countryId: prospect.countryId, quantity: prospect.quantity, delivered: 0 }];
-  const addedBacklog = product.annualCapacity > 0 ? (prospect.quantity / product.annualCapacity) * 12 : 36;
+    ? product.clients.map((item) => item.countryId === prospect.countryId ? { ...item, quantity: item.quantity + roundedQuantity } : item)
+    : [...product.clients, { countryId: prospect.countryId, quantity: roundedQuantity, delivered: 0 }];
+  const addedBacklog = product.annualCapacity > 0 ? (roundedQuantity / product.annualCapacity) * 12 : remainingMonths;
   const next = commitWorldAction(state, {
     kind: 'defense', actorId, targetIds: [prospect.countryId], origin: 'player',
     intent: `Autoriser l’exportation de ${product.name} vers ${prospect.countryId}`,
     effects: [
-      { kind: 'armament_patch', productId, patch: { prospects: updatedProspects, clients: updatedClients, backlogMonths: Number((product.backlogMonths + addedBacklog).toFixed(2)), industrialHealth: clamp(product.industrialHealth + 3) }, reason: 'La commande est inscrite au carnet et soutient la filière.' },
+      { kind: 'armament_patch', productId, patch: { prospects: updatedProspects, clients: updatedClients, backlogMonths: Number(Math.min(MAX_ARMAMENT_BACKLOG_MONTHS, product.backlogMonths + addedBacklog).toFixed(2)), industrialHealth: clamp(product.industrialHealth + 3) }, reason: roundedQuantity < prospect.quantity ? `Une tranche de ${roundedQuantity} unités est inscrite : le carnet ne peut pas dépasser ${MAX_ARMAMENT_BACKLOG_MONTHS} mois.` : 'La commande est inscrite au carnet et soutient la filière.' },
       { kind: 'relation_delta', from: product.countryId, to: prospect.countryId, relation: 3, trust: 2, reason: 'Le programme d’armement crée une relation stratégique durable.' },
     ],
   });

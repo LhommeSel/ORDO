@@ -43,7 +43,7 @@ import { applyDiplomaticMeetingAIAnswer, diplomaticBriefFromDialogue, proposeDip
 import { validateCountryRegistry } from './data-validator';
 import { buildTurnBriefing } from './turn-briefing';
 import { queueAutonomousProgram } from './ai/autonomous-programs';
-import { authorizeArmamentProspect, createAutomaticArmamentProspects, rankArmamentProspectBuyers, rejectArmamentProspect } from './industry';
+import { authorizeArmamentProspect, createAutomaticArmamentProspects, MAX_ARMAMENT_BACKLOG_MONTHS, rankArmamentProspectBuyers, rejectArmamentProspect } from './industry';
 import { advancePoliticalCycles, assessPoliticalSupport, choosePoliticalCampaignStrategy, politicalCampaignDecisionPrompt, politicalCycleStops } from './political-cycles';
 import { nationalReformEffects, reformStateKey } from './reforms';
 import { advanceMilitaryTheaterAccess, militaryBasesForCountry, militaryTheatersForCountry } from './military-theaters';
@@ -1436,12 +1436,29 @@ test('un prospect d’armement peut être autorisé ou refusé sans engagement d
   if (!authorized.ok) return;
   assert.equal(authorized.state.armamentProducts[product.id].prospects.find((item) => item.id === prospect.id)?.status, 'won');
   assert.ok(authorized.state.armamentProducts[product.id].backlogMonths > product.backlogMonths);
+  assert.ok(authorized.state.armamentProducts[product.id].backlogMonths <= MAX_ARMAMENT_BACKLOG_MONTHS);
   assert.equal(authorized.state.countries.FRA.capacities.diplomacy.committed, diplomacyBefore);
   const rejected = rejectArmamentProspect(proposed, product.id, prospect.id);
   assert.equal(rejected.ok, true);
   if (!rejected.ok) return;
   assert.equal(rejected.state.armamentProducts[product.id].prospects.find((item) => item.id === prospect.id)?.status, 'lost');
   assert.equal(rejected.state.armamentProducts[product.id].backlogMonths, product.backlogMonths);
+});
+
+test('une commande d’armement est plafonnée par la fenêtre de planification du fabricant', () => {
+  const initial = createFrance2000World();
+  const product = structuredClone(initial.armamentProducts.rafale);
+  product.backlogMonths = MAX_ARMAMENT_BACKLOG_MONTHS - 3;
+  product.prospects = [{ id: 'rafale-saturation', countryId: 'IND', quantity: product.annualCapacity * 4, status: 'approval_required', politicalSensitivity: 35 }];
+  initial.armamentProducts.rafale = product;
+  const result = authorizeArmamentProspect(initial, 'rafale', 'rafale-saturation');
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  const updated = result.state.armamentProducts.rafale;
+  const accepted = updated.prospects.find((item) => item.id === 'rafale-saturation');
+  assert.equal(accepted?.status, 'won');
+  assert.ok((accepted?.quantity ?? 0) < product.prospects[0].quantity, 'la demande aurait dû être tronquée');
+  assert.ok(updated.backlogMonths <= MAX_ARMAMENT_BACKLOG_MONTHS);
 });
 
 test('un joueur étranger ne peut pas décider pour l’industrie d’armement française', () => {
