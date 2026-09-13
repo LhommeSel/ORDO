@@ -28,6 +28,7 @@ import { defenseReferences2000ForValidation } from './country-sheet';
 import { createHistoricalAnchors2000 } from './historical-anchors-2000';
 import { createNationalReforms2000 } from './reforms';
 import { createMilitaryBases2000, createMilitaryTheaters2000 } from './military-theaters';
+import { initializeTerritorialAssetOperations, territorialEnergyNodeAdditions } from './territorial-assets';
 
 const capacities = (values: Partial<Record<keyof CapacityState, [number, number]>> = {}): CapacityState => ({
   government: { maximum: values.government?.[0] ?? 55, committed: values.government?.[1] ?? 25 },
@@ -448,6 +449,7 @@ const energyNodes: Record<string, EnergyNode> = {
   'bra-oil': { id: 'bra-oil', countryId: 'BRA', resource: 'oil', label: 'Bassins offshore brésiliens', provenReserves: 920, probableReserves: 420, annualProduction: 68, annualCapacity: 75, domesticConsumption: 100, storageCapacity: 20, stocks: 11, extractionCost: 20, declineRate: 0.01, developmentLeadMonths: 48, infrastructure: ['Bassin de Campos', 'Terminaux du Sud-Est'] },
   'aus-gas': { id: 'aus-gas', countryId: 'AUS', resource: 'gas', label: 'Gaz offshore australien', provenReserves: 1150, probableReserves: 520, annualProduction: 31, annualCapacity: 38, domesticConsumption: 20, storageCapacity: 5, stocks: 2, extractionCost: 14, declineRate: 0.008, developmentLeadMonths: 48, infrastructure: ['Bass Strait', 'North West Shelf'] },
   'vnm-oil': { id: 'vnm-oil', countryId: 'VNM', resource: 'oil', label: 'Plateau continental vietnamien', provenReserves: 350, probableReserves: 180, annualProduction: 17, annualCapacity: 21, domesticConsumption: 8, storageCapacity: 3, stocks: 1, extractionCost: 17, declineRate: 0.012, developmentLeadMonths: 42, infrastructure: ['Bach Ho', 'Vung Tau'] },
+  ...territorialEnergyNodeAdditions,
 };
 
 const baselineFlow = (
@@ -522,6 +524,11 @@ export function createWorld2000(requestedPlayerCountryId: CountryId = 'FRA'): Wo
   assertValidCountryRegistry(allCountries, macroEconomies, { defenseReferences: defenseReferences2000ForValidation });
   const playerCountryId = allCountries[requestedPlayerCountryId] ? requestedPlayerCountryId : 'FRA';
   const playerCountry = allCountries[playerCountryId];
+  const energyNodesWithAssets = structuredClone(energyNodes);
+  const territorialWithOperations = initializeTerritorialAssetOperations(
+    createTerritorialState({ countries: allCountries, macroEconomies }),
+    energyNodesWithAssets,
+  );
   const dossiers = structuredClone(strategicDossiers);
   const dotcom = dossiers['current-dotcom-exuberance'];
   const playerDirectlyExposed = dotcom.actorIds.includes(playerCountryId);
@@ -530,7 +537,7 @@ export function createWorld2000(requestedPlayerCountryId: CountryId = 'FRA'): Wo
     : [];
   return {
     version: 1,
-    territorial: createTerritorialState({ countries: allCountries, macroEconomies }),
+    territorial: territorialWithOperations.territorial,
     scenarioId: `${playerCountryId.toLowerCase()}-2000-01`,
     seed: 20000101,
     sequence: 0,
@@ -553,7 +560,7 @@ export function createWorld2000(requestedPlayerCountryId: CountryId = 'FRA'): Wo
     historicalCurrents: structuredClone(currents),
     historicalAnchors: createHistoricalAnchors2000(),
     latentProcesses: structuredClone(latentProcesses),
-    energyNodes: structuredClone(energyNodes),
+    energyNodes: territorialWithOperations.energyNodes,
     energyContracts: {},
     baselineEnergyFlows: structuredClone(baselineEnergyFlows),
     countryEnergy: {

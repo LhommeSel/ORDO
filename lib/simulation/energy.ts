@@ -9,6 +9,7 @@ import type {
   ActionOrigin,
   WorldState,
 } from './types';
+import { nodeOperationalProduction } from './territorial-assets';
 
 const activeOn = (contract: EnergyContract, date: ISODate) =>
   contract.status === 'active' && contract.startDate <= date && contract.endDate >= date;
@@ -22,7 +23,7 @@ const baselineActiveOn = (flow: BaselineEnergyFlow, date: ISODate) =>
 export function nodePhysicalExportCapacity(state: WorldState, nodeId: string) {
   const node = state.energyNodes[nodeId];
   if (!node) return 0;
-  return Math.max(0, Math.min(node.annualProduction, node.annualCapacity) - node.domesticConsumption);
+  return Math.max(0, nodeOperationalProduction(state, nodeId) - node.domesticConsumption);
 }
 
 export function nodeBookedVolume(state: WorldState, nodeId: string, date = state.currentDate) {
@@ -70,7 +71,7 @@ export function contractDeliveredVolume(state: WorldState, contract: EnergyContr
 function domesticProductionAt(state: WorldState, countryId: CountryId, resource: EnergyResource) {
   const nodes = Object.values(state.energyNodes).filter((node) => node.countryId === countryId && node.resource === resource);
   if (!nodes.length) return state.countryEnergy[countryId]?.domesticProduction[resource] ?? 0;
-  return nodes.reduce((sum, node) => sum + Math.min(node.annualProduction, node.annualCapacity), 0);
+  return nodes.reduce((sum, node) => sum + nodeOperationalProduction(state, node.id), 0);
 }
 
 export function energyBalance(state: WorldState, countryId: CountryId, resource: EnergyResource) {

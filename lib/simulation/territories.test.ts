@@ -8,6 +8,8 @@ import { regionalizeCountry, territorySummary } from './territories';
 import type { WorldState } from './types';
 import { europeMacroTerritoryDatasets, europeanTerritorialCountryIds } from './territory-data-europe-macro';
 import { europePriorityAssetCountryIds } from './territory-data-europe';
+import { assetMonthlyOutput, assetOperationalOutput, nodeOperationalProduction } from './territorial-assets';
+import { energyBalance, nodePhysicalExportCapacity } from './energy';
 
 test('parcours territorial : France, carte, 12 mois, sauvegarde et extension à un autre pays', async () => {
   const start = performance.now();
@@ -118,4 +120,28 @@ test('les actifs européens prioritaires restent localisés et séparés par fil
     }
   }
   console.log(`Inventaire énergétique/infrastructure validé : ${europePriorityAssetCountryIds.length} pays, ${assets.filter((asset) => europePriorityAssetCountryIds.some((id) => asset.id.startsWith(`asset:${id}:`))).length} actifs prioritaires localisés. Capacités quantitatives non inventées.`);
+});
+
+test('les actifs énergétiques ont une capacité dérivée et raccordent les nœuds sans double compte', () => {
+  const world = createFrance2000World();
+  const energyAssets = Object.values(world.territorial.assets).filter((asset) => asset.operation);
+  assert.ok(energyAssets.length >= 70, `couche énergétique trop courte : ${energyAssets.length}`);
+  for (const asset of energyAssets) {
+    const operation = asset.operation!;
+    assert.ok(operation.maximum > 0, `${asset.id}: capacité maximale absente`);
+    assert.ok(operation.deployed >= 0 && operation.deployed <= operation.maximum + 1e-8, `${asset.id}: déploiement hors enveloppe`);
+    assert.ok(operation.availabilityPct >= 0 && operation.availabilityPct <= 100, `${asset.id}: disponibilité invalide`);
+    assert.ok(Math.abs(assetMonthlyOutput(asset) - assetOperationalOutput(asset) / 12) < 1e-10, `${asset.id}: débit mensuel incohérent`);
+    assert.deepEqual(asset.capacity, { value: operation.maximum, unit: operation.unit });
+  }
+  const linked = energyAssets.filter((asset) => asset.operation?.ledgerNodeId);
+  assert.ok(linked.length >= 10, 'trop peu d’actifs raccordés au registre énergétique');
+  for (const node of Object.values(world.energyNodes).filter((item) => item.territorialAssetIds?.length)) {
+    const detailed = node.territorialAssetIds!.reduce((sum, id) => sum + assetOperationalOutput(world.territorial.assets[id]), 0);
+    assert.ok(Math.abs(nodeOperationalProduction(world, node.id) - Math.min(node.annualProduction, node.annualCapacity, detailed)) < 1e-8, `${node.id}: double compte ou débit incohérent`);
+  }
+  assert.ok(Math.abs(nodePhysicalExportCapacity(world, 'nor-oil') - 140) < 0.1, 'le nœud norvégien a changé de capacité exportable');
+  assert.ok(Math.abs(energyBalance(world, 'FRA', 'oil')!.available - 92) < 0.1, 'le raccord français modifie le bilan de départ');
+  assert.ok(Math.abs(energyBalance(world, 'FRA', 'gas')!.available - 46) < 0.1, 'le raccord gazier français modifie le bilan de départ');
+  console.log(`Couche opérationnelle validée : ${energyAssets.length} actifs énergétiques, ${linked.length} raccords au registre, débit mensuel dérivé et bilans France conservés. Aucun appel IA.`);
 });

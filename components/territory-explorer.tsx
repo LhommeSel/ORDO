@@ -8,10 +8,21 @@ import type { Territory } from '@/lib/simulation/territory-types';
 import { territoryEconomicShare, territorySummary } from '@/lib/simulation/territories';
 import { territorySources } from '@/lib/simulation/territory-data-france-2000';
 import { territoryMapCatalog } from '@/lib/territory-map-catalog';
+import { assetMonthlyOutput, assetOperationalOutput } from '@/lib/simulation/territorial-assets';
 
 const numbers = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 });
 const decimals = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 });
 const featureCache = new Map<string, GeoJSON.FeatureCollection>();
+const assetUnits: Record<string, string> = { MW: 'MW', bcm_per_year: 'Gm³/an', million_tonnes_per_year: 'Mt/an' };
+
+function assetOperationLabel(asset: WorldState['territorial']['assets'][string]) {
+  const operation = asset.operation;
+  if (!operation) return null;
+  const unit = assetUnits[operation.unit] ?? operation.unit;
+  const monthly = assetMonthlyOutput(asset);
+  const effective = assetOperationalOutput(asset);
+  return `max ${decimals.format(operation.maximum)} ${unit} · déployé ${decimals.format(operation.deployed)} ${unit} · disponibilité ${decimals.format(operation.availabilityPct)} % · débit mensuel ${decimals.format(monthly)} ${unit} (${decimals.format(effective)} ${unit} effectifs/an)`;
+}
 
 // d3's spherical polygons use clockwise exteriors; RFC7946 uses the reverse.
 function forD3(collection: GeoJSON.FeatureCollection): GeoJSON.FeatureCollection {
@@ -134,9 +145,9 @@ export function TerritoryExplorer({ world, countryId }: { world: WorldState; cou
             <div><dt>Part du PIB national</dt><dd>{share === null ? 'Hors périmètre national' : `${decimals.format(share)} %`}</dd></div>
             <div><dt>Souveraineté / contrôle</dt><dd>{territorial.entities[selected.sovereignCountryId]?.name} / {territorial.entities[selected.controllerEntityId]?.name}</dd></div></dl>
           <h5>Actifs recensés ({assets.length})</h5>
-          {assets.length ? <ul>{assets.map((asset) => <li key={asset.id}><b>{asset.kind === 'port' || asset.kind === 'passage' || asset.kind === 'airport' ? '■' : '●'} {asset.name}</b> — {asset.operatorEntityId ? territorial.entities[asset.operatorEntityId]?.name : 'Opérateur à documenter'} · {asset.status === 'closed' ? 'fermé / arrêté au lancement' : 'capacité 2000 à renseigner'}</li>)}</ul>
+          {assets.length ? <ul>{assets.map((asset) => <li key={asset.id}><b>{asset.kind === 'port' || asset.kind === 'passage' || asset.kind === 'airport' ? '■' : '●'} {asset.name}</b> — {asset.operatorEntityId ? territorial.entities[asset.operatorEntityId]?.name : 'Opérateur à documenter'} · {asset.status === 'closed' ? 'fermé / arrêté au lancement' : assetOperationLabel(asset) ?? 'inventaire sans capacité chiffrée'}</li>)}</ul>
             : <p>Aucun actif recensé dans ce premier lot — cela ne signifie pas que le territoire n’en possède pas.</p>}
-          <p className="territory-help">Les actifs sont un inventaire localisé : ils n’ajoutent ni PIB ni production et ne limitent pas encore les flux.</p>
+          <p className="territory-help">Les actifs sans capacité restent un inventaire localisé. Les actifs énergétiques chiffrés ont un débit mensuel dérivé ; seuls ceux marqués comme raccordés au registre influencent les flux.</p>
           <details><summary>Méthode et sources</summary><p>{selected.note}</p>
             {selected.referenceYear && <p>Population de référence {selected.referenceYear} : {numbers.format(selected.referencePopulation ?? 0)}. La population affichée est recalée sur le total actuel de la partie.</p>}
             <p>À ce stade, les évolutions nationales sont réparties proportionnellement. Pas encore de croissance régionale autonome ni de transfert territorial jouable.</p>

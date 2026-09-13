@@ -357,6 +357,8 @@ export type EnergyNode = {
   declineRate: number;
   developmentLeadMonths: number;
   infrastructure: string[];
+  /** Actifs territoriaux qui détaillent ce nœud sans le compter deux fois. */
+  territorialAssetIds?: string[];
 };
 
 export type EnergyContract = {

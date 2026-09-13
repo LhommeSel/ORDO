@@ -23,6 +23,25 @@ export type Territory = {
   anchor: [number, number] | null;
 };
 
+export type TerritorialAssetCapacityUnit = 'MW' | 'bcm_per_year' | 'million_tonnes_per_year';
+
+/**
+ * Couche opérationnelle légère des actifs énergétiques.
+ *
+ * `maximum` est la capacité installée ou mobilisable, `deployed` la part
+ * effectivement déployée au lancement et `availabilityPct` les indisponibilités
+ * ordinaires. Aucun de ces champs ne remplace le registre énergétique : un
+ * `ledgerNodeId` explicite le seul raccord autorisé avec ce registre.
+ */
+export type TerritorialAssetOperation = {
+  maximum: number;
+  deployed: number;
+  availabilityPct: number;
+  unit: TerritorialAssetCapacityUnit;
+  resource?: 'oil' | 'gas';
+  ledgerNodeId?: string;
+};
+
 export type TerritorialAsset = {
   id: string;
   name: string;
@@ -32,7 +51,9 @@ export type TerritorialAsset = {
   operatorEntityId: string | null;
   anchor: [number, number];
   status: 'operating' | 'closed' | 'damaged';
-  capacity: { value: number; unit: 'MW' | 'bcm_per_year' | 'million_tonnes_per_year' } | null;
+  capacity: { value: number; unit: TerritorialAssetCapacityUnit } | null;
+  /** Présent pour les actifs énergétiques calibrés ; absent = inventaire seul. */
+  operation?: TerritorialAssetOperation;
   /** Initial catalogue is NOT a second production ledger. */
   integration: 'inventory_only';
   sourceIds: string[];
