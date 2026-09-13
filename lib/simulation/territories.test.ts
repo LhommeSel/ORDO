@@ -119,7 +119,7 @@ test('les actifs européens prioritaires restent localisés et séparés par fil
       assert.equal(asset.integration, 'inventory_only');
     }
   }
-  console.log(`Inventaire énergétique/infrastructure validé : ${europePriorityAssetCountryIds.length} pays, ${assets.filter((asset) => europePriorityAssetCountryIds.some((id) => asset.id.startsWith(`asset:${id}:`))).length} actifs prioritaires localisés. Capacités quantitatives non inventées.`);
+  console.log(`Inventaire énergétique/infrastructure validé : ${europePriorityAssetCountryIds.length} pays, ${assets.filter((asset) => europePriorityAssetCountryIds.some((id) => asset.id.startsWith(`asset:${id}:`))).length} actifs prioritaires localisés. Capacités opérationnelles ajoutées séparément de l’inventaire.`);
 });
 
 test('les actifs énergétiques ont une capacité dérivée et raccordent les nœuds sans double compte', () => {

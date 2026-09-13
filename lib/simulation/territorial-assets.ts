@@ -153,9 +153,17 @@ export function nodeOperationalProduction(state: WorldState, nodeId: string) {
 
 export function territorialAssetSummary(state: WorldState, countryId: string) {
   const assets = Object.values(state.territorial.assets).filter((asset) => state.territorial.territories[asset.territoryId]?.sovereignCountryId === countryId && asset.operation);
+  const byUnit = Object.fromEntries([...new Set(assets.map((asset) => asset.operation!.unit))].map((unit) => {
+    const selected = assets.filter((asset) => asset.operation!.unit === unit);
+    return [unit, {
+      annualOutput: selected.reduce((sum, asset) => sum + assetOperationalOutput(asset), 0),
+      monthlyOutput: selected.reduce((sum, asset) => sum + assetMonthlyOutput(asset), 0),
+      assetIds: selected.map((asset) => asset.id),
+    }];
+  }));
   return {
     assets,
-    annualOutput: assets.reduce((sum, asset) => sum + assetOperationalOutput(asset), 0),
-    monthlyOutput: assets.reduce((sum, asset) => sum + assetMonthlyOutput(asset), 0),
+    /** Les unités ne sont jamais additionnées entre MW, gaz et tonnages. */
+    byUnit,
   };
 }

@@ -19,9 +19,10 @@ function assetOperationLabel(asset: WorldState['territorial']['assets'][string])
   const operation = asset.operation;
   if (!operation) return null;
   const unit = assetUnits[operation.unit] ?? operation.unit;
+  const monthlyUnit = operation.unit === 'MW' ? 'MW moyen' : operation.unit === 'bcm_per_year' ? 'Gm³/mois' : 'Mt/mois';
   const monthly = assetMonthlyOutput(asset);
   const effective = assetOperationalOutput(asset);
-  return `max ${decimals.format(operation.maximum)} ${unit} · déployé ${decimals.format(operation.deployed)} ${unit} · disponibilité ${decimals.format(operation.availabilityPct)} % · débit mensuel ${decimals.format(monthly)} ${unit} (${decimals.format(effective)} ${unit} effectifs/an)`;
+  return `max ${decimals.format(operation.maximum)} ${unit} · déployé ${decimals.format(operation.deployed)} ${unit} · disponibilité ${decimals.format(operation.availabilityPct)} % · débit mensuel ${decimals.format(monthly)} ${monthlyUnit} (${decimals.format(effective)} ${unit} effectifs/an)`;
 }
 
 // d3's spherical polygons use clockwise exteriors; RFC7946 uses the reverse.
