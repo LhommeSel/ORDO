@@ -1,5 +1,6 @@
 import raw from './data/europe-regions-2000.json';
 import type { TerritorialAsset, TerritoryDataset, TerritorySeed } from './territory-types';
+import { europeMacroTerritoryDatasets } from './territory-data-europe-macro';
 
 type RawRegion = { id: string; name: string; code: string; population: number; economicWeight: number; populationBasis: string; economicBasis: string; anchor: [number, number] };
 const data = raw as unknown as { countries: Record<string, RawRegion[]> };
@@ -48,7 +49,13 @@ function assetsFor(countryId: string, regions: TerritorySeed[]): TerritorialAsse
   });
 }
 
-export const europeTerritoryDatasets: Record<string, TerritoryDataset> = Object.fromEntries(['DEU', 'ITA', 'ESP', 'GBR'].map((countryId) => {
+const europeNutsTerritoryDatasets: Record<string, TerritoryDataset> = Object.fromEntries(['DEU', 'ITA', 'ESP', 'GBR'].map((countryId) => {
   const territories = regionSeeds(countryId);
   return [countryId, { countryId, territories, assets: assetsFor(countryId, territories), entities: [] } satisfies TerritoryDataset];
 }));
+
+/** NUTS détaillé quand il existe, sinon la maille macro-régionale ORDO. */
+export const europeTerritoryDatasets: Record<string, TerritoryDataset> = {
+  ...europeMacroTerritoryDatasets,
+  ...europeNutsTerritoryDatasets,
+};

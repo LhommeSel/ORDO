@@ -6,6 +6,7 @@ import { advanceWorld } from './engine';
 import { deserializeWorld, serializeWorld } from './persistence';
 import { regionalizeCountry, territorySummary } from './territories';
 import type { WorldState } from './types';
+import { europeMacroTerritoryDatasets, europeanTerritorialCountryIds } from './territory-data-europe-macro';
 
 test('parcours territorial : France, carte, 12 mois, sauvegarde et extension à un autre pays', async () => {
   const start = performance.now();
@@ -74,4 +75,28 @@ test('les actifs français conservent une attribution d’opérateur compatible 
   assert.equal(asset('paris-basin')?.operatorEntityId, null);
   assert.equal(asset('cdg')?.operatorEntityId, null);
   assert.deepEqual(asset('porcheville')?.sourceIds, []);
+});
+
+test('les macro-régions couvrent l’Europe du scénario sans double compte', () => {
+  const world = createFrance2000World();
+  const missing: string[] = [];
+  for (const countryId of europeanTerritorialCountryIds) {
+    const territories = Object.values(world.territorial.territories).filter((territory) => territory.sovereignCountryId === countryId);
+    const accounting = territories.filter((territory) => territory.accountingCountryId === countryId);
+    const macro = world.macroEconomies[countryId];
+    const summary = territorySummary(world.territorial, countryId);
+    if (!macro || accounting.length < 2
+      || Math.abs(summary.population - macro.populationMillions * 1e6) > 0.01
+      || Math.abs(summary.realGdpBillion2000Usd - macro.realGdpBillion2000Usd) > 1e-7) missing.push(countryId);
+  }
+  assert.deepEqual(missing, []);
+  for (const countryId of Object.keys(europeMacroTerritoryDatasets)) {
+    for (const territory of Object.values(world.territorial.territories).filter((item) => item.sovereignCountryId === countryId)) {
+      assert.equal(territory.kind, 'region');
+      assert.equal(territory.provenance, 'calibrated');
+      assert.ok(territory.anchor, `${countryId}: ancre macro-régionale manquante`);
+      assert.match(territory.note, /allocation de scénario/);
+    }
+  }
+  console.log(`Couverture européenne validée : ${europeanTerritorialCountryIds.length} pays, ${europeanTerritorialCountryIds.reduce((sum, id) => sum + Object.values(world.territorial.territories).filter((territory) => territory.sovereignCountryId === id && territory.kind !== 'aggregate').length, 0)} mailles régionales, totaux population/PIB conservés. Aucun appel IA.`);
 });
