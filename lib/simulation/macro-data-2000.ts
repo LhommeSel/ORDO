@@ -13,7 +13,7 @@ import type {
 } from './types';
 import { nationalBaseline2000 } from './national-baseline-2000';
 import { globalNationalBaseline2000 } from './global-baseline-2000';
-import { americasWdi2000, wdiObservedCountryIds, worldBankWdi2000Source } from './macro-observations-2000';
+import { africaMiddleEastWdi2000, americasWdi2000, europeWdi2000, wdiCalibratedIndicatorCodes, wdiObservedCountryIds, worldBankWdi2000Source } from './macro-observations-2000';
 
 type Baseline = {
   gdp: number; growth: number; population: number; populationGrowth: number;
@@ -164,9 +164,12 @@ for (const item of [...nationalBaseline2000, ...globalNationalBaseline2000]) {
 
 /**
  * Les fiches génériques n'ont pas le droit d'écraser un import statistique.
- * Le premier lot WDI couvre les quatre économies américaines du noyau.
+ * Les lots WDI couvrent les quatre économies américaines, le noyau européen,
+ * puis l'Afrique et le Moyen-Orient ; les stocks de simulation (dette,
+ * réserves, capacité bancaire) restent volontairement séparés et calibrés
+ * dans ORDO.
  */
-for (const [countryId, observation] of Object.entries(americasWdi2000) as [CountryId, typeof americasWdi2000[keyof typeof americasWdi2000]][]) {
+for (const [countryId, observation] of Object.entries({ ...americasWdi2000, ...europeWdi2000, ...africaMiddleEastWdi2000 }) as [CountryId, typeof americasWdi2000[keyof typeof americasWdi2000]][]) {
   const existing = baseline[countryId];
   if (!existing) throw new Error(`Observation WDI sans fiche macro : ${countryId}`);
   baseline[countryId] = {
@@ -336,7 +339,10 @@ export function createMacroEconomies2000(): Record<CountryId, MacroeconomicState
         indicatorCodes: wdiObservedCountryIds.includes(countryId)
           ? [...worldBankWdi2000Source.indicatorCodes]
           : ['NY.GDP.MKTP.CD', 'NY.GDP.MKTP.KD.ZG', 'SP.POP.TOTL', 'SP.POP.GROW', 'FP.CPI.TOTL.ZG', 'SL.UEM.TOTL.ZS', 'NE.GDI.FTOT.ZS', 'NE.EXP.GNFS.ZS', 'NE.IMP.GNFS.ZS', 'NV.IND.TOTL.ZS'],
-        estimatedIndicatorCodes: ['ORDO_OUTPUT_GAP', 'ORDO_SECTOR_CAPACITY', 'ORDO_PRODUCT_BALANCE', 'ORDO_FINANCIAL_STRESS'],
+        estimatedIndicatorCodes: [
+          'ORDO_OUTPUT_GAP', 'ORDO_SECTOR_CAPACITY', 'ORDO_PRODUCT_BALANCE', 'ORDO_FINANCIAL_STRESS',
+          ...(wdiCalibratedIndicatorCodes[countryId] ?? []),
+        ],
         confidence: item.confidence,
       },
       lastUpdatedAt: '2000-01-01',

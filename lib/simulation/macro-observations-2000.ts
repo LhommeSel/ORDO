@@ -33,8 +33,9 @@ export const worldBankWdi2000Source = {
 } as const;
 
 /**
- * Premier lot normalisé : Amériques. Valeurs WDI révisées récupérées via
- * l'API, avec PIB en milliards de dollars courants et population en millions.
+ * Lots normalisés : Amériques puis noyau européen. Les valeurs WDI révisées
+ * sont converties en PIB en milliards de dollars courants et population en
+ * millions pour être consommées directement par le moteur.
  */
 export const americasWdi2000: Record<'USA' | 'CAN' | 'MEX' | 'BRA', MacroObservation2000> = {
   USA: { realGdpBillion2000Usd: 10250.952, realGrowthAnnualPct: 4.078, populationMillions: 282.162411, populationGrowthAnnualPct: 1.113, inflationAnnualPct: 3.377, unemploymentPct: 3.992, fixedInvestmentSharePctGdp: 23.146, exportSharePctGdp: 10.693, importSharePctGdp: 14.410, industrySharePctGdp: 22.452 },
@@ -43,4 +44,44 @@ export const americasWdi2000: Record<'USA' | 'CAN' | 'MEX' | 'BRA', MacroObserva
   BRA: { realGdpBillion2000Usd: 655.448, realGrowthAnnualPct: 4.388, populationMillions: 174.018282, populationGrowthAnnualPct: 1.375, inflationAnnualPct: 7.044, unemploymentPct: 10.889, fixedInvestmentSharePctGdp: 18.304, exportSharePctGdp: 10.188, importSharePctGdp: 12.452, industrySharePctGdp: 23.007 },
 };
 
-export const wdiObservedCountryIds = Object.keys(americasWdi2000) as CountryId[];
+/**
+ * Deuxième lot normalisé : noyau européen ORDO. Les valeurs proviennent des
+ * mêmes indicateurs WDI et de la même année que le lot américain ; les unités
+ * sont déjà converties en milliards de dollars et millions d'habitants pour
+ * rester directement compatibles avec le moteur macro.
+ */
+export const europeWdi2000: Record<'FRA' | 'DEU' | 'ITA' | 'ESP' | 'POL' | 'GBR' | 'NOR' | 'AUT' | 'GRC', MacroObservation2000> = {
+  FRA: { realGdpBillion2000Usd: 1360.959, realGrowthAnnualPct: 4.141, populationMillions: 60.918661, populationGrowthAnnualPct: 0.686, inflationAnnualPct: 1.676, unemploymentPct: 10.218, fixedInvestmentSharePctGdp: 20.881, exportSharePctGdp: 29.758, importSharePctGdp: 28.028, industrySharePctGdp: 21.129 },
+  DEU: { realGdpBillion2000Usd: 1966.981, realGrowthAnnualPct: 2.877, populationMillions: 82.211508, populationGrowthAnnualPct: 0.135, inflationAnnualPct: 1.440, unemploymentPct: 7.917, fixedInvestmentSharePctGdp: 22.883, exportSharePctGdp: 29.681, importSharePctGdp: 29.515, industrySharePctGdp: 27.254 },
+  ITA: { realGdpBillion2000Usd: 1149.661, realGrowthAnnualPct: 3.882, populationMillions: 56.942108, populationGrowthAnnualPct: 0.045, inflationAnnualPct: 2.538, unemploymentPct: 10.834, fixedInvestmentSharePctGdp: 21.226, exportSharePctGdp: 25.561, importSharePctGdp: 24.714, industrySharePctGdp: 24.102 },
+  ESP: { realGdpBillion2000Usd: 598.103, realGrowthAnnualPct: 5.201, populationMillions: 40.567864, populationGrowthAnnualPct: 0.447, inflationAnnualPct: 3.434, unemploymentPct: 13.785, fixedInvestmentSharePctGdp: 25.973, exportSharePctGdp: 28.589, importSharePctGdp: 31.533, industrySharePctGdp: 28.021 },
+  POL: { realGdpBillion2000Usd: 172.954, realGrowthAnnualPct: 4.656, populationMillions: 38.258629, populationGrowthAnnualPct: -1.044, inflationAnnualPct: 9.900, unemploymentPct: 14.928, fixedInvestmentSharePctGdp: 23.813, exportSharePctGdp: 27.073, importSharePctGdp: 33.538, industrySharePctGdp: 28.772 },
+  GBR: { realGdpBillion2000Usd: 1671.598, realGrowthAnnualPct: 4.524, populationMillions: 58.892514, populationGrowthAnnualPct: 0.357, inflationAnnualPct: 1.183, unemploymentPct: 5.558, fixedInvestmentSharePctGdp: 18.227, exportSharePctGdp: 25.556, importSharePctGdp: 26.782, industrySharePctGdp: 22.681 },
+  NOR: { realGdpBillion2000Usd: 170.620, realGrowthAnnualPct: 3.443, populationMillions: 4.490967, populationGrowthAnnualPct: 0.649, inflationAnnualPct: 3.086, unemploymentPct: 3.458, fixedInvestmentSharePctGdp: 19.960, exportSharePctGdp: 45.837, importSharePctGdp: 28.948, industrySharePctGdp: 36.980 },
+  AUT: { realGdpBillion2000Usd: 196.182, realGrowthAnnualPct: 3.190, populationMillions: 8.011566, populationGrowthAnnualPct: 0.240, inflationAnnualPct: 2.345, unemploymentPct: 4.687, fixedInvestmentSharePctGdp: 25.706, exportSharePctGdp: 43.591, importSharePctGdp: 42.252, industrySharePctGdp: 28.612 },
+  GRC: { realGdpBillion2000Usd: 125.760, realGrowthAnnualPct: 4.138, populationMillions: 10.805808, populationGrowthAnnualPct: 0.409, inflationAnnualPct: 3.151, unemploymentPct: 11.345, fixedInvestmentSharePctGdp: 25.937, exportSharePctGdp: 24.011, importSharePctGdp: 35.101, industrySharePctGdp: 18.713 },
+};
+
+/**
+ * Troisième lot normalisé : Afrique et Moyen-Orient du noyau ORDO. Le WDI ne
+ * publie pas trois séries 2000 pour le Nigeria (investissement, exportations,
+ * importations) ; ces trois champs conservent donc une calibration ORDO
+ * explicite, tandis que les autres indicateurs restent observés dans le WDI.
+ */
+export const africaMiddleEastWdi2000: Record<'ZAF' | 'DZA' | 'EGY' | 'MLI' | 'NGA' | 'IRN' | 'SAU' | 'TUR', MacroObservation2000> = {
+  ZAF: { realGdpBillion2000Usd: 151.753, realGrowthAnnualPct: 4.200, populationMillions: 47.159719, populationGrowthAnnualPct: 0.915, inflationAnnualPct: 5.339, unemploymentPct: 22.788, fixedInvestmentSharePctGdp: 14.387, exportSharePctGdp: 24.404, importSharePctGdp: 21.816, industrySharePctGdp: 28.230 },
+  DZA: { realGdpBillion2000Usd: 54.790, realGrowthAnnualPct: 3.800, populationMillions: 30.903893, populationGrowthAnnualPct: 1.400, inflationAnnualPct: 0.339, unemploymentPct: 29.770, fixedInvestmentSharePctGdp: 20.677, exportSharePctGdp: 42.070, importSharePctGdp: 20.789, industrySharePctGdp: 53.331 },
+  EGY: { realGdpBillion2000Usd: 99.839, realGrowthAnnualPct: 6.370, populationMillions: 73.083284, populationGrowthAnnualPct: 2.161, inflationAnnualPct: 2.684, unemploymentPct: 8.980, fixedInvestmentSharePctGdp: 18.950, exportSharePctGdp: 16.201, importSharePctGdp: 22.817, industrySharePctGdp: 30.752 },
+  MLI: { realGdpBillion2000Usd: 3.522, realGrowthAnnualPct: -0.736, populationMillions: 11.559290, populationGrowthAnnualPct: 2.913, inflationAnnualPct: -0.678, unemploymentPct: 1.412, fixedInvestmentSharePctGdp: 17.819, exportSharePctGdp: 18.308, importSharePctGdp: 26.357, industrySharePctGdp: 16.198 },
+  NGA: { realGdpBillion2000Usd: 69.172, realGrowthAnnualPct: 5.016, populationMillions: 126.382494, populationGrowthAnnualPct: 2.674, inflationAnnualPct: 6.933, unemploymentPct: 3.953, fixedInvestmentSharePctGdp: 23.160, exportSharePctGdp: 19.320, importSharePctGdp: 20.580, industrySharePctGdp: 33.823 },
+  IRN: { realGdpBillion2000Usd: 109.592, realGrowthAnnualPct: 5.846, populationMillions: 66.418659, populationGrowthAnnualPct: 1.476, inflationAnnualPct: 14.477, unemploymentPct: 11.698, fixedInvestmentSharePctGdp: 31.305, exportSharePctGdp: 21.467, importSharePctGdp: 19.790, industrySharePctGdp: 40.306 },
+  SAU: { realGdpBillion2000Usd: 189.515, realGrowthAnnualPct: 4.718, populationMillions: 16.177722, populationGrowthAnnualPct: 4.460, inflationAnnualPct: -1.125, unemploymentPct: 4.570, fixedInvestmentSharePctGdp: 17.353, exportSharePctGdp: 43.405, importSharePctGdp: 24.761, industrySharePctGdp: 53.450 },
+  TUR: { realGdpBillion2000Usd: 274.748, realGrowthAnnualPct: 6.985, populationMillions: 65.425961, populationGrowthAnnualPct: 1.283, inflationAnnualPct: 54.915, unemploymentPct: 6.495, fixedInvestmentSharePctGdp: 22.311, exportSharePctGdp: 19.933, importSharePctGdp: 22.441, industrySharePctGdp: 26.804 },
+};
+
+/** Séries WDI absentes en 2000 et remplacées par une calibration ORDO. */
+export const wdiCalibratedIndicatorCodes: Record<string, string[]> = {
+  NGA: ['NE.GDI.FTOT.ZS', 'NE.EXP.GNFS.ZS', 'NE.IMP.GNFS.ZS'],
+};
+
+export const wdiObservedCountryIds = Object.keys({ ...americasWdi2000, ...europeWdi2000, ...africaMiddleEastWdi2000 }) as CountryId[];
