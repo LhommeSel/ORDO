@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import type { WorldState } from '@/lib/simulation/types';
 import type { Territory } from '@/lib/simulation/territory-types';
 import { territoryEconomicShare, territorySummary } from '@/lib/simulation/territories';
+import { transferTerritory } from '@/lib/simulation/territorial-transfers';
 import { territoryMapCatalog } from '@/lib/territory-map-catalog';
 import { assetMonthlyOutput, assetOperationalOutput, operateTerritorialAsset, type TerritorialAssetActionKind } from '@/lib/simulation/territorial-assets';
 
@@ -112,6 +113,7 @@ export function TerritoryExplorer({ world, countryId, onWorldChange, onNotice }:
   const [groupId, setGroupId] = useState(groups[0].id);
   const [selectedId, setSelectedId] = useState('');
   const [query, setQuery] = useState('');
+  const [transferTarget, setTransferTarget] = useState('');
   const territories = useMemo(() => Object.values(territorial.territories).filter((t) => t.sovereignCountryId === countryId), [territorial.territories, countryId]);
   const group = groups.find((item) => item.id === groupId) ?? groups[0];
   const regions = territories.filter((t) => t.mapGroup === group.id);
@@ -120,12 +122,21 @@ export function TerritoryExplorer({ world, countryId, onWorldChange, onNotice }:
   const share = selected ? territoryEconomicShare(territorial, selected) : null;
   const assets = selected ? Object.values(territorial.assets).filter((a) => a.territoryId === selected.id) : [];
   const canOperate = countryId === world.playerCountryId && Boolean(onWorldChange);
+  const transferTargets = Object.values(world.countries).filter((country) => country.id !== countryId).sort((a, b) => a.name.localeCompare(b.name));
   const operate = (assetId: string, kind: TerritorialAssetActionKind) => {
     if (!onWorldChange) return;
     const result = operateTerritorialAsset(world, assetId, kind);
     if (!result.ok) { onNotice?.(result.error); return; }
     onWorldChange(result.state);
     onNotice?.(result.message);
+  };
+  const transfer = (mode: 'cession' | 'occupation' | 'liberation') => {
+    if (!onWorldChange || !selected || (mode !== 'liberation' && !transferTarget)) return;
+    const result = transferTerritory(world, selected.id, mode === 'liberation' ? selected.sovereignCountryId : transferTarget, mode);
+    if (!result.ok) { onNotice?.(result.error); return; }
+    onWorldChange(result.state);
+    onNotice?.(result.message);
+    setTransferTarget('');
   };
   const normalize = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
   return <section className="territory-explorer" aria-label="Découpage territorial">
@@ -167,6 +178,7 @@ export function TerritoryExplorer({ world, countryId, onWorldChange, onNotice }:
             </li>;
           })}</ul>
             : <p>Aucun actif recensé dans ce premier lot — cela ne signifie pas que le territoire n’en possède pas.</p>}
+          {canOperate && selected.kind !== 'aggregate' && <div className="mt-4 border-t border-border/70 pt-3"><h5>Contrôle territorial</h5><p className="mt-1 text-xs text-muted-foreground">Les transferts sont atomiques : une occupation ne déplace pas le PIB ; une cession réconcilie souveraineté et comptes nationaux.</p><div className="mt-2 flex flex-wrap gap-2"><select aria-label="Pays cible du transfert" value={transferTarget} onChange={(event) => setTransferTarget(event.target.value)} className="h-9 min-w-52 border border-input bg-background px-2 text-sm"><option value="">Choisir un pays…</option>{transferTargets.map((country) => <option key={country.id} value={country.id}>{country.flag} {country.name}</option>)}</select><Button size="sm" variant="outline" disabled={!transferTarget} onClick={() => transfer('cession')}>Céder</Button><Button size="sm" variant="outline" disabled={!transferTarget} onClick={() => transfer('occupation')}>Occupation</Button>{selected.controllerEntityId !== selected.sovereignCountryId && <Button size="sm" variant="outline" onClick={() => transfer('liberation')}>Libérer</Button>}</div></div>}
           <p className="territory-help">Les actifs sans capacité restent un inventaire localisé. Les actifs énergétiques chiffrés ont un débit mensuel dérivé ; seuls ceux marqués comme raccordés au registre influencent les flux. Les boutons d’exploitation apparaissent uniquement pour le pays joué.</p>
         </article>}
       </div>

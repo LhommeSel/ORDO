@@ -14,7 +14,15 @@ export type CapacityDomainId =
   | 'intelligence'
   | 'defense';
 
-export type CapacityState = Record<CapacityDomainId, { maximum: number; committed: number }>;
+/** Charge institutionnelle persistante. Les champs d'usure sont optionnels
+ * pour permettre la lecture des anciennes sauvegardes. */
+export type CapacityState = Record<CapacityDomainId, {
+  maximum: number;
+  committed: number;
+  overloadMonths?: number;
+  efficiencyPct?: number;
+  lastOverloadAt?: ISODate | null;
+}>;
 
 export type WorldMetric = 'budget' | 'industry' | 'stability' | 'security';
 export type ActionOrigin = 'player' | 'local_rule' | 'ai' | 'historical' | 'time';
@@ -1493,6 +1501,7 @@ export type WorldEffect =
   | { kind: 'country_strategy_patch'; countryId: CountryId; patch: Partial<CountryStrategy>; reason: string; visibility?: Visibility }
   | { kind: 'capacity_commitment'; countryId: CountryId; domain: CapacityDomainId; delta: number; reason: string; visibility?: Visibility }
   | { kind: 'capacity_maximum'; countryId: CountryId; domain: CapacityDomainId; delta: number; reason: string; visibility?: Visibility }
+  | { kind: 'capacity_overload_patch'; countryId: CountryId; domain: CapacityDomainId; patch: { overloadMonths?: number; efficiencyPct?: number; lastOverloadAt?: ISODate | null }; reason: string; visibility?: Visibility }
   | { kind: 'relation_delta'; from: CountryId; to: CountryId; relation: number; trust: number; reason: string; visibility?: Visibility }
   | { kind: 'intelligence_delta'; observerId: CountryId; targetId: CountryId; delta: number; reason: string; visibility?: Visibility }
   | { kind: 'institution_patch'; institutionId: string; patch: Partial<InstitutionState>; reason: string; visibility?: Visibility }
@@ -1505,6 +1514,7 @@ export type WorldEffect =
   | { kind: 'energy_contract_patch'; contractId: string; patch: Partial<EnergyContract>; reason: string; visibility?: Visibility }
   | { kind: 'energy_node_patch'; nodeId: string; patch: Partial<EnergyNode>; reason: string; visibility?: Visibility }
   | { kind: 'territorial_asset_patch'; assetId: string; patch: { status?: 'operating' | 'closed' | 'damaged'; operation?: Partial<TerritorialAssetOperation> }; reason: string; visibility?: Visibility }
+  | { kind: 'territory_transfer'; territoryId: string; mode: 'cession' | 'occupation' | 'liberation'; targetCountryId: CountryId; reason: string; visibility?: Visibility }
   | { kind: 'energy_stock_delta'; countryId: CountryId; resource: EnergyResource; delta: number; reason: string; visibility?: Visibility }
   | { kind: 'diplomatic_session_add'; session: DiplomaticSession; reason: string; visibility?: Visibility }
   | { kind: 'diplomatic_session_patch'; sessionId: string; patch: Partial<DiplomaticSession>; reason: string; visibility?: Visibility }

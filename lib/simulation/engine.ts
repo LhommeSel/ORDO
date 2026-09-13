@@ -16,6 +16,7 @@ import { compactWorldForSave } from './persistence';
 import { advancePoliticalCycles } from './political-cycles';
 import { advanceMilitaryTheaterAccess } from './military-theaters';
 import { advanceWarZones } from './war-zones';
+import { advanceOperationalCapacities } from './capacity-system';
 import { summarizeTurnResolution, type TurnResolutionSummary } from './core/turn-orchestrator';
 import type { ISODate, SimulationStop, WorldEffect, WorldState } from './types';
 
@@ -206,6 +207,9 @@ function simulationPhases(
     { id: 'military-access', advance: (state, context) => context.reachedMonthBoundary ? advanceMilitaryTheaterAccess(state) : state },
     { id: 'institutions', advance: (state, context) => advanceInstitutions(state, context.elapsedMonths) },
     { id: 'common-actions', advance: (state, context) => advanceCommonActionPrograms(state, context.elapsedMonths) },
+    // La charge institutionnelle est recalculée après les programmes : elle
+    // prend en compte les engagements du mois avant la mise à jour macro.
+    { id: 'operational-capacities', advance: (state, context) => context.reachedMonthBoundary ? advanceOperationalCapacities(state, context.elapsedMonths) : state },
     { id: 'political-cycles', advance: (state, context) => context.reachedMonthBoundary ? advancePoliticalCycles(state) : state },
     { id: 'dossier-escalation', advance: (state, context) => context.reachedMonthBoundary ? advanceDossierEscalation(state) : state },
     { id: 'dossier-lifecycle', advance: (state, context) => context.reachedMonthBoundary ? advanceDossierLifecycle(state) : state },

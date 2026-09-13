@@ -9,7 +9,7 @@ import type {
 } from './types';
 import { MAX_STRATEGIC_SECTOR_WORKLOAD_MONTHS } from './types';
 
-import { synchronizeTerritorialEconomy } from './territories';
+import { indexTerritorialState, synchronizeTerritorialEconomy } from './territories';
 
 const relationKey = (from: CountryId, to: CountryId) => `${from}:${to}`;
 const intelligenceKey = (observerId: CountryId, targetId: CountryId) => `${observerId}:${targetId}`;
@@ -177,6 +177,22 @@ function applyEffect(state: WorldState, action: WorldAction, effect: WorldEffect
     return appendChange(next, action, effect, `countries.${effect.countryId}.capacities.${effect.domain}.${field}`, before, Number(after.toFixed(3)));
   }
 
+  if (effect.kind === 'capacity_overload_patch') {
+    const country = state.countries[effect.countryId];
+    if (!country) return state;
+    const capacity = country.capacities[effect.domain];
+    const after = {
+      ...capacity,
+      ...(effect.patch.overloadMonths === undefined ? {} : { overloadMonths: Math.max(0, Number(effect.patch.overloadMonths.toFixed(2))) }),
+      ...(effect.patch.efficiencyPct === undefined ? {} : { efficiencyPct: clamp(effect.patch.efficiencyPct) }),
+      ...(effect.patch.lastOverloadAt === undefined ? {} : { lastOverloadAt: effect.patch.lastOverloadAt }),
+    };
+    const next = { ...state, countries: { ...state.countries, [effect.countryId]: { ...country, capacities: { ...country.capacities, [effect.domain]: after } } } };
+    return appendChange(next, action, effect, `countries.${effect.countryId}.capacities.${effect.domain}.load`, {
+      overloadMonths: capacity.overloadMonths ?? 0, efficiencyPct: capacity.efficiencyPct ?? 100,
+    }, { overloadMonths: after.overloadMonths ?? 0, efficiencyPct: after.efficiencyPct ?? 100 });
+  }
+
   if (effect.kind === 'relation_delta') {
     const key = relationKey(effect.from, effect.to);
     const current: BilateralRelation = state.relations[key] ?? {
@@ -309,6 +325,44 @@ function applyEffect(state: WorldState, action: WorldAction, effect: WorldEffect
     };
     const next = { ...state, territorial: { ...state.territorial, assets: { ...state.territorial.assets, [asset.id]: after } } };
     return appendChange(next, action, effect, `territorial.assets.${asset.id}`, asset, after);
+  }
+
+  if (effect.kind === 'territory_transfer') {
+    const territory = state.territorial.territories[effect.territoryId];
+    const target = state.countries[effect.targetCountryId];
+    if (!territory || !target) return state;
+    const oldAccountingCountryId = territory.accountingCountryId;
+    const nextTerritory = effect.mode === 'occupation'
+      ? { ...territory, controllerEntityId: effect.targetCountryId }
+      : effect.mode === 'liberation'
+        ? { ...territory, controllerEntityId: territory.sovereignCountryId, administratorEntityId: territory.sovereignCountryId }
+        : {
+          ...territory,
+          sovereignCountryId: effect.targetCountryId,
+          controllerEntityId: effect.targetCountryId,
+          administratorEntityId: effect.targetCountryId,
+          accountingCountryId: effect.targetCountryId,
+        };
+    let territorial = { ...state.territorial, territories: { ...state.territorial.territories, [territory.id]: nextTerritory } };
+    territorial = indexTerritorialState(territorial);
+    let next: WorldState = { ...state, territorial };
+    // Une cession change les comptes macro des deux pays. Une occupation ne
+    // déplace pas la population ni le PIB dans les comptes nationaux.
+    if (effect.mode === 'cession' && oldAccountingCountryId && oldAccountingCountryId !== effect.targetCountryId) {
+      const movedPopulation = territory.population ?? 0;
+      const movedGdp = territory.realGdpBillion2000Usd ?? 0;
+      for (const countryId of [oldAccountingCountryId, effect.targetCountryId]) {
+        const economy = next.macroEconomies[countryId];
+        if (!economy) continue;
+        const direction = countryId === oldAccountingCountryId ? -1 : 1;
+        const populationMillions = Math.max(0, economy.populationMillions + direction * movedPopulation / 1e6);
+        const realGdp = Math.max(0, economy.realGdpBillion2000Usd + direction * movedGdp);
+        const potentialGdp = Math.max(0, economy.potentialGdpBillion2000Usd + direction * movedGdp);
+        next = { ...next, macroEconomies: { ...next.macroEconomies, [countryId]: { ...economy, populationMillions, realGdpBillion2000Usd: realGdp, potentialGdpBillion2000Usd: potentialGdp } } };
+        next = { ...next, territorial: synchronizeTerritorialEconomy(next.territorial, countryId, populationMillions * 1e6, realGdp) };
+      }
+    }
+    return appendChange(next, action, effect, `territorial.territories.${territory.id}`, territory, nextTerritory);
   }
 
   if (effect.kind === 'energy_stock_delta') {
