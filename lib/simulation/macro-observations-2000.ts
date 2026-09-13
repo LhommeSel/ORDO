@@ -79,9 +79,28 @@ export const africaMiddleEastWdi2000: Record<'ZAF' | 'DZA' | 'EGY' | 'MLI' | 'NG
   TUR: { realGdpBillion2000Usd: 274.748, realGrowthAnnualPct: 6.985, populationMillions: 65.425961, populationGrowthAnnualPct: 1.283, inflationAnnualPct: 54.915, unemploymentPct: 6.495, fixedInvestmentSharePctGdp: 22.311, exportSharePctGdp: 19.933, importSharePctGdp: 22.441, industrySharePctGdp: 26.804 },
 };
 
+/**
+ * Quatrième lot normalisé : Asie–Pacifique du noyau ORDO. Les valeurs sont
+ * les mêmes séries WDI 2000 que les lots précédents, converties dans les
+ * unités attendues par le moteur (milliards de dollars et millions
+ * d'habitants). La Corée du Nord reste sur sa fiche de scénario : le WDI ne
+ * fournit pas de PIB comparable pour ce pays en 2000.
+ */
+export const asiaPacificWdi2000: Record<'RUS' | 'CHN' | 'IND' | 'JPN' | 'KOR' | 'UKR' | 'IDN' | 'AUS' | 'VNM', MacroObservation2000> = {
+  RUS: { realGdpBillion2000Usd: 259.710, realGrowthAnnualPct: 10.000, populationMillions: 146.596869, populationGrowthAnnualPct: -0.421, inflationAnnualPct: 20.799, unemploymentPct: 10.581, fixedInvestmentSharePctGdp: 16.864, exportSharePctGdp: 44.060, importSharePctGdp: 24.033, industrySharePctGdp: 33.919 },
+  CHN: { realGdpBillion2000Usd: 1223.755, realGrowthAnnualPct: 8.574, populationMillions: 1262.645000, populationGrowthAnnualPct: 0.788, inflationAnnualPct: 0.348, unemploymentPct: 3.260, fixedInvestmentSharePctGdp: 32.647, exportSharePctGdp: 20.682, importSharePctGdp: 18.329, industrySharePctGdp: 45.074 },
+  IND: { realGdpBillion2000Usd: 468.396, realGrowthAnnualPct: 3.841, populationMillions: 1057.922733, populationGrowthAnnualPct: 1.879, inflationAnnualPct: 4.009, unemploymentPct: 7.589, fixedInvestmentSharePctGdp: 26.022, exportSharePctGdp: 12.997, importSharePctGdp: 13.904, industrySharePctGdp: 27.326 },
+  JPN: { realGdpBillion2000Usd: 5042.382, realGrowthAnnualPct: 2.978, populationMillions: 126.843000, populationGrowthAnnualPct: 0.167, inflationAnnualPct: -0.677, unemploymentPct: 4.748, fixedInvestmentSharePctGdp: 29.720, exportSharePctGdp: 10.310, importSharePctGdp: 8.965, industrySharePctGdp: 32.485 },
+  KOR: { realGdpBillion2000Usd: 597.487, realGrowthAnnualPct: 9.202, populationMillions: 47.008111, populationGrowthAnnualPct: 0.836, inflationAnnualPct: 2.259, unemploymentPct: 4.063, fixedInvestmentSharePctGdp: 31.495, exportSharePctGdp: 32.864, importSharePctGdp: 31.195, industrySharePctGdp: 34.423 },
+  UKR: { realGdpBillion2000Usd: 32.375, realGrowthAnnualPct: 5.900, populationMillions: 49.556660, populationGrowthAnnualPct: -0.844, inflationAnnualPct: 28.203, unemploymentPct: 11.707, fixedInvestmentSharePctGdp: 19.745, exportSharePctGdp: 60.297, importSharePctGdp: 55.439, industrySharePctGdp: 31.650 },
+  IDN: { realGdpBillion2000Usd: 165.021, realGrowthAnnualPct: 4.920, populationMillions: 216.077790, populationGrowthAnnualPct: 1.432, inflationAnnualPct: 3.689, unemploymentPct: 6.077, fixedInvestmentSharePctGdp: 19.851, exportSharePctGdp: 40.977, importSharePctGdp: 30.460, industrySharePctGdp: 41.969 },
+  AUS: { realGdpBillion2000Usd: 416.902, realGrowthAnnualPct: 3.916, populationMillions: 19.028802, populationGrowthAnnualPct: 1.144, inflationAnnualPct: 4.457, unemploymentPct: 6.288, fixedInvestmentSharePctGdp: 25.892, exportSharePctGdp: 19.356, importSharePctGdp: 21.507, industrySharePctGdp: 24.532 },
+  VNM: { realGdpBillion2000Usd: 31.173, realGrowthAnnualPct: 6.787, populationMillions: 77.154011, populationGrowthAnnualPct: 1.130, inflationAnnualPct: -1.710, unemploymentPct: 2.260, fixedInvestmentSharePctGdp: 27.647, exportSharePctGdp: 53.921, importSharePctGdp: 57.496, industrySharePctGdp: 36.731 },
+};
+
 /** Séries WDI absentes en 2000 et remplacées par une calibration ORDO. */
 export const wdiCalibratedIndicatorCodes: Record<string, string[]> = {
   NGA: ['NE.GDI.FTOT.ZS', 'NE.EXP.GNFS.ZS', 'NE.IMP.GNFS.ZS'],
 };
 
-export const wdiObservedCountryIds = Object.keys({ ...americasWdi2000, ...europeWdi2000, ...africaMiddleEastWdi2000 }) as CountryId[];
+export const wdiObservedCountryIds = Object.keys({ ...americasWdi2000, ...europeWdi2000, ...africaMiddleEastWdi2000, ...asiaPacificWdi2000 }) as CountryId[];
