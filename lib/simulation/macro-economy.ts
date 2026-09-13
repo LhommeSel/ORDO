@@ -32,14 +32,25 @@ const shockChannelLabels: Record<EconomicShockChannel, string> = {
 };
 
 function shockDossier(state: WorldState, shock: EconomicShock): StrategicDossier | null {
-  const actorIds = [...new Set(shock.affectedCountryIds)].filter((countryId) => Boolean(state.countries[countryId] && state.macroEconomies[countryId]));
+  const explicitActors = [...new Set(shock.affectedCountryIds)].filter((countryId) => Boolean(state.countries[countryId] && state.macroEconomies[countryId]));
+  const isGlobal = explicitActors.length === 0;
+  const representativeActors = Object.values(state.macroEconomies)
+    .sort((left, right) => right.realGdpBillion2000Usd - left.realGdpBillion2000Usd)
+    .slice(0, 4)
+    .map((economy) => economy.countryId);
+  const actorIds = [...new Set(isGlobal ? [state.playerCountryId, ...representativeActors] : explicitActors)]
+    .filter((countryId) => Boolean(state.countries[countryId] && state.macroEconomies[countryId]));
   if (Math.abs(shock.intensity) < DOSSIER_SHOCK_THRESHOLD || actorIds.length === 0) return null;
-  const playerInvolved = actorIds.includes(state.playerCountryId);
-  const importance = Math.abs(shock.intensity) >= 60 ? 'major' : 'moderate' as const;
+  // Une onde mondiale est suivie par la voie « monde », même si le pays joué
+  // figure parmi les représentants retenus pour rendre le dossier lisible.
+  const playerInvolved = !isGlobal && actorIds.includes(state.playerCountryId);
+  const importance = Math.abs(shock.intensity) >= 60 ? 'major' as const : 'moderate' as const;
   const dossierId = `economic-shock-${shock.id}`;
   const existing = state.strategicDossiers?.[dossierId];
   const entryId = `${dossierId}-${state.currentDate}`;
-  const summary = `Le choc ${shockChannelLabels[shock.channel]} « ${shock.label} » atteint ${actorIds.length} pays et son intensité actuelle est de ${Math.abs(shock.intensity).toFixed(0)}.`;
+  const summary = isGlobal
+    ? `Le choc ${shockChannelLabels[shock.channel]} « ${shock.label} » se propage à l’échelle mondiale ; son intensité actuelle est de ${Math.abs(shock.intensity).toFixed(0)}.`
+    : `Le choc ${shockChannelLabels[shock.channel]} « ${shock.label} » atteint ${actorIds.length} pays et son intensité actuelle est de ${Math.abs(shock.intensity).toFixed(0)}.`;
   if (existing) return {
     ...existing,
     status: 'active', importance: importance === 'major' || existing.importance === 'major' ? 'major' : existing.importance,

@@ -1436,6 +1436,15 @@ test('un choc économique sévère devient un dossier sans transformer les varia
   assert.equal(dossier.pendingDecisions.length, 1);
   assert.equal(dossier.actorIds.join(','), 'USA,FRA');
 
+  const global = addEconomicShock(initial, {
+    id: 'test-global-supply', label: 'Rupture logistique mondiale', channel: 'supply', intensity: 52,
+    remainingMonths: 8, decayPerMonth: 0.1, affectedCountryIds: [], source: 'historical',
+  });
+  const globalDossier = global.strategicDossiers['economic-shock-test-global-supply'];
+  assert.equal(globalDossier.scope, 'world');
+  assert.equal(globalDossier.pendingDecisions.length, 0);
+  assert.match(globalDossier.publicSummary, /échelle mondiale/);
+
   const minor = addEconomicShock(initial, {
     id: 'test-small-demand', label: 'Correction sectorielle', channel: 'demand', intensity: 7,
     remainingMonths: 3, decayPerMonth: 0.2, affectedCountryIds: ['FRA'], source: 'local_rule',
