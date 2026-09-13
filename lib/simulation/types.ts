@@ -1147,6 +1147,16 @@ export type StrategicSectorId =
   | 'strategic_agriculture'
   | 'maritime_logistics';
 
+/**
+ * Fenêtre de charge planifiable pour une filière stratégique.
+ *
+ * Elle ne prétend pas décrire chaque usine : elle empêche simplement qu'un
+ * programme civil ou une décision autonome empile une charge infinie. Les
+ * charges historiques déjà supérieures à cette fenêtre sont conservées puis
+ * résorbées normalement par le moteur.
+ */
+export const MAX_STRATEGIC_SECTOR_WORKLOAD_MONTHS = 36;
+
 export type StrategicSectorState = {
   id: string;
   countryId: CountryId;

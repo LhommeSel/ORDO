@@ -25,7 +25,7 @@ import {
   dossierUnreadCount, dossiersRequiringAttention, dossierUpdatesSinceView, assessDossierResolution, energyBalance,
   energyCounterpartResponseFromSession, evaluatePoliticalPathway, executeAIJob, markDossierViewed, productEvidenceSummary,
   enactPrototypeGovernmentMeasure, reactionLevelLabels, reactionTrendLabels,
-  authorizeArmamentProspect, MAX_ARMAMENT_BACKLOG_MONTHS, rejectArmamentProspect,
+  authorizeArmamentProspect, MAX_ARMAMENT_BACKLOG_MONTHS, MAX_STRATEGIC_SECTOR_WORKLOAD_MONTHS, rejectArmamentProspect,
   launchCommonAction, prepareCommonAction, prepareDossierDelegation,
   nodeAvailableExport, nodeBookedVolume, nodeExpansionPotential,
   reactivateDossier, resolveDossierDecision, resolveDiplomaticDialogueResponse, sendEnergyOffer, startEnergyNegotiationAI, visibleLedger, visibleStakeholderReactions,
@@ -742,7 +742,7 @@ function IndustryPanel({ world, onWorldChange, onNotice }: { world: WorldState; 
     <div className="grid gap-3 lg:grid-cols-3">{nationalSectors.map((sector) => <div key={sector.id} className="border border-border bg-card/70 p-4">
       <div className="flex items-start justify-between gap-2"><div className="font-medium capitalize">{sector.countryId} · {sector.sector.replaceAll('_', ' ')}</div><span className="font-mono text-[9px] uppercase text-muted-foreground">{sector.modelingLevel === 'aggregate' ? 'socle agrégé' : 'inventaire détaillé'}</span></div>
       <div className="mt-3 grid grid-cols-2 gap-2 text-xs"><div>Capacité <b>{sector.capacity}</b></div><div>Utilisation <b>{sector.utilization.toFixed(0)}%</b></div><div>Santé <b>{sector.health.toFixed(0)}</b></div><div>Dépendance <b>{sector.foreignDependency}</b></div></div>
-      <div className="mt-3 text-xs text-muted-foreground">Charge : {sector.workloadMonths.toFixed(1)} mois · inertie {sector.expansionLeadMonths} mois</div>
+      <div className="mt-3 text-xs text-muted-foreground">Charge : {sector.workloadMonths.toFixed(1)} mois · fenêtre planifiable : {Math.max(0, MAX_STRATEGIC_SECTOR_WORKLOAD_MONTHS - sector.workloadMonths).toFixed(1)} mois · inertie {sector.expansionLeadMonths} mois</div>
     </div>)}{nationalSectors.length === 0 && <div className="border border-dashed border-border bg-card/50 p-4 text-sm text-muted-foreground">Aucune filière industrielle détaillée n’est encore inventoriée pour {player.name}. Les indicateurs macroéconomiques nationaux restent actifs.</div>}</div>
 
     <div className="border border-border bg-card/70">

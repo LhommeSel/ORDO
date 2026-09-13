@@ -68,7 +68,7 @@ function effectsFor(state: WorldState, input: AutonomousProgramInput, lever: Com
       const sector = sectorName && Object.values(state.sectors).find((candidate) => candidate.countryId === input.actorId && candidate.sector === sectorName);
       success.push({ kind: 'macro_policy_delta', countryId: input.actorId, patch: { industrialSupport: 2 }, reason: 'Le pays concentre son soutien sur une filière stratégique.' });
       partial.push({ kind: 'macro_policy_delta', countryId: input.actorId, patch: { industrialSupport: 0.6 }, reason: 'La politique de filière reste incomplète.' });
-      if (sector) success.push({ kind: 'sector_delta', sectorId: sector.id, delta: { capacity: 3, health: 2, technology: 1 }, reason: `La filière ${sector.sector} gagne en capacité.` });
+      if (sector) success.push({ kind: 'sector_delta', sectorId: sector.id, delta: { capacity: 3, health: 2, technology: 1, workloadMonths: 6 }, reason: `La filière ${sector.sector} gagne en capacité ; la montée en charge occupe six mois de carnet.` });
     } else if (lever === 'industrial_capacity') {
       success.push({ kind: 'metric_delta', countryId: input.actorId, metric: 'industry', delta: 1.2, reason: 'Le programme autonome développe l’activité productive.' });
       partial.push({ kind: 'metric_delta', countryId: input.actorId, metric: 'industry', delta: 0.35, reason: 'Le programme autonome produit un soutien industriel partiel.' });

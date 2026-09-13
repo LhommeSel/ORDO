@@ -16,6 +16,7 @@ import { applyDebtCrisisResponse } from './sovereign-debt';
 import { evaluateStrategicAction, selectStrategicAction } from './decision-making';
 import { reviewCountryStrategy } from './autonomy';
 import { countrySheet, defenseReferenceForCountry, defenseReferences2000ForValidation } from './country-sheet';
+import { MAX_STRATEGIC_SECTOR_WORKLOAD_MONTHS } from './types';
 import type { GovernmentMeasure, ISODate, StrategicActionCandidate, WorldState } from './types';
 import { createFrance2000World, createWorld2000 } from './scenario-2000';
 import { deriveStructuralDiagnostics } from './structural-diagnostics';
@@ -1398,6 +1399,29 @@ test('les actions économiques utilisent des leviers distincts plutôt qu’un b
   assert.equal(semiconductors.action.lever, 'strategic_sector');
   assert.notEqual(stimulus.action.durationMonths, semiconductors.action.durationMonths);
   assert.ok(semiconductors.action.successEffects.some((effect) => effect.kind === 'sector_delta' && effect.sectorId === 'FRA-semiconductors'));
+});
+
+test('la charge des filières stratégiques est bornée par le registre commun', () => {
+  const initial = createFrance2000World();
+  const semiconductors = initial.sectors['FRA-semiconductors'];
+  const overloaded = commitWorldAction(initial, {
+    kind: 'industrial', actorId: 'FRA', origin: 'player', intent: 'Tester une surcharge de filière',
+    effects: [{ kind: 'sector_delta', sectorId: semiconductors.id, delta: { workloadMonths: 500 }, reason: 'Test de borne.' }],
+  });
+  assert.equal(overloaded.sectors[semiconductors.id].workloadMonths, MAX_STRATEGIC_SECTOR_WORKLOAD_MONTHS);
+
+  const legacyBacklog = initial.sectors['FRA-nuclear'];
+  const preserved = commitWorldAction(initial, {
+    kind: 'industrial', actorId: 'FRA', origin: 'historical', intent: 'Préserver un carnet historique',
+    effects: [{ kind: 'sector_delta', sectorId: legacyBacklog.id, delta: { workloadMonths: 500 }, reason: 'Le carnet historique est déjà supérieur à la fenêtre.' }],
+  });
+  assert.equal(preserved.sectors[legacyBacklog.id].workloadMonths, legacyBacklog.workloadMonths);
+
+  const patched = commitWorldAction(overloaded, {
+    kind: 'industrial', actorId: 'FRA', origin: 'local_rule', intent: 'Ajouter une maintenance',
+    effects: [{ kind: 'sector_patch', sectorId: semiconductors.id, patch: { workloadMonths: 500 }, reason: 'Test de borne par patch.' }],
+  });
+  assert.equal(patched.sectors[semiconductors.id].workloadMonths, MAX_STRATEGIC_SECTOR_WORKLOAD_MONTHS);
 });
 
 test('une consolidation réussie peut réellement rendre la posture budgétaire négative', () => {

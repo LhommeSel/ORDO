@@ -277,8 +277,8 @@ function effectsFor(state: WorldState, category: CommonActionCategory, lever: Co
       success.push({ kind: 'macro_policy_delta', countryId: player.id, patch: { industrialSupport: 3, publicInvestmentPctGdp: 0.2 }, reason: 'L’État concentre une part de sa politique industrielle sur une filière stratégique.' });
       partial.push({ kind: 'macro_policy_delta', countryId: player.id, patch: { industrialSupport: 1 }, reason: 'Le soutien transversal à la filière reste incomplet.' });
       if (sector) {
-        success.push({ kind: 'sector_delta', sectorId: sector.id, delta: { capacity: 6, health: 5, technology: 2 }, reason: `La capacité et la maturité de la filière ${sector.sector} progressent.` });
-        partial.push({ kind: 'sector_delta', sectorId: sector.id, delta: { health: 2, technology: 0.5 }, reason: `La filière ${sector.sector} consolide surtout sa santé industrielle.` });
+        success.push({ kind: 'sector_delta', sectorId: sector.id, delta: { capacity: 6, health: 5, technology: 2, workloadMonths: 12 }, reason: `La capacité et la maturité de la filière ${sector.sector} progressent ; la nouvelle capacité est absorbée par un programme de douze mois.` });
+        partial.push({ kind: 'sector_delta', sectorId: sector.id, delta: { health: 2, technology: 0.5, workloadMonths: 6 }, reason: `La filière ${sector.sector} consolide surtout sa santé industrielle avec une charge réduite.` });
       }
     } else if (lever === 'industrial_capacity') {
       success.push(

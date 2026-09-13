@@ -7,6 +7,7 @@ import type {
   WorldEffect,
   WorldState,
 } from './types';
+import { MAX_STRATEGIC_SECTOR_WORKLOAD_MONTHS } from './types';
 
 import { synchronizeTerritorialEconomy } from './territories';
 
@@ -15,6 +16,29 @@ const intelligenceKey = (observerId: CountryId, targetId: CountryId) => `${obser
 
 const clamp = (value: number, minimum = 0, maximum = 100) =>
   Math.min(maximum, Math.max(minimum, value));
+
+/**
+ * Normalise les champs quantitatifs d'une filière au point d'entrée du
+ * registre. Toute source (joueur, règle locale, IA ou événement historique)
+ * passe donc par la même borne, sans dupliquer cette règle dans chaque moteur.
+ * Une charge historique déjà supérieure à 36 mois n'est pas écrasée : elle
+ * représente un carnet existant et ne peut que se résorber.
+ */
+function normalizeSectorPatch(sector: WorldState['sectors'][string], patch: Partial<WorldState['sectors'][string]>) {
+  const raw = { ...sector, ...patch };
+  return {
+    ...raw,
+    capacity: clamp(raw.capacity),
+    utilization: clamp(raw.utilization),
+    workloadMonths: Math.min(
+      Math.max(MAX_STRATEGIC_SECTOR_WORKLOAD_MONTHS, sector.workloadMonths),
+      Math.max(0, raw.workloadMonths),
+    ),
+    health: clamp(raw.health),
+    foreignDependency: clamp(raw.foreignDependency),
+    technology: clamp(raw.technology),
+  };
+}
 
 function nextId(prefix: string, sequence: number) {
   return `${prefix}-${String(sequence).padStart(6, '0')}`;
@@ -383,7 +407,7 @@ function applyEffect(state: WorldState, action: WorldAction, effect: WorldEffect
   if (effect.kind === 'sector_patch') {
     const sector = state.sectors[effect.sectorId];
     if (!sector) return state;
-    const after = { ...sector, ...effect.patch };
+    const after = normalizeSectorPatch(sector, effect.patch);
     const next = { ...state, sectors: { ...state.sectors, [effect.sectorId]: after } };
     return appendChange(next, action, effect, `sectors.${effect.sectorId}`, sector, after);
   }
@@ -391,13 +415,11 @@ function applyEffect(state: WorldState, action: WorldAction, effect: WorldEffect
   if (effect.kind === 'sector_delta') {
     const sector = state.sectors[effect.sectorId];
     if (!sector) return state;
-    const bounded = (key: string, value: number) => key === 'workloadMonths'
-      ? Math.max(0, value) : clamp(value);
     const patch = Object.fromEntries(Object.entries(effect.delta).map(([key, delta]) => {
       const current = sector[key as keyof typeof sector];
-      return [key, typeof current === 'number' && typeof delta === 'number' ? bounded(key, current + delta) : current];
+      return [key, typeof current === 'number' && typeof delta === 'number' ? current + delta : current];
     })) as Partial<typeof sector>;
-    const after = { ...sector, ...patch };
+    const after = normalizeSectorPatch(sector, patch);
     const next = { ...state, sectors: { ...state.sectors, [effect.sectorId]: after } };
     return appendChange(next, action, effect, `sectors.${effect.sectorId}`, sector, after);
   }
