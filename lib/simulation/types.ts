@@ -1351,6 +1351,58 @@ export type ActionProgram = {
   militaryOperation?: MilitaryTheaterOperation;
 };
 
+/**
+ * Référentiel opérationnel du renseignement. Les valeurs de personnel et de
+ * budget sont des ordres de grandeur internes au prototype : elles servent à
+ * calibrer les coûts et ne prétendent pas décrire des effectifs secrets réels.
+ */
+export type IntelligenceAgencyDomain = 'domestic' | 'external' | 'military';
+export type IntelligenceCoverageBand = 'absente' | 'limitée' | 'établie' | 'profonde';
+export type IntelligenceMissionKind = 'surveillance' | 'réseau' | 'liaison' | 'terrain' | 'analyse';
+
+export type IntelligenceAgencyState = {
+  id: string;
+  countryId: CountryId;
+  /** Nom affichable à la date courante (ex. DST avant 2014, DGSI ensuite). */
+  name: string;
+  domain: IntelligenceAgencyDomain;
+  personnelOrder: number;
+  surveillancePersonnelOrder: number;
+  fieldPersonnelOrder: number;
+  networkPersonnelOrder: number;
+  operationalBudgetBillion: number;
+  technicalLevel: number;
+  readiness: number;
+  legalMandate: string;
+  politicalOversight: string;
+  specialties: string[];
+  coverage: Record<string, IntelligenceCoverageBand>;
+};
+
+export type IntelligenceMissionState = {
+  id: string;
+  agencyId: string;
+  actorCountryId: CountryId;
+  targetCountryId?: CountryId;
+  targetRegion?: string;
+  kind: IntelligenceMissionKind;
+  objective: string;
+  status: 'prepared' | 'active' | 'completed' | 'failed' | 'cancelled';
+  startedAt?: ISODate;
+  expectedCompletionAt?: ISODate;
+  personnelCommitted: number;
+  budgetCost: number;
+  risk: number;
+};
+
+export type IntelligenceServiceState = {
+  countryId: CountryId;
+  agencies: Record<string, IntelligenceAgencyState>;
+  missions: Record<string, IntelligenceMissionState>;
+  regionalCoverage: Record<string, IntelligenceCoverageBand>;
+  lastUpdated: ISODate;
+};
+
 export type MilitaryTheaterStatus = 'home' | 'active' | 'reserve' | 'withdrawn';
 export type MilitaryTheaterAccess = 'national' | 'host_consent' | 'allied' | 'contested' | 'denied' | 'unknown';
 export type MilitaryTheaterActionKind = 'reinforce' | 'withdraw' | 'redeploy';
@@ -1632,6 +1684,8 @@ export type WorldState = {
   countries: Record<CountryId, CountryState>;
   relations: Record<string, BilateralRelation>;
   intelligence: Record<string, number>;
+  /** Services et missions de renseignement ; optionnel pour migrer les anciennes sauvegardes. */
+  intelligenceServices?: Record<CountryId, IntelligenceServiceState>;
   institutions: Record<string, InstitutionState>;
   treaties: Record<string, TreatyState>;
   historicalCurrents: Record<string, HistoricalCurrent>;

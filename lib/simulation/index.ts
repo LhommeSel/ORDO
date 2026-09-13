@@ -21,6 +21,7 @@ export * from './engine';
 export * from './history';
 export * from './great-powers';
 export * from './industry';
+export * from './intelligence-services';
 export * from './military-theaters';
 export * from './war-zones';
 export * from './ledger';

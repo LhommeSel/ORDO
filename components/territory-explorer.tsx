@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/button';
 import type { WorldState } from '@/lib/simulation/types';
 import type { Territory } from '@/lib/simulation/territory-types';
 import { territoryEconomicShare, territorySummary } from '@/lib/simulation/territories';
-import { territorySources } from '@/lib/simulation/territory-data-france-2000';
 import { territoryMapCatalog } from '@/lib/territory-map-catalog';
 import { assetMonthlyOutput, assetOperationalOutput, operateTerritorialAsset, type TerritorialAssetActionKind } from '@/lib/simulation/territorial-assets';
 
@@ -169,12 +168,6 @@ export function TerritoryExplorer({ world, countryId, onWorldChange, onNotice }:
           })}</ul>
             : <p>Aucun actif recensé dans ce premier lot — cela ne signifie pas que le territoire n’en possède pas.</p>}
           <p className="territory-help">Les actifs sans capacité restent un inventaire localisé. Les actifs énergétiques chiffrés ont un débit mensuel dérivé ; seuls ceux marqués comme raccordés au registre influencent les flux. Les boutons d’exploitation apparaissent uniquement pour le pays joué.</p>
-          <details><summary>Méthode et sources</summary><p>{selected.note}</p>
-            {selected.referenceYear && <p>Population de référence {selected.referenceYear} : {numbers.format(selected.referencePopulation ?? 0)}. La population affichée est recalée sur le total actuel de la partie.</p>}
-            <p>À ce stade, les évolutions nationales sont réparties proportionnellement. Pas encore de croissance régionale autonome ni de transfert territorial jouable.</p>
-            {[...new Set([...selected.sourceIds, ...assets.flatMap((a) => a.sourceIds)])].map((id) => territorySources[id] && <p key={id}><a href={territorySources[id].url} target="_blank" rel="noreferrer">{territorySources[id].label}</a></p>)}
-            {group.geometryUrl && <p><a href="https://github.com/gregoiredavid/france-geojson" target="_blank" rel="noreferrer">Contours : IGN / INSEE / Grégoire David — Licence ouverte</a></p>}
-          </details>
         </article>}
       </div>
     </div>

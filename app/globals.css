@@ -190,9 +190,10 @@
 .map-mode-switch button { border-right: 1px solid var(--border); padding: 0.5rem 0.65rem; background: transparent; color: var(--muted-foreground); font-family: var(--font-geist-mono); font-size: 0.55rem; letter-spacing: 0.06em; }
 .map-mode-switch button:last-child { border-right: 0; }
 .map-mode-switch button[aria-pressed='true'] { background: color-mix(in oklch, var(--primary) 10%, var(--card)); color: var(--primary); }
-.map-command-layout { display: grid; grid-template-columns: minmax(0, 1fr) 270px; min-height: 520px; }
-.world-map-wrap { position: relative; min-width: 0; overflow: hidden; border-right: 1px solid var(--border); background: color-mix(in oklch, var(--background) 75%, black); }
-.world-map { display: block; width: 100%; height: 100%; min-height: 500px; touch-action: none; cursor: grab; }
+.map-command-layout { display: grid; grid-template-columns: minmax(0, 1fr); min-height: 650px; }
+.map-stage { position: relative; min-width: 0; min-height: 650px; overflow: hidden; }
+.world-map-wrap { position: relative; min-width: 0; height: 100%; min-height: 650px; overflow: hidden; background: color-mix(in oklch, var(--background) 92%, var(--signal-blue)); }
+.world-map { display: block; width: 100%; height: 100%; min-height: 650px; touch-action: none; cursor: grab; }
 .world-map:active { cursor: grabbing; }
 .map-load-status { position: absolute; inset: 40% 15% auto; z-index: 3; padding: 1rem; background: var(--card); border: 1px solid var(--border); font-size: 0.9rem; }
 .map-load-status button { display: block; padding: 0.5rem; text-decoration: underline; }
@@ -260,6 +261,7 @@
 .map-controls svg { width: 0.85rem; height: 0.85rem; }
 .map-historical-note { position: absolute; bottom: 0.65rem; left: 0.75rem; max-width: calc(100% - 1.5rem); background: color-mix(in oklch, var(--background) 86%, transparent); padding: 0.35rem 0.5rem; color: var(--muted-foreground); font-family: var(--font-geist-mono); font-size: 0.48rem; letter-spacing: 0.05em; }
 .map-dossier { display: flex; min-width: 0; flex-direction: column; padding: 1rem; }
+.map-dossier-overlay { position: absolute; z-index: 4; top: 1rem; right: 1rem; width: min(360px, calc(100% - 2rem)); max-height: calc(100% - 2rem); overflow-y: auto; border: 1px solid var(--border); background: color-mix(in oklch, var(--card) 95%, var(--background)); box-shadow: 0 18px 42px color-mix(in oklch, black 35%, transparent); }
 .map-facts { display: grid; grid-template-columns: 1fr; gap: 0.9rem; margin-block: 1.25rem; border-block: 1px solid var(--border); padding-block: 1rem; }
 .map-legend { display: grid; gap: 0.45rem; margin-top: auto; padding-top: 1rem; color: var(--muted-foreground); font-family: var(--font-geist-mono); font-size: 0.5rem; }
 .map-legend span { display: flex; align-items: center; gap: 0.4rem; }
@@ -268,6 +270,7 @@
 .map-legend i.high { background: var(--signal-green); }
 .map-legend i.medium { background: var(--signal-gold); }
 .map-legend i.low { background: var(--signal-red); }
+.map-legend i.unknown { background: var(--muted); border: 1px dashed var(--muted-foreground); }
 .map-legend i.deployment { width: 0.55rem; height: 0.55rem; border: 1px solid var(--foreground); border-radius: 999px; background: var(--signal-blue); box-shadow: 0 0 0 3px color-mix(in oklch, var(--signal-blue) 18%, transparent); }
 .map-legend i.war-zone { width: 0.62rem; height: 0.62rem; border: 1px dashed var(--signal-red); border-radius: 999px; background: var(--signal-red); box-shadow: 0 0 0 3px color-mix(in oklch, var(--signal-red) 14%, transparent); }
 
@@ -368,7 +371,8 @@
   .capacity-layout { grid-template-columns: 1fr; }
   .map-command-layout { grid-template-columns: 1fr; }
   .world-map-wrap { border-right: 0; border-bottom: 1px solid var(--border); }
-  .map-dossier { min-height: 280px; }
+  .map-stage, .world-map-wrap, .world-map { min-height: 560px; }
+  .map-dossier-overlay { top: 0.75rem; right: 0.75rem; max-height: calc(100% - 1.5rem); }
   .map-facts { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .map-legend { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .diplomacy-sheet-layout { grid-template-columns: 180px minmax(360px, 1fr); }

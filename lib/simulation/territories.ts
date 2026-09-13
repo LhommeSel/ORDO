@@ -3,9 +3,15 @@ import type { Territory, TerritorialState, TerritoryDataset } from './territory-
 import { franceTerritoryDataset } from './territory-data-france-2000';
 import { europeTerritoryDatasets } from './territory-data-europe';
 import { americasMacroTerritoryDatasets } from './territory-data-americas-macro';
+import { extendedAmericasTerritoryDatasets } from './territory-data-americas-extended';
 
 // Add country data here, not country-specific branches in the simulation or map.
-const datasets: Record<string, TerritoryDataset> = { FRA: franceTerritoryDataset, ...europeTerritoryDatasets, ...americasMacroTerritoryDatasets };
+const datasets: Record<string, TerritoryDataset> = {
+  FRA: franceTerritoryDataset,
+  ...europeTerritoryDatasets,
+  ...americasMacroTerritoryDatasets,
+  ...extendedAmericasTerritoryDatasets,
+};
 type MacroBasis = Pick<WorldState, 'countries' | 'macroEconomies'>;
 
 function positiveOrZero(value: number) {

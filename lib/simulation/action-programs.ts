@@ -330,8 +330,13 @@ function effectsFor(state: WorldState, category: CommonActionCategory, lever: Co
     }
   }
   if (category === 'intelligence' && targetId) {
-    success.push({ kind: 'intelligence_delta', observerId: player.id, targetId, delta: 18, reason: 'Le recueil ciblé améliore la connaissance de cet État.' });
-    partial.push({ kind: 'intelligence_delta', observerId: player.id, targetId, delta: 7, reason: 'Le recueil fournit quelques indications, sans tableau complet.' });
+    if (targetId === player.id) {
+      success.push({ kind: 'metric_delta', countryId: player.id, metric: 'security', delta: 2, reason: 'La mission intérieure améliore la détection et la prévention des menaces.' });
+      partial.push({ kind: 'metric_delta', countryId: player.id, metric: 'security', delta: 0.7, reason: 'La mission intérieure fournit des signaux utiles mais incomplets.' });
+    } else {
+      success.push({ kind: 'intelligence_delta', observerId: player.id, targetId, delta: 18, reason: 'Le recueil ciblé améliore la connaissance de cet État.' });
+      partial.push({ kind: 'intelligence_delta', observerId: player.id, targetId, delta: 7, reason: 'Le recueil fournit quelques indications, sans tableau complet.' });
+    }
   }
   return { success, partial };
 }
@@ -572,7 +577,20 @@ export function advanceCommonActionPrograms(state: WorldState, elapsedMonths: nu
       reason: `Les moyens temporaires de « ${program.title} » sont libérés.`,
     }));
     const failureEffects: WorldEffect[] = outcome === 'failed'
-      ? [{ kind: 'metric_delta', countryId: program.actorId, metric: 'stability', delta: -0.5, reason: 'L’échec visible du programme entame légèrement la crédibilité du gouvernement.' }]
+      ? [{ kind: 'metric_delta', countryId: program.actorId, metric: 'stability', delta: program.category === 'intelligence' ? -0.8 : -0.5, reason: program.category === 'intelligence' ? 'L’échec d’une opération de renseignement entame la crédibilité des services.' : 'L’échec visible du programme entame légèrement la crédibilité du gouvernement.' }]
+      : [];
+    const intelligencePoliticalEffects: WorldEffect[] = program.category !== 'intelligence' || !program.targetIds[0] || program.targetIds[0] === program.actorId
+      ? []
+      : program.intent.toLocaleLowerCase('fr').includes('liaison')
+        ? [{ kind: 'relation_delta', from: program.actorId, to: program.targetIds[0], relation: outcome === 'succeeded' ? 2 : 0.5, trust: outcome === 'succeeded' ? 3 : 1, reason: 'La liaison entre services crée un canal de confiance limité.' }]
+        : [{ kind: 'relation_delta', from: program.actorId, to: program.targetIds[0], relation: outcome === 'failed' ? -3 : -1, trust: outcome === 'failed' ? -5 : -2, reason: outcome === 'failed' ? 'Une opération de renseignement compromise provoque une réaction diplomatique.' : 'Une activité clandestine laisse une friction limitée dans la relation bilatérale.' }];
+    const intelligenceIncidentEffects: WorldEffect[] = program.category === 'intelligence' && outcome === 'failed' && program.targetIds[0] && program.targetIds[0] !== program.actorId
+      ? (() => {
+        const targetName = next.countries[program.targetIds[0]]?.name ?? program.targetIds[0];
+        const dossierId = `intelligence-incident-${program.actorId}-${program.targetIds[0]}`;
+        if (next.strategicDossiers[dossierId]) return [{ kind: 'dossier_entry_add' as const, dossierId, entry: { id: `intel-incident-${program.id}`, date: next.currentDate, title: 'Incident de renseignement', summary: `Une opération visant ${targetName} échoue et peut avoir été détectée.`, importance: 'moderate' as const, actorIds: [program.actorId, program.targetIds[0]], requiresDecision: true, visibility: 'player' as const }, reason: 'L’incident alimente le dossier diplomatique de l’opération compromise.', visibility: 'player' as const }];
+        return [{ kind: 'dossier_add' as const, dossier: { id: dossierId, title: `Incident de renseignement · ${targetName}`, kind: 'diplomatic_crisis' as const, status: 'active' as const, importance: 'moderate' as const, scope: 'player_involved' as const, actorIds: [program.actorId, program.targetIds[0]], regionTags: [], startedAt: next.currentDate, updatedAt: next.currentDate, phase: 'Réaction initiale', trend: 'escalating' as const, publicSummary: `Une opération de renseignement concernant ${targetName} a échoué. Les autorités doivent évaluer le risque d’exposition et la réponse diplomatique.`, followed: true, autoTracked: false, commitments: [], pendingDecisions: [`Déterminer la réponse à l’incident avec ${targetName}.`], relatedCurrentIds: [], relatedActionIds: [], entries: [{ id: `intel-incident-${program.id}`, date: next.currentDate, title: 'Échec opérationnel', summary: `La mission « ${program.title} » n’atteint pas son objectif et peut avoir été repérée.`, importance: 'moderate' as const, actorIds: [program.actorId, program.targetIds[0]], requiresDecision: true, visibility: 'player' as const }] }, reason: 'Un échec exposé crée un dossier de crise au lieu de disparaître du journal.', visibility: 'player' as const }];
+      })()
       : [];
     const militaryEffects = program.militaryOperation
       ? militaryTheaterResolutionEffects(next, program.militaryOperation, outcome)
@@ -582,7 +600,7 @@ export function advanceCommonActionPrograms(state: WorldState, elapsedMonths: nu
       origin: 'time', intent: `Résoudre : ${program.title}`,
         effects: [
           { kind: 'action_program_patch', programId: program.id, patch: { progressMonths: program.durationMonths, status: outcome, resolution }, reason: resolution },
-        ...releaseEffects, ...resultEffects, ...failureEffects, ...militaryEffects,
+        ...releaseEffects, ...resultEffects, ...failureEffects, ...intelligencePoliticalEffects, ...intelligenceIncidentEffects, ...militaryEffects,
         ...linkedDossierResolutionEffects(next, program, outcome, resolution),
         ...historicalAnchorResolutionEffects(next, program, outcome),
         ...(program.linkedDossierId ? [] : diplomaticResolutionEffects(next, program, outcome, resolution)),

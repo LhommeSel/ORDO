@@ -9,6 +9,7 @@ import type { WorldState } from './types';
 import { europeMacroTerritoryDatasets, europeanTerritorialCountryIds } from './territory-data-europe-macro';
 import { europePriorityAssetCountryIds } from './territory-data-europe';
 import { americasMacroTerritoryDatasets } from './territory-data-americas-macro';
+import { extendedAmericasTerritoryDatasets } from './territory-data-americas-extended';
 import { assetMonthlyOutput, assetOperationalOutput, nodeOperationalProduction, operateTerritorialAsset } from './territorial-assets';
 import { energyBalance, nodePhysicalExportCapacity } from './energy';
 
@@ -78,6 +79,24 @@ test('les mailles macro des Amériques conservent strictement les totaux nationa
     assert.ok(Math.abs(summary.population - macro.populationMillions * 1e6) < 0.001, `${countryId}: population`);
     assert.ok(Math.abs(summary.realGdpBillion2000Usd - macro.realGdpBillion2000Usd) < 1e-8, `${countryId}: PIB`);
   }
+});
+
+test('la maille étendue couvre les autres pays américains sans double compte', () => {
+  const state = createFrance2000World();
+  const all = Object.values(extendedAmericasTerritoryDatasets);
+  assert.equal(all.length, 31);
+  for (const dataset of all) {
+    const regions = Object.values(state.territorial.territories).filter((territory) => territory.sovereignCountryId === dataset.countryId && territory.kind !== 'aggregate');
+    const summary = territorySummary(state.territorial, dataset.countryId);
+    const macro = state.macroEconomies[dataset.countryId];
+    assert.equal(regions.length, dataset.territories.length, `${dataset.countryId}: régions manquantes`);
+    assert.ok(macro, `${dataset.countryId}: socle macro absent`);
+    assert.equal(summary.count, dataset.territories.length, `${dataset.countryId}: comptes incomplets`);
+    assert.ok(Math.abs(summary.population - macro.populationMillions * 1e6) < 0.001, `${dataset.countryId}: population non conservée`);
+    assert.ok(Math.abs(summary.realGdpBillion2000Usd - macro.realGdpBillion2000Usd) < 1e-8, `${dataset.countryId}: PIB non conservé`);
+    for (const region of regions) assert.ok(region.anchor, `${region.id}: ancre absente`);
+  }
+  console.log(`Couverture américaine étendue validée : ${all.length} pays, ${all.reduce((sum, dataset) => sum + dataset.territories.length, 0)} mailles macro, totaux nationaux conservés. Aucun appel IA.`);
 });
 
 test('les actifs français conservent une attribution d’opérateur compatible avec leur catégorie', () => {

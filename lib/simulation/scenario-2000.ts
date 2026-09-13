@@ -29,6 +29,7 @@ import { createHistoricalAnchors2000 } from './historical-anchors-2000';
 import { createNationalReforms2000 } from './reforms';
 import { createMilitaryBases2000, createMilitaryTheaters2000 } from './military-theaters';
 import { initializeTerritorialAssetOperations, territorialEnergyNodeAdditions } from './territorial-assets';
+import { createIntelligenceServices2000 } from './intelligence-services';
 
 const capacities = (values: Partial<Record<keyof CapacityState, [number, number]>> = {}): CapacityState => ({
   government: { maximum: values.government?.[0] ?? 55, committed: values.government?.[1] ?? 25 },
@@ -597,6 +598,7 @@ export function createWorld2000(requestedPlayerCountryId: CountryId = 'FRA'): Wo
       'FRA:USA': { from: 'FRA', to: 'USA', relation: 73, trust: 66, tradeIntensity: 74, securityAlignment: 81, memories: [] },
     },
     intelligence: { 'FRA:DEU': 0, 'FRA:ITA': 0, 'FRA:POL': 0, 'FRA:USA': 0, 'FRA:RUS': 0, 'FRA:CHN': 0 },
+    intelligenceServices: createIntelligenceServices2000(allCountries),
     institutions: {
       'prosperity-ministry': { id: 'prosperity-ministry', countryId: 'FRA', label: 'Sous-ministère à la Prospérité', stage: 'proposal', progressMonths: 0, durationMonths: 7 },
     },

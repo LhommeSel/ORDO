@@ -145,6 +145,19 @@ function collectCountryFacts(state: WorldState, countryId: CountryId, prefix: st
       });
     }
   }
+  const intelligence = state.intelligenceServices?.[countryId];
+  if (intelligence) {
+    const agencySummary = Object.values(intelligence.agencies).map((agency) => `${agency.name}: ≈${agency.personnelOrder} personnels, technique ${agency.technicalLevel}/100, disponibilité ${agency.readiness}/100`).join(' ; ');
+    facts.push({
+      id: `${prefix}-intelligence-capacity`, label: `${labelPrefix}Capacité de renseignement`, value: agencySummary,
+      confidence: 100, sourcePath: `intelligenceServices.${countryId}.agencies`,
+    });
+    facts.push({
+      id: `${prefix}-intelligence-coverage`, label: `${labelPrefix}Couverture des réseaux`,
+      value: Object.entries(intelligence.regionalCoverage).map(([region, band]) => `${region}: ${band}`).join(' · ') || 'Non établie',
+      confidence: 100, sourcePath: `intelligenceServices.${countryId}.regionalCoverage`,
+    });
+  }
   return facts;
 }
 
@@ -174,12 +187,14 @@ function relevantFacts(facts: AdvisorFact[], question: string, questionKind: Adv
   const military = /(armee|militaire|defense|effectif|force|otan|missile|troupe)/.test(normalized);
   const economy = /(pib|croissance|economie|dette|chomage|industrie|budget|inflation|commerce|semi|emploi|investissement)/.test(normalized);
   const energy = /(gaz|petrole|energie|energetique|stock|approvisionnement|fournisseur|gisement|importation)/.test(normalized);
+  const intelligence = /(renseignement|dgse|dgsi|espion|surveillance|reseau|infiltration|contre.?espionnage|agent)/.test(normalized);
   const strategic = questionKind !== 'fact' || /(objectif|priorite|vulnerabilite|resilience|interet|crainte|menace|ligne rouge)/.test(normalized);
   const score = (fact: AdvisorFact) => {
     let value = 0;
     if (fact.id.includes('defense') && military) value += 8;
     if ((fact.id.includes('oil') || fact.id.includes('gas')) && energy) value += 8;
     if ((fact.id.includes('gdp') || fact.id.includes('growth') || fact.id.includes('debt') || fact.id.includes('inflation') || fact.id.includes('unemployment')) && economy) value += 7;
+    if (fact.id.includes('intelligence') && intelligence) value += 9;
     if ((fact.id.includes('industrial') || fact.id.includes('innovation') || fact.id.includes('financial') || fact.id.includes('demographic')) && strategic) value += 6;
     if ((fact.id.includes('top-goal') || fact.id.includes('vulnerability')) && strategic) value += 7;
     if ((fact.id.includes('leader') || fact.id.includes('apparatus')) && strategic) value += 7;
@@ -202,10 +217,12 @@ function relevantFacts(facts: AdvisorFact[], question: string, questionKind: Adv
   for (const prefix of prefixes) {
     const essentials = facts.filter((fact) => fact.id === `${prefix}-relation` || fact.id === `${prefix}-strategy`
       || fact.id === `${prefix}-gdp` || fact.id === `${prefix}-growth` || fact.id === `${prefix}-gas` || fact.id === `${prefix}-oil`
-      || fact.id === `${prefix}-defense-personnel` || fact.id === `${prefix}-defense-deployments`);
+      || fact.id === `${prefix}-defense-personnel` || fact.id === `${prefix}-defense-deployments`
+      || fact.id === `${prefix}-intelligence-capacity` || fact.id === `${prefix}-intelligence-coverage`);
     const preferred = energy ? essentials.filter((fact) => fact.id.endsWith('-gas') || fact.id.endsWith('-oil'))
       : economy ? essentials.filter((fact) => fact.id.endsWith('-gdp') || fact.id.endsWith('-growth'))
-        : military ? essentials.filter((fact) => fact.id.endsWith('-defense-personnel') || fact.id.endsWith('-defense-deployments')) : essentials;
+      : military ? essentials.filter((fact) => fact.id.endsWith('-defense-personnel') || fact.id.endsWith('-defense-deployments'))
+        : intelligence ? essentials.filter((fact) => fact.id.endsWith('-intelligence-capacity') || fact.id.endsWith('-intelligence-coverage')) : essentials;
     // Relation/priorité restent utiles dans tous les domaines ; on ajoute
     // ensuite les deux mesures directement demandées pour cet acteur.
     for (const fact of [...essentials.filter((item) => item.id.endsWith('-relation') || item.id.endsWith('-strategy')), ...preferred, ...essentials]) {

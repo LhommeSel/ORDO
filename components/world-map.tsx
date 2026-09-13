@@ -10,6 +10,8 @@ type WorldMapProps = {
   mode: MapMode;
   playerCountryId: string;
   metrics: Record<string, number>;
+  /** Valeur lisible affichée dans l’infobulle de chaque pays pour le thème actif. */
+  metricLabels?: Record<string, string>;
   selectedId: string;
   onSelect: (id: string, name: string) => void;
   /** Repères optionnels des pays d'accueil d'un déploiement militaire. */
@@ -81,7 +83,7 @@ const fallbackCoordinates: Record<string, [number, number]> = {
   CYN: [33.0, 35.2], SOL: [46.0, 5.0],
 };
 
-export function WorldMap({ mode, metrics, selectedId, onSelect, playerCountryId, deploymentMarkers = [], warZoneMarkers = [] }: WorldMapProps) {
+export function WorldMap({ mode, metrics, metricLabels = {}, selectedId, onSelect, playerCountryId, deploymentMarkers = [], warZoneMarkers = [] }: WorldMapProps) {
   const [transform, setTransform] = useState({ x: 0, y: 0, k: 1 });
   const [entities, setEntities] = useState<MapEntity[]>([]);
   const [spherePath, setSpherePath] = useState<string>();
@@ -227,8 +229,8 @@ export function WorldMap({ mode, metrics, selectedId, onSelect, playerCountryId,
               onKeyDown: (event: ReactKeyboardEvent<SVGElement>) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onSelect(entity.id, entity.name); } },
             };
             return entity.point
-              ? <circle key={entity.id} {...common} cx={entity.point[0]} cy={entity.point[1]} r={entity.id === selectedId ? 4 : 2.5}><title>{entity.name} · repère ponctuel</title></circle>
-              : <path key={entity.id} {...common} d={entity.path ?? ''} vectorEffect="non-scaling-stroke"><title>{entity.name}</title></path>;
+              ? <circle key={entity.id} {...common} cx={entity.point[0]} cy={entity.point[1]} r={entity.id === selectedId ? 4 : 2.5}><title>{entity.name}{metricLabels[entity.id] ? ` · ${metricLabels[entity.id]}` : ' · repère ponctuel'}</title></circle>
+              : <path key={entity.id} {...common} d={entity.path ?? ''} vectorEffect="non-scaling-stroke"><title>{entity.name}{metricLabels[entity.id] ? ` · ${metricLabels[entity.id]}` : ''}</title></path>;
           })}
           {deploymentPoints.length > 0 && <g className="map-deployment-layer" aria-label="Déploiements militaires ventilés par pays">
             {deploymentPoints.map((marker) => <g
