@@ -1424,6 +1424,25 @@ test('la charge des filières stratégiques est bornée par le registre commun',
   assert.equal(patched.sectors[semiconductors.id].workloadMonths, MAX_STRATEGIC_SECTOR_WORKLOAD_MONTHS);
 });
 
+test('un choc économique sévère devient un dossier sans transformer les variations mineures en bruit', () => {
+  const initial = createFrance2000World();
+  const severe = addEconomicShock(initial, {
+    id: 'test-financial-contagion', label: 'Resserrement mondial du crédit', channel: 'financial', intensity: 68,
+    remainingMonths: 12, decayPerMonth: 0.08, affectedCountryIds: ['USA', 'FRA'], source: 'historical',
+  });
+  const dossier = severe.strategicDossiers['economic-shock-test-financial-contagion'];
+  assert.equal(dossier.scope, 'player_involved');
+  assert.equal(dossier.importance, 'major');
+  assert.equal(dossier.pendingDecisions.length, 1);
+  assert.equal(dossier.actorIds.join(','), 'USA,FRA');
+
+  const minor = addEconomicShock(initial, {
+    id: 'test-small-demand', label: 'Correction sectorielle', channel: 'demand', intensity: 7,
+    remainingMonths: 3, decayPerMonth: 0.2, affectedCountryIds: ['FRA'], source: 'local_rule',
+  });
+  assert.equal(minor.strategicDossiers['economic-shock-test-small-demand'], undefined);
+});
+
 test('les filières agrégées résorbent aussi leur carnet sans inventaire artificiel', () => {
   const initial = createFrance2000World();
   const aggregate = initial.sectors['AGO-defense'];

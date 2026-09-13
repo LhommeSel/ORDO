@@ -11,6 +11,7 @@ import type {
   EconomicShockChannel,
   MacroeconomicState,
   ProductFamilyState,
+  StrategicDossier,
   WorldEffect,
   WorldProductMarket,
   WorldState,
@@ -23,6 +24,57 @@ const round = (value: number, digits = 3) => Number(value.toFixed(digits));
 const transition = (speedPerYear: number, elapsedMonths: number) => 1 - Math.exp(-speedPerYear * elapsedMonths / 12);
 const cycleFor = (growth: number): WorldState['worldEconomy']['cycle'] =>
   growth < 0 ? 'recession' : growth < 2 ? 'slowdown' : growth < 3.6 ? 'balanced' : growth < 5 ? 'expansion' : 'overheating';
+
+/** Un choc léger reste dans le registre macro ; un choc persistant mérite une mémoire jouable. */
+const DOSSIER_SHOCK_THRESHOLD = 20;
+const shockChannelLabels: Record<EconomicShockChannel, string> = {
+  demand: 'demande', supply: 'offre', financial: 'financier', trade: 'commercial', energy: 'énergétique', confidence: 'confiance',
+};
+
+function shockDossier(state: WorldState, shock: EconomicShock): StrategicDossier | null {
+  const actorIds = [...new Set(shock.affectedCountryIds)].filter((countryId) => Boolean(state.countries[countryId] && state.macroEconomies[countryId]));
+  if (Math.abs(shock.intensity) < DOSSIER_SHOCK_THRESHOLD || actorIds.length === 0) return null;
+  const playerInvolved = actorIds.includes(state.playerCountryId);
+  const importance = Math.abs(shock.intensity) >= 60 ? 'major' : 'moderate' as const;
+  const dossierId = `economic-shock-${shock.id}`;
+  const existing = state.strategicDossiers?.[dossierId];
+  const entryId = `${dossierId}-${state.currentDate}`;
+  const summary = `Le choc ${shockChannelLabels[shock.channel]} « ${shock.label} » atteint ${actorIds.length} pays et son intensité actuelle est de ${Math.abs(shock.intensity).toFixed(0)}.`;
+  if (existing) return {
+    ...existing,
+    status: 'active', importance: importance === 'major' || existing.importance === 'major' ? 'major' : existing.importance,
+    scope: playerInvolved ? 'player_involved' : existing.scope ?? 'world',
+    actorIds,
+    updatedAt: state.currentDate,
+    phase: 'Propagation et réponses',
+    trend: shock.remainingMonths > 6 ? 'escalating' : 'stable',
+    publicSummary: summary,
+    followed: playerInvolved || existing.followed,
+    autoTracked: true,
+    sleepingAt: undefined,
+    pendingDecisions: playerInvolved && Math.abs(shock.intensity) >= 60
+      ? (existing.pendingDecisions.length ? existing.pendingDecisions : ['Choisir une réponse au choc économique et à ses effets de propagation.'])
+      : existing.pendingDecisions,
+    entries: existing.entries.some((entry) => entry.id === entryId) ? existing.entries : [...existing.entries, {
+      id: entryId, date: state.currentDate, title: 'Propagation actualisée', summary, importance, actorIds,
+      requiresDecision: playerInvolved && Math.abs(shock.intensity) >= 60, visibility: 'player',
+    }],
+  };
+  return {
+    id: dossierId,
+    title: `Choc ${shockChannelLabels[shock.channel]} — ${shock.label}`,
+    kind: 'economic', status: 'active', importance,
+    scope: playerInvolved ? 'player_involved' : 'world', actorIds, regionTags: [],
+    startedAt: state.currentDate, updatedAt: state.currentDate, phase: 'Propagation initiale',
+    trend: 'escalating', publicSummary: summary, followed: playerInvolved, autoTracked: true,
+    commitments: [],
+    pendingDecisions: playerInvolved && Math.abs(shock.intensity) >= 60 ? ['Choisir une réponse au choc économique et à ses effets de propagation.'] : [],
+    relatedCurrentIds: [], relatedActionIds: [], entries: [{
+      id: entryId, date: state.currentDate, title: 'Choc enregistré', summary, importance, actorIds,
+      requiresDecision: playerInvolved && Math.abs(shock.intensity) >= 60, visibility: 'player',
+    }],
+  };
+}
 
 function affectedBy(shock: EconomicShock, countryId?: CountryId) {
   return !countryId || shock.affectedCountryIds.length === 0 || shock.affectedCountryIds.includes(countryId);
@@ -436,10 +488,23 @@ export function advanceMacroeconomy(state: WorldState, elapsedMonths: number) {
 /** Une intensité positive est défavorable (contraction, pénurie ou stress) ; une intensité négative est favorable. */
 export function addEconomicShock(state: WorldState, shock: EconomicShock) {
   const activeShocks = [...state.worldEconomy.activeShocks.filter((item) => item.id !== shock.id), shock];
+  const dossier = shockDossier(state, shock);
+  const existingDossier = dossier && state.strategicDossiers?.[dossier.id];
+  const effects: WorldEffect[] = [{ kind: 'world_economy_patch', patch: { activeShocks }, reason: 'Le choc entre dans les canaux de transmission du modèle.' }];
+  if (dossier && existingDossier) effects.push({ kind: 'dossier_patch', dossierId: dossier.id, patch: {
+    status: dossier.status, importance: dossier.importance, scope: dossier.scope, actorIds: dossier.actorIds,
+    updatedAt: dossier.updatedAt, phase: dossier.phase, trend: dossier.trend, publicSummary: dossier.publicSummary,
+    followed: dossier.followed, autoTracked: dossier.autoTracked, sleepingAt: undefined, pendingDecisions: dossier.pendingDecisions,
+  }, reason: 'Un nouveau choc actualise le dossier économique persistant.' });
+  if (dossier && !existingDossier) effects.push({ kind: 'dossier_add', dossier, reason: 'Un choc économique suffisamment intense devient un dossier de suivi.' });
+  if (dossier && existingDossier) {
+    const entry = dossier.entries[dossier.entries.length - 1];
+    if (entry && !existingDossier.entries.some((candidate) => candidate.id === entry.id)) effects.push({ kind: 'dossier_entry_add', dossierId: dossier.id, entry, reason: 'La nouvelle propagation est ajoutée à la chronologie du dossier.' });
+  }
   return commitWorldAction(state, {
     kind: 'economic', actorId: state.playerCountryId, origin: shock.source,
     intent: `Enregistrer le choc économique « ${shock.label} »`,
-    effects: [{ kind: 'world_economy_patch', patch: { activeShocks }, reason: 'Le choc entre dans les canaux de transmission du modèle.' }],
+    effects,
   });
 }
 
