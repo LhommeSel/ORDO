@@ -1452,6 +1452,21 @@ test('un choc économique sévère devient un dossier sans transformer les varia
   assert.equal(minor.strategicDossiers['economic-shock-test-small-demand'], undefined);
 });
 
+test('le briefing résume la trajectoire des chocs économiques sans répéter chaque variation', () => {
+  const initial = createFrance2000World();
+  const before = addEconomicShock(initial, {
+    id: 'test-briefing-shock', label: 'Tension du crédit', channel: 'financial', intensity: 48,
+    remainingMonths: 8, decayPerMonth: 0.08, affectedCountryIds: ['FRA'], source: 'historical',
+  });
+  const after = advanceWorld(before, '2000-02-01').state;
+  const briefing = buildTurnBriefing(before, after);
+  const update = briefing.shockUpdates.find((item) => item.id === 'test-briefing-shock');
+  assert.ok(update);
+  assert.equal(update?.scope, 'player');
+  assert.equal(update?.status, 'easing');
+  assert.ok((update?.remainingMonths ?? 0) < 8);
+});
+
 test('les filières agrégées résorbent aussi leur carnet sans inventaire artificiel', () => {
   const initial = createFrance2000World();
   const aggregate = initial.sectors['AGO-defense'];

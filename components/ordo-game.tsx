@@ -1815,6 +1815,8 @@ function LedgerPanel({ world }: { world: WorldState }) {
 function TurnBriefingPanel({ briefing, onOpenDossier }: { briefing: TurnBriefing; onOpenDossier: (id: string) => void }) {
   const tone = { major: 'text-red-300', moderate: 'text-amber-300', positive: 'text-emerald-300', neutral: 'text-muted-foreground' } as const;
   const signed = (value: number, digits: number, unit: string) => `${value > 0 ? '+' : ''}${value.toFixed(digits)}${unit}`;
+  const shockTone = { new: 'text-red-300', intensifying: 'text-orange-300', easing: 'text-amber-200', ended: 'text-emerald-300' } as const;
+  const shockLabel = { new: 'nouveau', intensifying: 'en aggravation', easing: 'en reflux', ended: 'terminé' } as const;
   const playerHighlights = briefing.playerHighlights ?? briefing.highlights;
   const worldHighlights = briefing.worldHighlights ?? [];
   const calm = playerHighlights.length === 0 && worldHighlights.length === 0 && briefing.completedPrograms.length === 0;
@@ -1829,6 +1831,7 @@ function TurnBriefingPanel({ briefing, onOpenDossier }: { briefing: TurnBriefing
       <section className="border border-border bg-background/35 p-3">
         <div className="font-mono text-[10px] uppercase tracking-wider text-primary">Indicateurs du pays joué</div>
         <div className="mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">{briefing.metrics.map((item) => <div key={item.id} className="border border-border/70 p-2 text-xs"><div className="text-muted-foreground">{item.label}</div><div className="mt-1 flex items-baseline justify-between gap-2"><b>{item.after.toFixed(item.digits)}{item.unit}</b><span className={item.delta === 0 ? 'text-muted-foreground' : item.delta > 0 ? 'text-sky-300' : 'text-amber-300'}>{signed(item.delta, item.digits, item.unit)}</span></div></div>)}</div>
+        {briefing.shockUpdates.length > 0 && <div className="mt-3 border-t border-border/70 pt-3"><div className="font-mono text-[10px] uppercase tracking-wider text-primary">Chocs économiques actifs ou résolus</div><div className="mt-2 space-y-1">{briefing.shockUpdates.map((shock) => <div key={shock.id} className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 pb-1 text-[11px]"><span className={shockTone[shock.status]}>{shockLabel[shock.status]} · {shock.label}</span><span className="font-mono text-muted-foreground">{shock.channel} · intensité {Math.abs(shock.intensity).toFixed(0)} · {shock.remainingMonths > 0 ? `${shock.remainingMonths.toFixed(1)} mois` : 'retiré'} · {shock.scope === 'player' ? 'pays joué' : 'monde'}</span></div>)}</div></div>}
       </section>
       <section className="border border-border bg-background/35 p-3">
         <div className="font-mono text-[10px] uppercase tracking-wider text-primary">Faits à retenir</div>

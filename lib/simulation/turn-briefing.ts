@@ -20,6 +20,16 @@ export type TurnBriefingHighlight = {
   dossierId?: string;
 };
 
+export type TurnBriefingShock = {
+  id: string;
+  label: string;
+  channel: string;
+  intensity: number;
+  remainingMonths: number;
+  status: 'new' | 'intensifying' | 'easing' | 'ended';
+  scope: 'player' | 'world';
+};
+
 export type TurnBriefing = {
   from: string;
   to: string;
@@ -31,6 +41,7 @@ export type TurnBriefing = {
   playerHighlights: TurnBriefingHighlight[];
   worldHighlights: TurnBriefingHighlight[];
   completedPrograms: Array<{ id: string; title: string; status: ActionProgram['status']; resolution?: string }>;
+  shockUpdates: TurnBriefingShock[];
 };
 
 const round = (value: number, digits = 2) => Number(value.toFixed(digits));
@@ -91,6 +102,39 @@ function dossierHighlights(before: WorldState, after: WorldState): TurnBriefingH
 }
 
 /**
+ * Résumé des chocs qui ont réellement changé entre deux frontières.
+ * Les oscillations inférieures à deux points ne remontent pas au joueur afin
+ * de conserver un briefing utile, tandis qu'une disparition reste signalée.
+ */
+function shockUpdates(before: WorldState, after: WorldState): TurnBriefingShock[] {
+  const previous = new Map(before.worldEconomy.activeShocks.map((shock) => [shock.id, shock]));
+  const updates: TurnBriefingShock[] = [];
+  for (const shock of after.worldEconomy.activeShocks) {
+    const old = previous.get(shock.id);
+    const scope = shock.affectedCountryIds.length > 0 && shock.affectedCountryIds.includes(after.playerCountryId) ? 'player' : 'world';
+    const status: TurnBriefingShock['status'] = !old
+      ? 'new'
+      : Math.abs(shock.intensity) > Math.abs(old.intensity) + 2 ? 'intensifying'
+        : Math.abs(shock.intensity) < Math.abs(old.intensity) - 2 ? 'easing' : 'easing';
+    if (!old || Math.abs(shock.intensity - old.intensity) >= 2 || shock.remainingMonths < old.remainingMonths - 1) {
+      updates.push({ id: shock.id, label: shock.label, channel: shock.channel, intensity: shock.intensity, remainingMonths: shock.remainingMonths, status, scope });
+    }
+  }
+  const activeIds = new Set(after.worldEconomy.activeShocks.map((shock) => shock.id));
+  for (const shock of before.worldEconomy.activeShocks) {
+    if (activeIds.has(shock.id)) continue;
+    updates.push({
+      id: shock.id, label: shock.label, channel: shock.channel, intensity: shock.intensity, remainingMonths: 0,
+      status: 'ended', scope: shock.affectedCountryIds.length > 0 && shock.affectedCountryIds.includes(after.playerCountryId) ? 'player' : 'world',
+    });
+  }
+  return updates
+    .sort((left, right) => Number(right.status === 'new' || right.status === 'intensifying') - Number(left.status === 'new' || left.status === 'intensifying')
+      || Math.abs(right.intensity) - Math.abs(left.intensity) || left.id.localeCompare(right.id))
+    .slice(0, 6);
+}
+
+/**
  * Produit un compte rendu éphémère : il ne duplique rien dans la sauvegarde et
  * résume uniquement les différences observables entre deux états du monde.
  */
@@ -128,5 +172,6 @@ export function buildTurnBriefing(before: WorldState, after: WorldState): TurnBr
     playerHighlights,
     worldHighlights,
     completedPrograms,
+    shockUpdates: shockUpdates(before, after),
   };
 }
