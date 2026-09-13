@@ -53,6 +53,8 @@ function shockDossier(state: WorldState, shock: EconomicShock): StrategicDossier
     : `Le choc ${shockChannelLabels[shock.channel]} « ${shock.label} » atteint ${actorIds.length} pays et son intensité actuelle est de ${Math.abs(shock.intensity).toFixed(0)}.`;
   if (existing) return {
     ...existing,
+    sourceShockId: shock.id,
+    sourceShockEndedAt: undefined,
     status: 'active', importance: importance === 'major' || existing.importance === 'major' ? 'major' : existing.importance,
     scope: playerInvolved ? 'player_involved' : existing.scope ?? 'world',
     actorIds,
@@ -74,6 +76,7 @@ function shockDossier(state: WorldState, shock: EconomicShock): StrategicDossier
   return {
     id: dossierId,
     title: `Choc ${shockChannelLabels[shock.channel]} — ${shock.label}`,
+    sourceShockId: shock.id,
     kind: 'economic', status: 'active', importance,
     scope: playerInvolved ? 'player_involved' : 'world', actorIds, regionTags: [],
     startedAt: state.currentDate, updatedAt: state.currentDate, phase: 'Propagation initiale',
@@ -503,6 +506,7 @@ export function addEconomicShock(state: WorldState, shock: EconomicShock) {
   const existingDossier = dossier && state.strategicDossiers?.[dossier.id];
   const effects: WorldEffect[] = [{ kind: 'world_economy_patch', patch: { activeShocks }, reason: 'Le choc entre dans les canaux de transmission du modèle.' }];
   if (dossier && existingDossier) effects.push({ kind: 'dossier_patch', dossierId: dossier.id, patch: {
+    sourceShockId: dossier.sourceShockId, sourceShockEndedAt: undefined,
     status: dossier.status, importance: dossier.importance, scope: dossier.scope, actorIds: dossier.actorIds,
     updatedAt: dossier.updatedAt, phase: dossier.phase, trend: dossier.trend, publicSummary: dossier.publicSummary,
     followed: dossier.followed, autoTracked: dossier.autoTracked, sleepingAt: undefined, pendingDecisions: dossier.pendingDecisions,

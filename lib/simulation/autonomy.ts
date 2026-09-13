@@ -1,7 +1,7 @@
 import { activateEnergyContract, energyBalance, nodeBookedVolume, nodeExpansionPotential, producerNodes, proposeEnergyContract } from './energy';
 import { commitWorldAction } from './ledger';
 import { selectStrategicAction } from './decision-making';
-import type { CountryId, DecisionSignal, EconomicShock, ISODate, StrategicActionCandidate, StrategicDossier, WorldState } from './types';
+import type { CountryId, DecisionSignal, EconomicShock, ISODate, StrategicActionCandidate, StrategicDossier, WorldEffect, WorldState } from './types';
 
 const daysBetween = (a: ISODate, b: ISODate) => Math.max(0, Math.round((new Date(`${b}T12:00:00Z`).getTime() - new Date(`${a}T12:00:00Z`).getTime()) / 86_400_000));
 
@@ -14,7 +14,7 @@ function activeCrisisFor(state: WorldState, countryId: CountryId): EconomicShock
       || right.remainingMonths - left.remainingMonths)[0];
 }
 
-function autonomousCrisisDossier(state: WorldState, buyerId: CountryId, sellerId: CountryId, shock: EconomicShock, resource: 'oil' | 'gas'): StrategicDossier | null {
+function autonomousCrisisDossier(state: WorldState, buyerId: CountryId, sellerId: CountryId, shock: EconomicShock, focus: 'energy' | 'trade', resource?: 'oil' | 'gas'): StrategicDossier | null {
   // Un même choc et un même acheteur ne doivent pas ouvrir un dossier par
   // fournisseur : les contrats successifs restent dans le registre énergétique
   // tandis que le dossier conserve la crise diplomatique de fond.
@@ -25,19 +25,31 @@ function autonomousCrisisDossier(state: WorldState, buyerId: CountryId, sellerId
   if (!buyer || !seller) return null;
   const playerInvolved = buyerId === state.playerCountryId || sellerId === state.playerCountryId;
   const importance = Math.abs(shock.intensity) >= 70 ? 'major' : 'moderate';
-  const resourceLabel = resource === 'gas' ? 'gaz' : 'pétrole';
-  const summary = `La crise « ${shock.label} » pousse ${buyer.name} à sécuriser du ${resourceLabel} auprès de ${seller.name}. Les volumes et la dépendance créent un enjeu diplomatique durable.`;
+  const resourceLabel = resource ? resource === 'gas' ? 'gaz' : 'pétrole' : 'des débouchés commerciaux';
+  const focusLabel = focus === 'energy' ? 'Coordination énergétique' : 'Coordination commerciale';
+  const summary = focus === 'energy'
+    ? `La crise « ${shock.label} » pousse ${buyer.name} à sécuriser du ${resourceLabel} auprès de ${seller.name}. Les volumes et la dépendance créent un enjeu diplomatique durable.`
+    : `La crise « ${shock.label} » pousse ${buyer.name} à consulter ${seller.name} pour préserver ${resourceLabel}. Les flux croisés créent un enjeu diplomatique durable.`;
   return {
-    id, title: `Coordination énergétique · ${buyer.name}–${seller.name}`, kind: 'cooperation', status: 'active', importance,
+    id, title: `${focusLabel} · ${buyer.name}–${seller.name}`, kind: 'cooperation', status: 'active', importance,
+    sourceShockId: shock.id,
     scope: playerInvolved ? 'player_involved' : 'world', actorIds: [buyerId, sellerId], regionTags: [], startedAt: state.currentDate,
     updatedAt: state.currentDate, phase: 'Sécurisation des approvisionnements', trend: 'escalating', publicSummary: summary,
-    followed: playerInvolved, autoTracked: true, commitments: [`Contrat autonome de ${resourceLabel} à formaliser avec ${seller.name}.`],
+    followed: playerInvolved, autoTracked: true, commitments: [focus === 'energy' ? `Contrat autonome de ${resourceLabel} à formaliser avec ${seller.name}.` : `Consultation commerciale autonome à formaliser avec ${seller.name}.`],
     pendingDecisions: playerInvolved && importance === 'major' ? ['Décider si la sécurisation énergétique doit devenir un engagement diplomatique plus large.'] : [],
     relatedCurrentIds: [], relatedActionIds: [], entries: [{
       id: `${id}-${state.currentDate}`, date: state.currentDate, title: 'Ouverture du dossier diplomatique', summary,
       importance, actorIds: [buyerId, sellerId], requiresDecision: playerInvolved && importance === 'major', visibility: 'player',
     }],
   };
+}
+
+function largestTradePartner(state: WorldState, countryId: CountryId) {
+  return Object.values(state.tradeFlows)
+    .filter((flow) => flow.exporterId === countryId || flow.importerId === countryId)
+    .map((flow) => ({ countryId: flow.exporterId === countryId ? flow.importerId : flow.exporterId, value: flow.annualValueBillion2000Usd }))
+    .sort((left, right) => right.value - left.value)
+    .find((item) => Boolean(state.countries[item.countryId]))?.countryId;
 }
 
 export function strategicAttentionScore(state: WorldState, countryId: CountryId) {
@@ -121,7 +133,7 @@ function reviewEnergy(state: WorldState, countryId: CountryId) {
       const crisis = activeCrisisFor(next, countryId);
       const sellerId = next.energyContracts[id]?.sellerId;
       if (crisis && sellerId) {
-        const dossier = autonomousCrisisDossier(next, countryId, sellerId, crisis, resource);
+        const dossier = autonomousCrisisDossier(next, countryId, sellerId, crisis, 'energy', resource);
         if (dossier) next = commitWorldAction(next, {
           kind: 'diplomatic', actorId: countryId, targetIds: [sellerId], origin: 'local_rule', visibility: 'player',
           intent: `Ouvrir un dossier diplomatique sur la crise énergétique avec ${sellerId}`,
@@ -185,10 +197,48 @@ function reviewStrategicIndustry(state: WorldState, countryId: CountryId) {
   });
 }
 
+/** Réponse bornée pour les crises non énergétiques : une seule mesure par
+ * pays et par choc, soumise à la doctrine et aux capacités existantes. */
+function reviewCrisisChannels(state: WorldState, countryId: CountryId) {
+  const crisis = activeCrisisFor(state, countryId);
+  if (!crisis || crisis.channel === 'energy') return state;
+  const alreadyResponded = state.actions.some((action) => action.actorId === countryId && action.metadata?.crisisResponse === crisis.id);
+  if (alreadyResponded) return state;
+  const partnerId = crisis.channel === 'trade' ? largestTradePartner(state, countryId) : undefined;
+  const common = {
+    actorId: countryId, label: '', kind: 'economic' as const, signals: [] as DecisionSignal[],
+    outcomes: { growth: 20, employment: 14, fiscal_sustainability: -12, social_cohesion: 10, regime_survival: 8 },
+    requiredAuthority: 'executive' as const, publicSalience: 48, administrativeComplexity: 38,
+    urgency: Math.min(96, 36 + Math.abs(crisis.intensity) * 0.65), risk: 40, resourceCost: 24,
+  };
+  const candidate: StrategicActionCandidate = crisis.channel === 'financial' || crisis.channel === 'demand'
+    ? { ...common, id: `crisis-response-${crisis.id}`, label: 'Stabiliser le crédit et soutenir la demande', signals: ['deficit_spending', 'redistribution'], outcomes: { ...common.outcomes, growth: 28, employment: 24, fiscal_sustainability: -25 }, risk: 52 }
+    : crisis.channel === 'trade'
+      ? { ...common, id: `crisis-response-${crisis.id}`, label: 'Diversifier les débouchés commerciaux', signals: ['commercial_deal', 'strategic_autonomy'], outcomes: { ...common.outcomes, growth: 24, international_prestige: 10 } }
+      : crisis.channel === 'supply'
+        ? { ...common, id: `crisis-response-${crisis.id}`, label: 'Protéger les capacités productives', signals: ['strategic_autonomy', 'state_control'], outcomes: { ...common.outcomes, growth: 22, strategic_autonomy: 30, fiscal_sustainability: -18 } }
+        : { ...common, id: `crisis-response-${crisis.id}`, label: 'Rétablir la confiance économique', signals: ['redistribution', 'commercial_deal'], outcomes: { ...common.outcomes, growth: 16, social_cohesion: 24 } };
+  const selected = selectStrategicAction(state, [candidate], `crisis-response:${countryId}:${crisis.id}`);
+  if (!selected) return state;
+  const patch = crisis.channel === 'financial' || crisis.channel === 'demand'
+    ? { fiscalStance: 8, publicInvestmentPctGdp: 0.15 }
+    : crisis.channel === 'trade' ? { tradeOpenness: 2.5 } : crisis.channel === 'supply' ? { industrialSupport: 2 } : { socialProtection: 1.5 };
+  const effects: WorldEffect[] = [{ kind: 'macro_policy_delta', countryId, patch, reason: `Le pays ajuste sa politique pour absorber le choc ${crisis.channel}.` }];
+  if (partnerId && Math.abs(crisis.intensity) >= 65) {
+    const dossier = autonomousCrisisDossier(state, countryId, partnerId, crisis, 'trade');
+    if (dossier) effects.push({ kind: 'dossier_add', dossier, reason: 'Une crise commerciale sévère transforme la recherche de débouchés en coordination diplomatique suivie.', visibility: 'player' });
+  }
+  return commitWorldAction(state, {
+    kind: partnerId ? 'diplomatic' : 'economic', actorId: countryId, targetIds: partnerId ? [partnerId] : [], origin: 'local_rule', visibility: 'player',
+    intent: `Réponse autonome au choc économique « ${crisis.label} »`, metadata: { crisisResponse: crisis.id, selectedCandidate: selected.candidate.id, evaluation: selected.evaluation }, effects,
+  });
+}
+
 export function reviewCountryStrategy(state: WorldState, countryId: CountryId) {
   if (countryId === state.playerCountryId) return state;
   let next = reviewEnergy(state, countryId);
   next = reviewStrategicIndustry(next, countryId);
+  next = reviewCrisisChannels(next, countryId);
   return commitWorldAction(next, {
     kind: 'political', actorId: countryId, origin: 'local_rule', intent: 'Révision périodique de la stratégie nationale',
     visibility: 'debug',

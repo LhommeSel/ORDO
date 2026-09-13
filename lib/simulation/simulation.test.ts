@@ -1642,6 +1642,40 @@ test('une crise énergétique sur plusieurs mois se propage et déclenche une r�
   assert.ok(crisis.actions.some((action) => action.intent.includes('Ouvrir un dossier diplomatique sur la crise énergétique')));
 });
 
+test('une crise commerciale déclenche une diversification et une coordination avec un partenaire', () => {
+  let state = createFrance2000World();
+  state = addEconomicShock(state, {
+    id: 'multi-month-trade-crisis', label: 'Fermeture de débouchés industriels', channel: 'trade', intensity: 78,
+    remainingMonths: 12, decayPerMonth: 0.03, affectedCountryIds: ['POL'], source: 'local_rule',
+  });
+  state = advanceWorld(state, '2000-02-01').state;
+  const response = state.actions.find((action) => action.metadata?.crisisResponse === 'multi-month-trade-crisis');
+  assert.ok(response);
+  assert.equal(response?.kind, 'diplomatic');
+  assert.equal(response?.actorId, 'POL');
+  assert.ok((response?.targetIds ?? []).length === 1);
+  assert.equal(state.macroEconomies.POL.policy.tradeOpenness, 75.2332);
+  const dossier = Object.values(state.strategicDossiers).find((item) => item.id === 'autonomous-crisis-multi-month-trade-crisis-POL');
+  assert.equal(dossier?.kind, 'cooperation');
+  assert.equal(dossier?.sourceShockId, 'multi-month-trade-crisis');
+});
+
+test('les dossiers issus d’un choc passent en désescalade puis se clôturent après le calme', () => {
+  let state = createFrance2000World();
+  state.countryEnergy.POL.strategicStocks.gas = 0;
+  state = addEconomicShock(state, {
+    id: 'short-lived-crisis', label: 'Coupure gazière temporaire', channel: 'energy', intensity: 72,
+    remainingMonths: 2, decayPerMonth: 0.08, affectedCountryIds: ['POL'], productFamily: 'energy', source: 'local_rule',
+  });
+  state = advanceWorld(state, '2000-09-01').state;
+  const dossierId = 'economic-shock-short-lived-crisis';
+  assert.equal(state.strategicDossiers[dossierId]?.status, 'deescalating');
+  assert.equal(state.strategicDossiers[dossierId]?.sourceShockEndedAt, '2000-05-01');
+  state = advanceWorld(state, '2001-01-01').state;
+  assert.equal(state.strategicDossiers[dossierId]?.status, 'resolved');
+  assert.ok(state.strategicDossiers[dossierId]?.entries.some((entry) => entry.title === 'Situation stabilisée'));
+});
+
 test('une demande libre identifie le pays et la ressource sans sélecteur', () => {
   const state = createFrance2000World();
   const answer = answerAdvisorQuestion(state, 'Je veux négocier un contrat gazier de long terme avec l’Algérie.');

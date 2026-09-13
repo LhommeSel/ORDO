@@ -208,6 +208,35 @@ export function advanceDossierEscalation(state: WorldState) {
  */
 export function advanceDossierLifecycle(state: WorldState) {
   let next = state;
+  // Les dossiers ouverts par un choc suivent désormais son cycle causal :
+  // tant que le choc existe, ils restent actifs ; dès sa disparition, ils
+  // entrent en désescalade puis peuvent se clore après une période calme.
+  for (const dossier of Object.values(state.strategicDossiers ?? {})) {
+    if (!dossier.sourceShockId || dossier.status === 'resolved') continue;
+    const shockStillActive = next.worldEconomy.activeShocks.some((shock) => shock.id === dossier.sourceShockId);
+    if (shockStillActive || dossier.sourceShockEndedAt) continue;
+    next = commitWorldAction(next, {
+      kind: 'economic', actorId: next.playerCountryId,
+      targetIds: dossier.actorIds.filter((id) => id !== next.playerCountryId), origin: 'time', visibility: 'player',
+      intent: `Mettre en désescalade le dossier « ${dossier.title} »`,
+      effects: [
+        {
+          kind: 'dossier_patch', dossierId: dossier.id,
+          patch: { status: 'deescalating', trend: 'deescalating', phase: 'Choc dissipé · surveillance', updatedAt: next.currentDate, sourceShockEndedAt: next.currentDate },
+          reason: 'Le choc source a disparu du registre économique ; le dossier reste surveillé avant sa clôture.', visibility: 'player',
+        },
+        {
+          kind: 'dossier_entry_add', dossierId: dossier.id,
+          entry: {
+            id: `dossier-shock-ended-${dossier.id}-${next.currentDate}`, date: next.currentDate, title: 'Choc source dissipé',
+            summary: 'Le moteur ne détecte plus le choc économique d’origine. Les effets résiduels sont suivis pendant la période de stabilisation.',
+            importance: dossier.importance, actorIds: dossier.actorIds, requiresDecision: dossier.pendingDecisions.length > 0, visibility: 'player',
+          },
+          reason: 'La disparition du choc est conservée dans la chronologie causale du dossier.', visibility: 'player',
+        },
+      ],
+    });
+  }
   for (const dossier of Object.values(state.strategicDossiers ?? {})) {
     if (dossier.status === 'resolved' || dossier.sleepingAt || dossier.followed || dossier.autoTracked) continue;
     if (dossier.importance === 'major' || dossier.importance === 'critical' || dossier.pendingDecisions.length === 0) continue;

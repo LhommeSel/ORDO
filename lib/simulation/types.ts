@@ -1552,6 +1552,10 @@ export type StrategicDossier = {
   scope?: DossierScope;
   /** Dossier mondial à l’origine d’une déclinaison nationale éventuelle. */
   parentDossierId?: string;
+  /** Identifiant du choc économique qui a ouvert le dossier, si applicable. */
+  sourceShockId?: string;
+  /** Frontière à laquelle le choc source a cessé d’être actif. */
+  sourceShockEndedAt?: ISODate;
   actorIds: EntityId[];
   regionTags: string[];
   startedAt: ISODate;
