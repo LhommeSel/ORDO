@@ -19,6 +19,9 @@ export type TurnResolutionSummary = {
   autonomousActions: number;
   dossiersCreatedOrUpdated: number;
   programsCompleted: number;
+  aiJobsQueued: number;
+  aiJobsPending: number;
+  aiJobsFailed: number;
 };
 
 function dossierChanged(before: WorldState['strategicDossiers'][string] | undefined, after: WorldState['strategicDossiers'][string]) {
@@ -49,6 +52,10 @@ export function summarizeTurnResolution(
     const previous = before.actionPrograms[program.id];
     return previous?.status === 'active' && program.status !== 'active';
   }).length;
+  const beforeJobIds = new Set(Object.keys(before.aiJobs ?? {}));
+  const aiJobsQueued = Object.values(after.aiJobs ?? {}).filter((job) => !beforeJobIds.has(job.id)).length;
+  const aiJobsPending = Object.values(after.aiJobs ?? {}).filter((job) => job.status === 'pending').length;
+  const aiJobsFailed = Object.values(after.aiJobs ?? {}).filter((job) => job.status === 'failed').length;
   const id = `turn:${before.currentDate}:${reachedDate}:${before.sequence}`;
   return {
     id,
@@ -62,5 +69,8 @@ export function summarizeTurnResolution(
     autonomousActions: addedActions.filter((action) => action.actorId !== after.playerCountryId).length,
     dossiersCreatedOrUpdated,
     programsCompleted,
+    aiJobsQueued,
+    aiJobsPending,
+    aiJobsFailed,
   };
 }

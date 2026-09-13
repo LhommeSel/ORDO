@@ -29,7 +29,7 @@ import {
   launchCommonAction, prepareCommonAction, prepareDossierDelegation,
   nodeAvailableExport, nodeBookedVolume, nodeExpansionPotential,
   reactivateDossier, resolveDossierDecision, resolveDiplomaticDialogueResponse, sendEnergyOffer, startEnergyNegotiationAI, visibleLedger, visibleStakeholderReactions,
-  powerStruggleDecisionLabels, powerStruggleDecisionSummaries, resolvePowerStrugglePlayerDecision,
+  powerStruggleDecisionLabels, powerStruggleDecisionSummaries, resolvePowerStrugglePlayerDecision, submitPowerStrugglePlayerResponse,
   loadWorldFromBrowser, saveWorldToBrowser,
   openDiplomaticDialogue, openDiplomaticDialogueForDossier, sendDiplomaticDialogueMessage, requestDiplomaticDialogueAI, addDiplomaticDialogueParticipant,
   structuralDiagnosisGroups,
@@ -1372,6 +1372,7 @@ function DossiersPanel({ world, selectedId, onSelect, onWorldChange, onNotice, o
   const [dossierAIUsage, setDossierAIUsage] = useState<AdvisorAIUsage | null>(null);
   const [dossierAIStatus, setDossierAIStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [preparedDossierOption, setPreparedDossierOption] = useState<{ title: string; action: PreparedCommonAction; warnings: string[]; decision?: string } | null>(null);
+  const [powerPlayerResponse, setPowerPlayerResponse] = useState('');
   const rank = { minor: 0, moderate: 1, major: 2, critical: 3 } as const;
   const historicalIntentLabels: Record<HistoricalInterventionDirection, string> = {
     contain: 'Réduire la pression', redirect: 'Rediriger la trajectoire', accelerate: 'Accélérer la trajectoire',
@@ -1413,6 +1414,17 @@ function DossiersPanel({ world, selectedId, onSelect, onWorldChange, onNotice, o
   const powerDecisionRecord = powerCampaign && selected
     ? (selected.decisionRecords ?? []).find((record) => record.sourceId === powerCampaign.id && record.status === 'pending' && selected.pendingDecisions.includes(record.prompt))
     : undefined;
+  useEffect(() => setPowerPlayerResponse(''), [selected?.id]);
+  const submitPowerResponse = () => {
+    if (!powerCampaign) return;
+    const response = powerPlayerResponse.trim();
+    if (!response) { onNotice('Écrivez une réponse avant de l’envoyer à l’acteur.'); return; }
+    const result = submitPowerStrugglePlayerResponse(world, powerCampaign.id, response);
+    if (!result.ok) { onNotice(result.error); return; }
+    onWorldChange(result.state);
+    setPowerPlayerResponse('');
+    onNotice('Réponse enregistrée dans le dossier. Une réaction IA est en file : lancez-la depuis la File de résolution IA.');
+  };
   const chooseCampaignStrategy = (strategy: PoliticalCampaignStrategy) => {
     const next = choosePoliticalCampaignStrategy(world, strategy);
     if (next === world) {
@@ -1573,6 +1585,7 @@ function DossiersPanel({ world, selectedId, onSelect, onWorldChange, onNotice, o
           <div className="flex flex-wrap items-start justify-between gap-3"><div><div className="font-mono text-[10px] uppercase tracking-wider text-violet-200">Lutte de pouvoir · acteur émergent</div><p className="mt-1 text-xs text-muted-foreground">Le moteur fait évoluer la pression ; l’IA ne choisit une nouvelle tactique que lors d’une réévaluation nécessaire.</p></div><div className="text-right font-mono text-[10px] text-violet-100">pression {powerCampaign.pressure.toFixed(0)}/100 · momentum {powerCampaign.momentum.toFixed(0)}/100</div></div>
           {powerActors.length > 0 && <div className="mt-3 grid gap-2 sm:grid-cols-2">{powerActors.map((actor) => <div key={actor.id} className="border border-violet-300/25 bg-background/25 p-3 text-xs"><div className="flex items-center justify-between gap-2"><b>{actor.name}</b><span className="font-mono text-[10px] text-muted-foreground">{actor.visibility === 'public' ? 'public' : actor.visibility === 'identified' ? 'identifié' : actor.visibility === 'suspected' ? 'suspecté' : 'inconnu'}</span></div><p className="mt-1 text-muted-foreground">{actor.position}</p><div className="mt-2 flex flex-wrap gap-1">{actor.personalityTags.map((tag) => <span key={tag} className="border border-violet-300/25 px-1.5 py-0.5 text-[10px] text-violet-100">{tag}</span>)}</div><p className="mt-2"><b>Objectif immédiat :</b> {actor.immediateObjective}</p><p className="mt-1 text-muted-foreground"><b>Influence :</b> {actor.influence}/100 · <b>Légitimité :</b> {actor.legitimacy}/100</p></div>)}</div>}
           {powerDecisionRecord && <div className="mt-3 border-t border-violet-300/25 pt-3"><div className="text-sm font-semibold text-violet-100">Arbitrage requis</div><p className="mt-1 text-xs text-muted-foreground">{powerDecisionRecord.prompt}</p><div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">{(Object.keys(powerStruggleDecisionLabels) as PowerStrugglePlayerDecision[]).map((decision) => <Button key={decision} type="button" size="sm" variant="outline" className="h-auto min-h-16 justify-start px-3 py-2 text-left" title={powerStruggleDecisionSummaries[decision]} onClick={() => { const result = resolvePowerStrugglePlayerDecision(world, powerCampaign.id, decision); if (!result.ok) { onNotice(result.error); return; } onWorldChange(result.state); onNotice(`${powerStruggleDecisionLabels[decision]} enregistrée dans le dossier.`); }}><span><span className="block font-semibold">{powerStruggleDecisionLabels[decision]}</span><span className="mt-1 block text-[10px] font-normal text-muted-foreground">{powerStruggleDecisionSummaries[decision]}</span></span></Button>)}</div><p className="mt-2 text-[10px] text-muted-foreground">Ces choix sont locaux et prévisibles. Pour une réponse plus nuancée, utilisez ensuite « Demander des options à l’IA » ou le dialogue du dossier.</p></div>}
+          <div className="mt-3 border-t border-violet-300/25 pt-3"><div className="text-sm font-semibold text-violet-100">Réponse libre aux protagonistes</div><p className="mt-1 text-xs text-muted-foreground">Formulez une ligne politique nuancée. Le moteur conserve votre texte, puis l’IA propose une réaction de l’acteur ; aucun appel n’est lancé avant votre clic dans la file.</p><Textarea value={powerPlayerResponse} onChange={(event) => setPowerPlayerResponse(event.target.value)} maxLength={2000} rows={3} className="mt-3 bg-background/40 text-sm" placeholder="Ex. Nous maintenons la réforme, mais ouvrons une consultation technique avec l’état-major…" /><div className="mt-2 flex flex-wrap items-center justify-between gap-2"><span className="font-mono text-[10px] text-muted-foreground">{powerPlayerResponse.length}/2000 caractères · réponse envoyée aux acteurs identifiés</span><Button size="sm" onClick={submitPowerResponse} disabled={!powerPlayerResponse.trim()}>Mettre en file la réaction IA</Button></div></div>
         </div>}
         {dossierImpact?.active && <div className="mt-4 border border-amber-400/30 bg-amber-300/5 p-3 text-xs">
           <div className="flex flex-wrap items-center justify-between gap-2"><div className="font-mono text-[10px] uppercase tracking-wider text-amber-200">Pressions systémiques</div><span className="font-mono text-[10px] text-emerald-300">Amortissement vérifiable : −{dossierImpact.mitigationPct}%</span></div>
@@ -1933,13 +1946,13 @@ function TurnBriefingPanel({ briefing, onOpenDossier }: { briefing: TurnBriefing
   const shockLabel = { new: 'nouveau', intensifying: 'en aggravation', easing: 'en reflux', ended: 'terminé' } as const;
   const playerHighlights = briefing.playerHighlights ?? briefing.highlights;
   const worldHighlights = briefing.worldHighlights ?? [];
-  const calm = playerHighlights.length === 0 && worldHighlights.length === 0 && briefing.completedPrograms.length === 0;
+  const calm = playerHighlights.length === 0 && worldHighlights.length === 0 && briefing.completedPrograms.length === 0 && briefing.aiJobsPending === 0;
   const renderHighlights = (items: TurnBriefing['highlights'], emptyLabel: string) => items.length ? items.map((item) => <button key={item.id} type="button" onClick={() => item.dossierId && onOpenDossier(item.dossierId)} disabled={!item.dossierId} className="block w-full border-b border-border/60 pb-2 text-left disabled:cursor-default"><div className={`text-xs font-medium ${tone[item.tone]}`}>{item.title}</div><p className="mt-1 line-clamp-2 text-[11px] text-muted-foreground">{item.detail}</p></button>) : <p className="text-xs text-muted-foreground">{emptyLabel}</p>;
   return <details open className="group border-b border-border bg-card/55">
     <summary className="mx-auto flex max-w-[1600px] cursor-pointer list-none items-center gap-3 px-4 py-2 text-sm lg:px-6">
       <ChevronRight className="size-4 text-primary transition-transform group-open:rotate-90" />
       <b>Bilan du passage du temps</b>
-      <span className="text-xs text-muted-foreground">{briefing.from} → {briefing.to} · {briefing.actionCount} évolution(s) · {briefing.autonomousActorCount} acteur(s) étranger(s)</span>
+      <span className="text-xs text-muted-foreground">{briefing.from} → {briefing.to} · {briefing.actionCount} évolution(s) · {briefing.autonomousActorCount} acteur(s) étranger(s){briefing.aiJobsQueued > 0 ? ` · ${briefing.aiJobsQueued} tâche(s) IA créée(s)` : ''}</span>
     </summary>
     <div className="mx-auto grid max-w-[1600px] gap-3 px-4 pb-4 lg:grid-cols-[1.1fr_1fr] lg:px-6">
       <section className="border border-border bg-background/35 p-3">
@@ -1953,7 +1966,7 @@ function TurnBriefingPanel({ briefing, onOpenDossier }: { briefing: TurnBriefing
           <div><div className="text-xs font-semibold text-amber-200">Pays joué · arbitrages</div><div className="mt-2 space-y-2">{renderHighlights(playerHighlights, 'Aucune décision ou évolution nationale nouvelle.')}</div></div>
           <div><div className="text-xs font-semibold text-sky-200">Monde · information</div><div className="mt-2 space-y-2">{renderHighlights(worldHighlights, 'Aucune évolution mondiale notable dans cette avance.')}</div></div>
         </div>
-        <div className="mt-3 space-y-2">{briefing.completedPrograms.map((program) => <div key={program.id} className="border-b border-border/60 pb-2"><div className={program.status === 'succeeded' ? 'text-xs font-medium text-emerald-300' : program.status === 'failed' ? 'text-xs font-medium text-red-300' : 'text-xs font-medium text-amber-300'}>{program.title} · {program.status}</div><p className="mt-1 text-[11px] text-muted-foreground">{program.resolution}</p></div>)}{calm && <p className="text-xs text-muted-foreground">Aucun basculement majeur : les systèmes ont évolué sans ouvrir de nouvelle décision.</p>}</div>
+        <div className="mt-3 space-y-2">{briefing.completedPrograms.map((program) => <div key={program.id} className="border-b border-border/60 pb-2"><div className={program.status === 'succeeded' ? 'text-xs font-medium text-emerald-300' : program.status === 'failed' ? 'text-xs font-medium text-red-300' : 'text-xs font-medium text-amber-300'}>{program.title} · {program.status}</div><p className="mt-1 text-[11px] text-muted-foreground">{program.resolution}</p></div>)}{(briefing.aiJobsPending > 0 || briefing.aiJobsFailed > 0) && <div className="border border-violet-300/30 bg-violet-300/5 p-2 text-[11px] text-violet-100"><b>File IA :</b> {briefing.aiJobsPending} en attente{briefing.aiJobsFailed > 0 ? ` · ${briefing.aiJobsFailed} échec(s) relançable(s)` : ''}. Ouvrez « Dossiers » pour choisir les appels à lancer.</div>}{calm && <p className="text-xs text-muted-foreground">Aucun basculement majeur : les systèmes ont évolué sans ouvrir de nouvelle décision.</p>}</div>
       </section>
     </div>
   </details>;
@@ -1980,6 +1993,8 @@ export default function Home() {
   const dossierAlerts = useMemo(() => dossiersRequiringAttention(world), [world]);
   const playerDossierAlerts = useMemo(() => dossierAlerts.filter((dossier) => dossierScopeFor(world, dossier) === 'player_involved'), [dossierAlerts, world]);
   const worldDossierAlerts = useMemo(() => dossierAlerts.filter((dossier) => dossierScopeFor(world, dossier) !== 'player_involved'), [dossierAlerts, world]);
+  const queuedAIJobs = useMemo(() => pendingAIJobs(world), [world]);
+  const failedAIJobs = useMemo(() => Object.values(world.aiJobs ?? {}).filter((job) => job.status === 'failed'), [world]);
   const openDossier = (id: string) => { setSelectedDossierId(id); setPanel('dossiers'); };
 
   const advance = async (months: number) => {
@@ -2078,6 +2093,7 @@ export default function Home() {
       <div className="mx-auto flex max-w-[1600px] gap-1 overflow-x-auto px-4 lg:px-6">{panels.map(({ id, label, icon: Icon }) => <button key={id} onClick={() => setPanel(id)} className={`flex items-center gap-2 border-b-2 px-3 py-2 text-sm ${panel === id ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}><Icon className="size-4" />{label}</button>)}</div>
       {playerDossierAlerts.length > 0 && <div className="border-t border-border bg-card/60"><div className="mx-auto flex max-w-[1600px] items-center gap-2 overflow-x-auto px-4 py-2 lg:px-6"><BellRing className="size-4 shrink-0 text-amber-300" /><span className="shrink-0 font-mono text-[10px] uppercase tracking-wider text-amber-200">Pays joué · action ou décision</span>{playerDossierAlerts.slice(0, 4).map((dossier) => <button key={dossier.id} onClick={() => openDossier(dossier.id)} className="shrink-0 border border-border bg-background px-2 py-1 text-xs hover:border-primary"><span className={dossierImportanceTone[dossier.importance]}>●</span> {dossier.title}{dossier.pendingDecisions.length > 0 ? ' · décision attendue' : ` · ${dossierUnreadCount(world, dossier.id)} nouveau(x)`}</button>)}</div></div>}
       {worldDossierAlerts.length > 0 && <div className="border-t border-border bg-card/40"><div className="mx-auto flex max-w-[1600px] items-center gap-2 overflow-x-auto px-4 py-2 lg:px-6"><Map className="size-4 shrink-0 text-sky-300" /><span className="shrink-0 font-mono text-[10px] uppercase tracking-wider text-sky-200">Monde · information</span>{worldDossierAlerts.slice(0, 4).map((dossier) => <button key={dossier.id} onClick={() => openDossier(dossier.id)} className="shrink-0 border border-border bg-background px-2 py-1 text-xs hover:border-primary"><span className={dossierImportanceTone[dossier.importance]}>●</span> {dossier.title} · {dossierUnreadCount(world, dossier.id)} nouveauté(s)</button>)}</div></div>}
+      {(queuedAIJobs.length > 0 || failedAIJobs.length > 0) && <div className="border-t border-violet-300/30 bg-violet-300/5"><div className="mx-auto flex max-w-[1600px] items-center gap-2 overflow-x-auto px-4 py-2 lg:px-6"><BrainCircuit className="size-4 shrink-0 text-violet-200" /><span className="shrink-0 text-xs text-violet-100">File IA : {queuedAIJobs.length} en attente{failedAIJobs.length > 0 ? ` · ${failedAIJobs.length} échec(s)` : ''}</span><Button size="sm" variant="outline" className="h-7 border-violet-300/40 bg-background/30 text-xs" onClick={() => setPanel('dossiers')}>Ouvrir la file</Button></div></div>}
     </header>
     <div className="border-b border-border bg-muted/20"><div className="mx-auto flex max-w-[1600px] items-center justify-between gap-4 px-4 py-2 text-xs text-muted-foreground lg:px-6"><span>{notice}</span><span className="hidden font-mono sm:block">{autonomousCount} acteurs autonomes · seed {world.seed} · séquence {world.sequence}</span></div></div>
     {lastBriefing && <TurnBriefingPanel briefing={lastBriefing} onOpenDossier={openDossier} />}

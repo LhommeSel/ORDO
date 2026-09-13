@@ -42,6 +42,11 @@ export type TurnBriefing = {
   worldHighlights: TurnBriefingHighlight[];
   completedPrograms: Array<{ id: string; title: string; status: ActionProgram['status']; resolution?: string }>;
   shockUpdates: TurnBriefingShock[];
+  /** Tâches qui attendent une décision explicite, afin que le passage du temps
+   * ne transforme jamais une réponse IA en effet invisible. */
+  aiJobsQueued: number;
+  aiJobsPending: number;
+  aiJobsFailed: number;
 };
 
 const round = (value: number, digits = 2) => Number(value.toFixed(digits));
@@ -161,6 +166,10 @@ export function buildTurnBriefing(before: WorldState, after: WorldState): TurnBr
   const highlights = dossierHighlights(before, after);
   const playerHighlights = highlights.filter((item) => item.scope === 'player').slice(0, 6);
   const worldHighlights = highlights.filter((item) => item.scope === 'world').slice(0, 6);
+  const beforeJobIds = new Set(Object.keys(before.aiJobs ?? {}));
+  const aiJobsQueued = Object.values(after.aiJobs ?? {}).filter((job) => !beforeJobIds.has(job.id)).length;
+  const aiJobsPending = Object.values(after.aiJobs ?? {}).filter((job) => job.status === 'pending').length;
+  const aiJobsFailed = Object.values(after.aiJobs ?? {}).filter((job) => job.status === 'failed').length;
   return {
     from: before.currentDate,
     to: after.currentDate,
@@ -173,5 +182,8 @@ export function buildTurnBriefing(before: WorldState, after: WorldState): TurnBr
     worldHighlights,
     completedPrograms,
     shockUpdates: shockUpdates(before, after),
+    aiJobsQueued,
+    aiJobsPending,
+    aiJobsFailed,
   };
 }
