@@ -43,7 +43,7 @@ import {
   assessPoliticalSupport, choosePoliticalCampaignStrategy, politicalCampaignOptions, politicalCycleStops,
   countrySheet,
   defenseReferenceForCountry,
-  trackedGreatPowerIds,
+  priorityCountryIds, priorityGroupForCountry,
   militaryTheatersForCountry,
   militaryBasesForCountry,
   activeWarZones,
@@ -115,28 +115,28 @@ function CoverageBadge({ ok, children }: { ok: boolean; children: React.ReactNod
 }
 
 function GreatPowerCoveragePanel({ world }: { world: WorldState }) {
-  const rows = trackedGreatPowerIds.map((countryId) => {
+  const rows = priorityCountryIds.map((countryId) => {
     const country = world.countries[countryId];
     const macro = world.macroEconomies[countryId];
     const policy = Boolean(world.leadership[countryId]?.figures.length && world.politicalApparatus[countryId]?.currents.length && world.decisionProfiles[countryId]);
     const defense = defenseReferenceForCountry(world, countryId);
     const trade = Object.values(world.tradeFlows).some((flow) => flow.exporterId === countryId || flow.importerId === countryId);
     const territoryCount = Object.values(world.territorial.territories).filter((territory) => territory.sovereignCountryId === countryId && territory.kind !== 'aggregate').length;
-    return { countryId, country, macro, policy, defense, trade, territoryCount };
+    return { countryId, country, macro, policy, defense, trade, territoryCount, group: priorityGroupForCountry(countryId) };
   });
   const complete = rows.filter((row) => row.country && row.macro && row.policy && row.defense?.modelingLevel === 'documented' && row.trade).length;
   const detailedTerritories = rows.filter((row) => row.territoryCount > 0).length;
   return <section className="border border-border bg-card/70">
     <div className="border-b border-border p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div><div className="flex items-center gap-2 font-semibold"><Database className="size-4 text-primary" /> Référentiel des grandes puissances</div><p className="mt-1 max-w-4xl text-xs text-muted-foreground">Contrôle de couverture des 20 pays suivis en détail. Les indicateurs macro viennent du socle 2000 ; les profils structurels, politiques et militaires sont des paramètres de simulation documentés séparément.</p></div>
+        <div><div className="flex items-center gap-2 font-semibold"><Database className="size-4 text-primary" /> Référentiel des États prioritaires</div><p className="mt-1 max-w-4xl text-xs text-muted-foreground">Noyau de 37 États, organisé par régions de gameplay. Les données mesurées, les paramètres de simulation et les fiches encore compactes restent distingués pour ne pas fabriquer une précision artificielle.</p></div>
         <div className="font-mono text-xs text-primary">{complete}/{rows.length} socles complets</div>
       </div>
       <div className="mt-3 flex flex-wrap gap-2 font-mono text-[10px] text-muted-foreground"><span>{detailedTerritories}/{rows.length} avec territoires détaillés</span><span>·</span><span>les autres restent jouables sur fiche compacte</span></div>
     </div>
     <details className="group">
       <summary className="cursor-pointer list-none border-b border-border/70 px-4 py-3 text-xs text-muted-foreground hover:text-foreground"><span className="group-open:hidden">Afficher le détail de couverture</span><span className="hidden group-open:inline">Masquer le détail de couverture</span></summary>
-      <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-xs"><thead className="border-b border-border bg-muted/20 font-mono text-[10px] uppercase tracking-wider text-muted-foreground"><tr><th className="p-3">Pays</th><th>Macro</th><th>Politique</th><th>Défense</th><th>Commerce</th><th>Territoires</th></tr></thead><tbody>{rows.map((row) => <tr key={row.countryId} className="border-b border-border/60 last:border-0"><td className="p-3 font-medium">{row.country?.flag ?? '·'} {row.country?.name ?? row.countryId}</td><td><CoverageBadge ok={Boolean(row.macro)}>socle 2000</CoverageBadge></td><td><CoverageBadge ok={row.policy}>dirigeant + appareil</CoverageBadge></td><td><CoverageBadge ok={row.defense?.modelingLevel === 'documented'}>{row.defense ? 'réf. 2000' : 'manquant'}</CoverageBadge></td><td><CoverageBadge ok={row.trade}>flux principaux</CoverageBadge></td><td><CoverageBadge ok={row.territoryCount > 0}>{row.territoryCount > 0 ? `${row.territoryCount} unités` : 'fiche compacte'}</CoverageBadge></td></tr>)}</tbody></table></div>
+      <div className="overflow-x-auto"><table className="w-full min-w-[860px] text-left text-xs"><thead className="border-b border-border bg-muted/20 font-mono text-[10px] uppercase tracking-wider text-muted-foreground"><tr><th className="p-3">Région</th><th>Pays</th><th>Macro</th><th>Politique</th><th>Défense</th><th>Commerce</th><th>Territoires</th></tr></thead><tbody>{rows.map((row) => <tr key={row.countryId} className="border-b border-border/60 last:border-0"><td className="p-3 font-mono text-[10px] text-muted-foreground">{row.group}</td><td className="font-medium">{row.country?.flag ?? '·'} {row.country?.name ?? row.countryId}</td><td><CoverageBadge ok={Boolean(row.macro)}>socle 2000</CoverageBadge></td><td><CoverageBadge ok={row.policy}>dirigeant + appareil</CoverageBadge></td><td><CoverageBadge ok={row.defense?.modelingLevel === 'documented'}>{row.defense ? 'réf. 2000' : 'manquant'}</CoverageBadge></td><td><CoverageBadge ok={row.trade}>flux principaux</CoverageBadge></td><td><CoverageBadge ok={row.territoryCount > 0}>{row.territoryCount > 0 ? `${row.territoryCount} unités` : 'fiche compacte'}</CoverageBadge></td></tr>)}</tbody></table></div>
       <div className="border-t border-border/70 p-3 text-[11px] leading-5 text-muted-foreground"><b className="text-foreground">Lecture :</b> « complet » signifie exploitable par le moteur, pas que chaque chiffre est une observation exhaustive. Les territoires détaillés commencent par la France ; les autres pays utilisent pour l’instant un périmètre national agrégé.</div>
     </details>
   </section>;

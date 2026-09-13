@@ -13,6 +13,7 @@ import type {
 } from './types';
 import { nationalBaseline2000 } from './national-baseline-2000';
 import { globalNationalBaseline2000 } from './global-baseline-2000';
+import { americasWdi2000, wdiObservedCountryIds, worldBankWdi2000Source } from './macro-observations-2000';
 
 type Baseline = {
   gdp: number; growth: number; population: number; populationGrowth: number;
@@ -161,6 +162,42 @@ for (const item of [...nationalBaseline2000, ...globalNationalBaseline2000]) {
   };
 }
 
+/**
+ * Les fiches génériques n'ont pas le droit d'écraser un import statistique.
+ * Le premier lot WDI couvre les quatre économies américaines du noyau.
+ */
+for (const [countryId, observation] of Object.entries(americasWdi2000) as [CountryId, typeof americasWdi2000[keyof typeof americasWdi2000]][]) {
+  const existing = baseline[countryId];
+  if (!existing) throw new Error(`Observation WDI sans fiche macro : ${countryId}`);
+  baseline[countryId] = {
+    ...existing,
+    gdp: observation.realGdpBillion2000Usd,
+    growth: observation.realGrowthAnnualPct,
+    population: observation.populationMillions,
+    populationGrowth: observation.populationGrowthAnnualPct,
+    inflation: observation.inflationAnnualPct,
+    unemployment: observation.unemploymentPct,
+    investment: observation.fixedInvestmentSharePctGdp,
+    exports: observation.exportSharePctGdp,
+    imports: observation.importSharePctGdp,
+    industry: observation.industrySharePctGdp,
+  };
+}
+
+/** Paramètres de simulation : ils restent distincts des observations WDI. */
+Object.assign(calibration, {
+  CAN: { workingAge: 67.1, participation: 66.5, migration: 6.0, debt: 82, revenue: 40, spending: 42.5, rate: 5.5, privateDebt: 104, reserves: 3.2, agriculture: 2.1, extractive: 6.1, publicServices: 19 } satisfies Calibration,
+  MEX: { workingAge: 63.8, participation: 61, migration: -3.4, debt: 22, revenue: 19, spending: 21, rate: 11.5, privateDebt: 28, reserves: 3.1, agriculture: 4.0, extractive: 7.0, publicServices: 12 } satisfies Calibration,
+});
+Object.assign(productEndowments, {
+  CAN: [80, 100, 100, 74, 84, 77],
+  MEX: [72, 63, 66, 78, 76, 59],
+});
+Object.assign(debtCalibration, {
+  CAN: { effectiveRate: 5.8, spread: 38, maturity: 6.4, foreignHeld: 36, foreignCurrency: 0, bankExposure: 15, backstop: 90, marketAccess: 94, bankCapital: 11.5, badLoans: 2.0, localCurrency: 100, fixedRate: 72, cashBuffer: 2.8, backstopCredibility: 91, fiscalCredibility: 83 },
+  MEX: { effectiveRate: 10.5, spread: 260, maturity: 4.2, foreignHeld: 30, foreignCurrency: 26, bankExposure: 18, backstop: 64, marketAccess: 72, bankCapital: 10.3, badLoans: 6.4, localCurrency: 74, fixedRate: 58, cashBuffer: 2.6, backstopCredibility: 67, fiscalCredibility: 69 },
+});
+
 const families: EconomicProductFamily[] = ['food', 'energy', 'raw_materials', 'industrial_inputs', 'manufactured_goods', 'strategic_technology'];
 const clamp = (value: number, minimum: number, maximum: number) => Math.min(maximum, Math.max(minimum, value));
 const round = (value: number, digits = 3) => Number(value.toFixed(digits));
@@ -291,10 +328,14 @@ export function createMacroEconomies2000(): Record<CountryId, MacroeconomicState
       policy: createPolicy(countryId, item),
       sectors: createSectors(countryId, item), products: createProducts(countryId, item),
       source: {
-        provider: globalNationalBaseline2000.some((entry) => entry.id === countryId)
-          ? 'Catalogue mondial ORDO — archétype de scénario 2000 ; à enrichir par séries nationales'
-          : 'World Bank — WDI pour le socle ; calibration ORDO pour les stocks non directement observés', observationYear: 2000,
-        indicatorCodes: ['NY.GDP.MKTP.CD', 'NY.GDP.MKTP.KD.ZG', 'SP.POP.TOTL', 'SP.POP.GROW', 'FP.CPI.TOTL.ZG', 'SL.UEM.TOTL.ZS', 'NE.GDI.TOTL.ZS', 'NE.EXP.GNFS.ZS', 'NE.IMP.GNFS.ZS', 'NV.IND.TOTL.ZS'],
+        provider: wdiObservedCountryIds.includes(countryId)
+          ? worldBankWdi2000Source.provider
+          : globalNationalBaseline2000.some((entry) => entry.id === countryId)
+            ? 'Catalogue mondial ORDO — archétype de scénario 2000 ; à enrichir par séries nationales'
+            : 'Banque mondiale — WDI pour le socle ; calibration ORDO pour les stocks non directement observés', observationYear: 2000,
+        indicatorCodes: wdiObservedCountryIds.includes(countryId)
+          ? [...worldBankWdi2000Source.indicatorCodes]
+          : ['NY.GDP.MKTP.CD', 'NY.GDP.MKTP.KD.ZG', 'SP.POP.TOTL', 'SP.POP.GROW', 'FP.CPI.TOTL.ZG', 'SL.UEM.TOTL.ZS', 'NE.GDI.FTOT.ZS', 'NE.EXP.GNFS.ZS', 'NE.IMP.GNFS.ZS', 'NV.IND.TOTL.ZS'],
         estimatedIndicatorCodes: ['ORDO_OUTPUT_GAP', 'ORDO_SECTOR_CAPACITY', 'ORDO_PRODUCT_BALANCE', 'ORDO_FINANCIAL_STRESS'],
         confidence: item.confidence,
       },

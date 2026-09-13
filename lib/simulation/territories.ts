@@ -2,9 +2,10 @@ import type { WorldState } from './types';
 import type { Territory, TerritorialState, TerritoryDataset } from './territory-types';
 import { franceTerritoryDataset } from './territory-data-france-2000';
 import { europeTerritoryDatasets } from './territory-data-europe';
+import { americasMacroTerritoryDatasets } from './territory-data-americas-macro';
 
 // Add country data here, not country-specific branches in the simulation or map.
-const datasets: Record<string, TerritoryDataset> = { FRA: franceTerritoryDataset, ...europeTerritoryDatasets };
+const datasets: Record<string, TerritoryDataset> = { FRA: franceTerritoryDataset, ...europeTerritoryDatasets, ...americasMacroTerritoryDatasets };
 type MacroBasis = Pick<WorldState, 'countries' | 'macroEconomies'>;
 
 function positiveOrZero(value: number) {

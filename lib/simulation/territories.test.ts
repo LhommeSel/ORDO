@@ -8,6 +8,7 @@ import { regionalizeCountry, territorySummary } from './territories';
 import type { WorldState } from './types';
 import { europeMacroTerritoryDatasets, europeanTerritorialCountryIds } from './territory-data-europe-macro';
 import { europePriorityAssetCountryIds } from './territory-data-europe';
+import { americasMacroTerritoryDatasets } from './territory-data-americas-macro';
 import { assetMonthlyOutput, assetOperationalOutput, nodeOperationalProduction, operateTerritorialAsset } from './territorial-assets';
 import { energyBalance, nodePhysicalExportCapacity } from './energy';
 
@@ -66,6 +67,17 @@ test('parcours territorial : France, carte, 12 mois, sauvegarde et extension à 
   const seconds = (performance.now() - start) / 1000;
   const detailedAssets = Object.values(initial.territorial.assets).filter((asset) => asset.territoryId.startsWith('FRA-')).length;
   console.log(`Parcours validé : 34 territoires français, ${detailedAssets} actifs français (${Object.keys(initial.territorial.assets).length} actifs détaillés au total), 22 contours, 12 mois, conservation sur ${Object.keys(initial.countries).length} pays, sauvegarde et migration, régionalisation étrangère. ${seconds.toFixed(2)} s. Aucun appel IA.`);
+});
+
+test('les mailles macro des Amériques conservent strictement les totaux nationaux WDI', () => {
+  const state = createFrance2000World();
+  for (const countryId of Object.keys(americasMacroTerritoryDatasets)) {
+    const summary = territorySummary(state.territorial, countryId);
+    const macro = state.macroEconomies[countryId];
+    assert.equal(summary.count, americasMacroTerritoryDatasets[countryId].territories.length, `${countryId}: nombre de régions`);
+    assert.ok(Math.abs(summary.population - macro.populationMillions * 1e6) < 0.001, `${countryId}: population`);
+    assert.ok(Math.abs(summary.realGdpBillion2000Usd - macro.realGdpBillion2000Usd) < 1e-8, `${countryId}: PIB`);
+  }
 });
 
 test('les actifs français conservent une attribution d’opérateur compatible avec leur catégorie', () => {

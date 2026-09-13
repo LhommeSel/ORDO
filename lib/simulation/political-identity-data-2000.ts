@@ -66,6 +66,14 @@ const leadershipOverrides: Partial<Record<CountryId, LeadershipOverride>> = {
     executiveCoordination: 82,
     figures: [{ id: 'usa-clinton-2000', name: 'Bill Clinton', role: 'Président', authorityShare: 100, ideologyTags: ['centrisme démocrate', 'libéralisme économique', 'internationalisme'], traits: traits(55, 39, 78, 80, 62, 48, 70) }],
   },
+  CAN: {
+    executiveCoordination: 84,
+    figures: [{ id: 'can-chretien-2000', name: 'Jean Chrétien', role: 'Premier ministre', authorityShare: 100, ideologyTags: ['libéralisme centriste', 'fédéralisme canadien', 'multilatéralisme'], traits: traits(34, 18, 68, 57, 75, 48, 82) }],
+  },
+  MEX: {
+    executiveCoordination: 62,
+    figures: [{ id: 'mex-zedillo-2000', name: 'Ernesto Zedillo', role: 'Président', authorityShare: 100, ideologyTags: ['transition démocratique', 'stabilité macroéconomique', 'souveraineté nord-américaine'], traits: traits(42, 28, 61, 65, 70, 58, 68) }],
+  },
   RUS: {
     executiveCoordination: 62,
     figures: [{ id: 'rus-putin-2000', name: 'Vladimir Poutine', role: 'Président par intérim', authorityShare: 100, ideologyTags: ['centralisation', 'souverainisme', 'restauration de l’État'], traits: traits(70, 72, 45, 69, 76, 78, 61) }],
@@ -170,6 +178,8 @@ const apparatusLabels: Partial<Record<CountryId, [string, string]>> = {
   NOR: ['Administration consensuelle et institutions pétrolières', 'Coalition chrétienne-démocrate et partenaires centristes'],
   GBR: ['État permanent, atlantiste et financier', 'Majorité travailliste réformatrice'],
   USA: ['Établissement de sécurité et appareil fédéral', 'Congrès et coalition économique'],
+  CAN: ['Fédéralisme administratif, bilinguisme et provinces', 'Majorité libérale fédérale et compromis territorial'],
+  MEX: ['Fédéralisme présidentiel et appareil administratif national', 'PRI en transition, élites économiques et ouverture électorale'],
   RUS: ['Appareil sécuritaire et centralisateur', 'Réseaux économiques issus de la transition'],
   CHN: ['Parti-État et sécurité politique', 'Technocratie de modernisation économique'],
   DZA: ['Appareil militaire et sécuritaire', 'Technocratie présidentielle et réseaux économiques'],

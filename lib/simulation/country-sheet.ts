@@ -175,6 +175,8 @@ export const defenseReference2000: Record<CountryId, DefenseReference> = {
   POL: { budgetBillionUsd: 4.5, activePersonnelThousands: 235, posture: 'défense territoriale en transition', capabilities: ['forces terrestres', 'adaptation OTAN'] },
   GBR: { budgetBillionUsd: 36, activePersonnelThousands: 212, posture: 'projection alliée mondiale', capabilities: ['dissuasion nucléaire', 'marine hauturière', 'renseignement'] },
   USA: { budgetBillionUsd: 281, activePersonnelThousands: 1370, posture: 'projection mondiale', capabilities: ['porte-avions', 'dissuasion nucléaire', 'supériorité aérienne'] },
+  CAN: { budgetBillionUsd: 8.3, activePersonnelThousands: 60, posture: 'défense continentale et surveillance arctique', capabilities: ['NORAD', 'surveillance maritime et arctique', 'interopérabilité alliée'] },
+  MEX: { budgetBillionUsd: 4.3, activePersonnelThousands: 190, posture: 'défense territoriale et sécurité intérieure', capabilities: ['forces terrestres', 'surveillance des frontières', 'marine côtière'] },
   RUS: { budgetBillionUsd: 20, activePersonnelThousands: 1200, posture: 'puissance continentale et nucléaire', capabilities: ['dissuasion nucléaire', 'forces terrestres', 'complexe militaro-industriel'] },
   CHN: { budgetBillionUsd: 40, activePersonnelThousands: 2500, posture: 'montée en puissance régionale', capabilities: ['forces terrestres massives', 'missiles', 'modernisation navale'] },
   NOR: { budgetBillionUsd: 3.6, activePersonnelThousands: 27, posture: 'surveillance nord-atlantique', capabilities: ['OTAN', 'surveillance maritime'] },
@@ -258,6 +260,7 @@ const aliases: Record<string, string[]> = {
   USA: ['usa', 'us', 'etats unis', 'amerique'], GBR: ['royaume uni', 'grande bretagne', 'angleterre'],
   SAU: ['arabie saoudite', 'saoudiens'], DZA: ['algerie'], DEU: ['allemagne'], RUS: ['russie', 'moscou'],
   CHN: ['chine'], JPN: ['japon'], TUR: ['turquie'], ZAF: ['afrique du sud'], AUS: ['australie'], IND: ['inde'], BRA: ['bresil'], VNM: ['vietnam'],
+  CAN: ['canada'], MEX: ['mexique', 'mexico'],
 };
 
 export function countryMentionedInText(state: WorldState, text: string): CountryId | undefined {

@@ -3,8 +3,10 @@ import type { NationalBaselineDescriptor } from './national-baseline-2000';
 
 /**
  * Catalogue mondial de couverture. Les 95 lignes ci-dessous complètent les
- * fiches détaillées déjà présentes dans le prototype pour atteindre les 195
- * États membres de l'ONU et États observateurs au 1er janvier 2000.
+ * fiches détaillées déjà présentes dans le prototype pour couvrir les 195
+ * États membres de l'ONU et États observateurs au 1er janvier 2000. Taïwan
+ * est ajouté séparément dans le noyau de gameplay comme entité politique
+ * distincte, ce qui porte le registre jouable à 196 fiches.
  *
  * Ce n'est pas une base encyclopédique : les grands pays disposent de fiches
  * calibrées séparément. Ici, un archétype fournit un socle cohérent, stable et

@@ -75,6 +75,22 @@ const overrides: Record<CountryId, ProfileOverride> = {
     riskTolerance: 72, adaptability: 70, satisficingThreshold: -12, choiceNoise: 17,
     constraints: [aversion('usa-autonomy', 'Préserver la liberté d’action américaine', 'preference', ['foreign_dependency'], 13, 65)],
   },
+  CAN: {
+    weights: { growth: 82, fiscal_sustainability: 82, alliance_cohesion: 90, social_cohesion: 84, strategic_autonomy: 70, international_prestige: 74 },
+    riskTolerance: 38, adaptability: 70, satisficingThreshold: -5, choiceNoise: 8,
+    constraints: [
+      aversion('can-continental-access', 'Préserver l’accès au marché nord-américain sans renoncer à la souveraineté', 'taboo', ['alliance_breach'], 38, 82),
+      aversion('can-federal-cohesion', 'Éviter une fracture fédérale ou territoriale', 'taboo', ['elite_displacement'], 36, 80),
+    ],
+  },
+  MEX: {
+    weights: { growth: 88, employment: 86, price_stability: 92, strategic_autonomy: 90, social_cohesion: 80, regime_survival: 78 },
+    riskTolerance: 48, adaptability: 62, satisficingThreshold: -10, choiceNoise: 15,
+    constraints: [
+      aversion('mex-sovereignty', 'Préserver une marge de souveraineté face à l’intégration nord-américaine', 'taboo', ['foreign_dependency'], 34, 78),
+      aversion('mex-democratic-transition', 'Ne pas déstabiliser brutalement la transition électorale en cours', 'preference', ['elite_displacement'], 14, 56),
+    ],
+  },
   GBR: {
     weights: { growth: 84, employment: 76, fiscal_sustainability: 78, alliance_cohesion: 86, redistribution: 48, elite_support: 72, international_prestige: 84 },
     riskTolerance: 58, adaptability: 76, satisficingThreshold: -10, choiceNoise: 13,

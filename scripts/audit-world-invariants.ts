@@ -20,7 +20,7 @@ function assertFiniteTree(value: unknown, path: string): void {
 }
 
 const baseline = createFrance2000World();
-assert.equal(Object.keys(baseline.countries).length, 195);
+assert.equal(Object.keys(baseline.countries).length, 196);
 assert.equal(validateCountryRegistry(baseline.countries, baseline.macroEconomies).filter((issue) => issue.severity === 'error').length, 0);
 assertFiniteTree(baseline, 'world');
 
@@ -30,7 +30,7 @@ for (const playerCountryId of representativePlayers) {
   assert.equal(result.state.playerCountryId, playerCountryId);
   assert.equal(result.reachedDate, '2002-01-01');
   assert.equal(result.audit.ok, true, `${playerCountryId}: ${result.audit.issues.join(' · ')}`);
-  assert.equal(Object.keys(result.state.countries).length, 195);
+  assert.equal(Object.keys(result.state.countries).length, 196);
   assertFiniteTree(result.state, `${playerCountryId}.world`);
   for (const economy of Object.values(result.state.macroEconomies)) {
     assert.ok(economy.realGdpBillion2000Usd > 0, `${playerCountryId}/${economy.countryId}: PIB non positif`);
@@ -44,4 +44,4 @@ for (const playerCountryId of representativePlayers) {
   }
 }
 
-console.log(`Audit mondial validé : 195 pays chargés et ${representativePlayers.length} pays joueurs simulés pendant 24 mois, sans NaN, valeur infinie ni invariant rompu. Aucun appel IA.`);
+console.log(`Audit mondial validé : 196 fiches chargées (195 États et Taïwan) et ${representativePlayers.length} pays joueurs simulés pendant 24 mois, sans NaN, valeur infinie ni invariant rompu. Aucun appel IA.`);
