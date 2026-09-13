@@ -25,7 +25,7 @@ import {
   dossierUnreadCount, dossiersRequiringAttention, dossierUpdatesSinceView, assessDossierResolution, energyBalance,
   energyCounterpartResponseFromSession, evaluatePoliticalPathway, executeAIJob, markDossierViewed, productEvidenceSummary,
   enactPrototypeGovernmentMeasure, reactionLevelLabels, reactionTrendLabels,
-  authorizeArmamentProspect, rejectArmamentProspect,
+  authorizeArmamentProspect, MAX_ARMAMENT_BACKLOG_MONTHS, rejectArmamentProspect,
   launchCommonAction, prepareCommonAction, prepareDossierDelegation,
   nodeAvailableExport, nodeBookedVolume, nodeExpansionPotential,
   reactivateDossier, resolveDossierDecision, resolveDiplomaticDialogueResponse, sendEnergyOffer, startEnergyNegotiationAI, visibleLedger, visibleStakeholderReactions,
@@ -749,14 +749,17 @@ function IndustryPanel({ world, onWorldChange, onNotice }: { world: WorldState; 
       <div className="border-b border-border p-4"><div className="flex items-center gap-2 font-semibold"><Shield className="size-4 text-primary" /> Produits phares d’armement · {player.name}</div><p className="mt-1 text-xs text-muted-foreground">Bouquet suivi individuellement, sans chaîne de production à la Victoria.</p></div>
       <div className="grid gap-px bg-border md:grid-cols-2 xl:grid-cols-3">{nationalProducts.map((product) => {
         const proof = evidence[product.id] ?? productEvidenceSummary(product);
+        const remainingBacklogMonths = Math.max(0, MAX_ARMAMENT_BACKLOG_MONTHS - product.backlogMonths);
+        const availableOrderQuantity = Math.floor(Math.max(0, product.annualCapacity * remainingBacklogMonths / 12));
         return <div key={product.id} className="bg-card p-4">
           <div className="flex justify-between gap-3"><div><div className="font-semibold">{product.name}</div><div className="text-xs text-muted-foreground">{product.manufacturer} · {product.family}</div></div><span className="font-mono text-[10px] text-primary">{product.status}</span></div>
           <div className="mt-4 grid grid-cols-2 gap-2 text-xs"><div>Capacité/an <b>{product.annualCapacity}</b></div><div>Carnet <b>{product.backlogMonths.toFixed(1)} mois</b></div><div>Technique <b>{proof.maturity}</b></div><div>Terrain <b>{proof.operationalExperience}</b></div></div>
           <div className="mt-3 text-xs text-muted-foreground">Retours {proof.feedback} · confiance documentaire {proof.confidence}% · {product.prospects.length} prospect(s)</div>
+          <div className={`mt-1 text-xs ${remainingBacklogMonths > 0 && availableOrderQuantity > 0 ? 'text-sky-300' : 'text-amber-300'}`}>Fenêtre de commande : {remainingBacklogMonths.toFixed(1)} mois · capacité immédiatement réservable : {availableOrderQuantity} unité(s)</div>
           {product.prospects.length > 0 && <div className="mt-3 space-y-2 border-t border-border pt-3">{product.prospects.slice(-3).map((prospect) => {
             const buyer = world.countries[prospect.countryId];
             const pending = prospect.status === 'approval_required' || prospect.status === 'negotiating';
-            return <div key={prospect.id} className="border border-border bg-background/30 p-2 text-xs"><div className="flex items-start justify-between gap-2"><span>{buyer?.flag} {buyer?.name ?? prospect.countryId} · {prospect.quantity} unités</span><span className="font-mono text-[10px] text-primary">{prospect.status}</span></div><div className="mt-1 text-muted-foreground">Sensibilité politique : {prospect.politicalSensitivity}/100</div>{pending && <div className="mt-2 flex gap-2"><Button size="sm" onClick={() => resolveProspect(product.id, prospect.id, 'authorize')}>Autoriser</Button><Button size="sm" variant="outline" onClick={() => resolveProspect(product.id, prospect.id, 'reject')}>Refuser</Button></div>}</div>;
+            return <div key={prospect.id} className="border border-border bg-background/30 p-2 text-xs"><div className="flex items-start justify-between gap-2"><span>{buyer?.flag} {buyer?.name ?? prospect.countryId} · {prospect.quantity} unités</span><span className="font-mono text-[10px] text-primary">{prospect.status}</span></div><div className="mt-1 text-muted-foreground">Sensibilité politique : {prospect.politicalSensitivity}/100</div>{pending && <div className="mt-2 flex flex-wrap gap-2"><Button size="sm" disabled={availableOrderQuantity < 1} title={availableOrderQuantity < 1 ? 'Le carnet est saturé sur la fenêtre de trois ans.' : `La commande sera plafonnée à ${availableOrderQuantity} unité(s) si nécessaire.`} onClick={() => resolveProspect(product.id, prospect.id, 'authorize')}>Autoriser{availableOrderQuantity > 0 && availableOrderQuantity < prospect.quantity ? ` · ${availableOrderQuantity} max.` : ''}</Button><Button size="sm" variant="outline" onClick={() => resolveProspect(product.id, prospect.id, 'reject')}>Refuser</Button></div>}</div>;
           })}</div>}
         </div>;
       })}{nationalProducts.length === 0 && <div className="col-span-full bg-card p-4 text-sm text-muted-foreground">Aucun produit vitrine n’est encore documenté pour ce pays. Les exportations d’armement détaillées restent indisponibles tant que cet inventaire n’est pas ajouté.</div>}</div>
