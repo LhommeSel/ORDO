@@ -7,6 +7,7 @@ import { deserializeWorld, serializeWorld } from './persistence';
 import { regionalizeCountry, territorySummary } from './territories';
 import type { WorldState } from './types';
 import { europeMacroTerritoryDatasets, europeanTerritorialCountryIds } from './territory-data-europe-macro';
+import { europePriorityAssetCountryIds } from './territory-data-europe';
 
 test('parcours territorial : France, carte, 12 mois, sauvegarde et extension à un autre pays', async () => {
   const start = performance.now();
@@ -99,4 +100,22 @@ test('les macro-régions couvrent l’Europe du scénario sans double compte', (
     }
   }
   console.log(`Couverture européenne validée : ${europeanTerritorialCountryIds.length} pays, ${europeanTerritorialCountryIds.reduce((sum, id) => sum + Object.values(world.territorial.territories).filter((territory) => territory.sovereignCountryId === id && territory.kind !== 'aggregate').length, 0)} mailles régionales, totaux population/PIB conservés. Aucun appel IA.`);
+});
+
+test('les actifs européens prioritaires restent localisés et séparés par filière', () => {
+  const world = createFrance2000World();
+  const assets = Object.values(world.territorial.assets);
+  const energyKinds = new Set(['nuclear', 'lng_terminal', 'thermal', 'hydro', 'refinery', 'oil_field', 'gas_field', 'storage']);
+  for (const countryId of europePriorityAssetCountryIds) {
+    const countryAssets = assets.filter((asset) => asset.id.startsWith(`asset:${countryId}:`));
+    assert.ok(countryAssets.length >= 5, `${countryId}: inventaire prioritaire trop court`);
+    assert.ok(countryAssets.some((asset) => energyKinds.has(asset.kind)), `${countryId}: aucun actif énergétique`);
+    assert.ok(countryAssets.some((asset) => ['port', 'airport', 'passage', 'logistics', 'industrial', 'naval_base'].includes(asset.kind)), `${countryId}: aucune infrastructure stratégique`);
+    for (const asset of countryAssets) {
+      assert.ok(world.territorial.territories[asset.territoryId], `${asset.id}: territoire absent`);
+      assert.notDeepEqual(asset.anchor, [0, 0], `${asset.id}: ancre par défaut`);
+      assert.equal(asset.integration, 'inventory_only');
+    }
+  }
+  console.log(`Inventaire énergétique/infrastructure validé : ${europePriorityAssetCountryIds.length} pays, ${assets.filter((asset) => europePriorityAssetCountryIds.some((id) => asset.id.startsWith(`asset:${id}:`))).length} actifs prioritaires localisés. Capacités quantitatives non inventées.`);
 });
