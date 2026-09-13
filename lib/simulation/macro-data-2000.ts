@@ -13,7 +13,7 @@ import type {
 } from './types';
 import { nationalBaseline2000 } from './national-baseline-2000';
 import { globalNationalBaseline2000 } from './global-baseline-2000';
-import { africaMiddleEastWdi2000, americasWdi2000, asiaPacificWdi2000, europeWdi2000, wdiCalibratedIndicatorCodes, wdiObservedCountryIds, worldBankWdi2000Source } from './macro-observations-2000';
+import { africaMiddleEastWdi2000, americasWdi2000, asiaPacificWdi2000, europeWdi2000, remainingCoreWdi2000, wdiCalibratedIndicatorCodes, wdiObservedCountryIds, worldBankWdi2000Source } from './macro-observations-2000';
 
 type Baseline = {
   gdp: number; growth: number; population: number; populationGrowth: number;
@@ -169,7 +169,7 @@ for (const item of [...nationalBaseline2000, ...globalNationalBaseline2000]) {
  * simulation (dette, réserves, capacité bancaire) restent volontairement
  * séparés et calibrés dans ORDO.
  */
-for (const [countryId, observation] of Object.entries({ ...americasWdi2000, ...europeWdi2000, ...africaMiddleEastWdi2000, ...asiaPacificWdi2000 }) as [CountryId, typeof americasWdi2000[keyof typeof americasWdi2000]][]) {
+for (const [countryId, observation] of Object.entries({ ...americasWdi2000, ...europeWdi2000, ...africaMiddleEastWdi2000, ...asiaPacificWdi2000, ...remainingCoreWdi2000 }) as [CountryId, typeof americasWdi2000[keyof typeof americasWdi2000]][]) {
   const existing = baseline[countryId];
   if (!existing) throw new Error(`Observation WDI sans fiche macro : ${countryId}`);
   baseline[countryId] = {

@@ -98,9 +98,25 @@ export const asiaPacificWdi2000: Record<'RUS' | 'CHN' | 'IND' | 'JPN' | 'KOR' | 
   VNM: { realGdpBillion2000Usd: 31.173, realGrowthAnnualPct: 6.787, populationMillions: 77.154011, populationGrowthAnnualPct: 1.130, inflationAnnualPct: -1.710, unemploymentPct: 2.260, fixedInvestmentSharePctGdp: 27.647, exportSharePctGdp: 53.921, importSharePctGdp: 57.496, industrySharePctGdp: 36.731 },
 };
 
+/**
+ * Dernier lot du noyau de 37 : Pays-Bas, Pakistan, Israël, Libye et Niger.
+ * La part industrielle libyenne n'est pas publiée par le WDI en 2000 et
+ * conserve donc la calibration de scénario déjà utilisée par ORDO ; Taïwan
+ * et la Corée du Nord restent également sur leurs fiches de scénario, faute
+ * de série WDI complète et comparable.
+ */
+export const remainingCoreWdi2000: Record<'NLD' | 'PAK' | 'ISR' | 'LBY' | 'NER', MacroObservation2000> = {
+  NLD: { realGdpBillion2000Usd: 417.649, realGrowthAnnualPct: 4.220, populationMillions: 15.925513, populationGrowthAnnualPct: 0.715, inflationAnnualPct: 2.361, unemploymentPct: 2.725, fixedInvestmentSharePctGdp: 22.528, exportSharePctGdp: 66.443, importSharePctGdp: 59.224, industrySharePctGdp: 21.100 },
+  PAK: { realGdpBillion2000Usd: 99.485, realGrowthAnnualPct: 4.260, populationMillions: 154.879127, populationGrowthAnnualPct: 2.825, inflationAnnualPct: 4.367, unemploymentPct: 0.614, fixedInvestmentSharePctGdp: 14.601, exportSharePctGdp: 9.630, importSharePctGdp: 11.830, industrySharePctGdp: 17.184 },
+  ISR: { realGdpBillion2000Usd: 136.410, realGrowthAnnualPct: 8.592, populationMillions: 6.289000, populationGrowthAnnualPct: 2.642, inflationAnnualPct: 1.033, unemploymentPct: 11.102, fixedInvestmentSharePctGdp: 24.167, exportSharePctGdp: 33.796, importSharePctGdp: 34.602, industrySharePctGdp: 23.047 },
+  LBY: { realGdpBillion2000Usd: 38.271, realGrowthAnnualPct: 3.679, populationMillions: 5.305021, populationGrowthAnnualPct: 1.653, inflationAnnualPct: -2.900, unemploymentPct: 19.275, fixedInvestmentSharePctGdp: 11.637, exportSharePctGdp: 31.558, importSharePctGdp: 13.723, industrySharePctGdp: 58.000 },
+  NER: { realGdpBillion2000Usd: 2.242, realGrowthAnnualPct: -1.208, populationMillions: 11.509630, populationGrowthAnnualPct: 3.467, inflationAnnualPct: 2.900, unemploymentPct: 1.427, fixedInvestmentSharePctGdp: 12.899, exportSharePctGdp: 14.340, importSharePctGdp: 20.373, industrySharePctGdp: 18.098 },
+};
+
 /** Séries WDI absentes en 2000 et remplacées par une calibration ORDO. */
 export const wdiCalibratedIndicatorCodes: Record<string, string[]> = {
   NGA: ['NE.GDI.FTOT.ZS', 'NE.EXP.GNFS.ZS', 'NE.IMP.GNFS.ZS'],
+  LBY: ['NV.IND.TOTL.ZS'],
 };
 
-export const wdiObservedCountryIds = Object.keys({ ...americasWdi2000, ...europeWdi2000, ...africaMiddleEastWdi2000, ...asiaPacificWdi2000 }) as CountryId[];
+export const wdiObservedCountryIds = Object.keys({ ...americasWdi2000, ...europeWdi2000, ...africaMiddleEastWdi2000, ...asiaPacificWdi2000, ...remainingCoreWdi2000 }) as CountryId[];

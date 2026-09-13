@@ -51,7 +51,7 @@ import { nationalReformEffects, reformStateKey } from './reforms';
 import { advanceMilitaryTheaterAccess, militaryBasesForCountry, militaryTheatersForCountry } from './military-theaters';
 import { advanceWarZones, warZonesForCountry } from './war-zones';
 import { priorityCountryIds, priorityCountryGroups, trackedGreatPowerIds } from './great-powers';
-import { americasWdi2000, asiaPacificWdi2000 } from './macro-observations-2000';
+import { americasWdi2000, asiaPacificWdi2000, remainingCoreWdi2000 } from './macro-observations-2000';
 
 test('les grandes puissances suivies disposent d’un socle macro, politique, militaire et commercial complet', () => {
   const state = createWorld2000();
@@ -101,6 +101,16 @@ test('les observations WDI Asie-Pacifique prévalent sur les fiches génériques
   // La Corée du Nord reste jouable avec son scénario lorsqu'une série WDI
   // comparable n'est pas disponible.
   assert.ok(state.macroEconomies.PRK.realGdpBillion2000Usd > 0);
+});
+
+test('les dernières fiches prioritaires disponibles en WDI alimentent le moteur', () => {
+  const state = createWorld2000();
+  for (const [countryId, observation] of Object.entries(remainingCoreWdi2000)) {
+    const macro = state.macroEconomies[countryId];
+    assert.ok(macro, `${countryId}: macroéconomie`);
+    assert.equal(macro.realGdpBillion2000Usd, observation.realGdpBillion2000Usd, `${countryId}: PIB WDI`);
+    assert.equal(macro.populationMillions, observation.populationMillions, `${countryId}: population WDI`);
+  }
 });
 
 test('le scénario 2000 charge un monde cohérent et jouable', () => {
