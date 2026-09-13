@@ -160,6 +160,9 @@ test('les actions d’actifs modifient la disponibilité et restent limitées au
   assert.ok(repairProgram, 'programme de réparation absent');
   assert.equal(repairProgram?.status, 'active');
   assert.equal(repairProgram?.durationMonths, 6);
+  const conflicting = operateTerritorialAsset(repaired.state, 'asset:FRA:lacq', 'maintain');
+  assert.equal(conflicting.ok, false, 'une seconde opération ne doit pas se superposer');
+  assert.match(conflicting.error, /déjà en cours/i);
   const repairedAdvanced = advanceWorld(repaired.state, '2000-07-01').state;
   const repairedResult = Object.values(repairedAdvanced.actionPrograms).find((program) => program.id === repairProgram?.id);
   assert.ok(repairedResult && repairedResult.status !== 'active', 'la réparation doit se résoudre à son échéance');

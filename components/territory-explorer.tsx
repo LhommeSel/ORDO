@@ -154,15 +154,19 @@ export function TerritoryExplorer({ world, countryId, onWorldChange, onNotice }:
             <div><dt>Part du PIB national</dt><dd>{share === null ? 'Hors périmètre national' : `${decimals.format(share)} %`}</dd></div>
             <div><dt>Souveraineté / contrôle</dt><dd>{territorial.entities[selected.sovereignCountryId]?.name} / {territorial.entities[selected.controllerEntityId]?.name}</dd></div></dl>
           <h5>Actifs recensés ({assets.length})</h5>
-          {assets.length ? <ul>{assets.map((asset) => <li key={asset.id}><b>{asset.kind === 'port' || asset.kind === 'passage' || asset.kind === 'airport' ? '■' : '●'} {asset.name}</b> — {asset.operatorEntityId ? territorial.entities[asset.operatorEntityId]?.name : 'Opérateur à documenter'} · {asset.status === 'closed' ? 'fermé / arrêté au lancement' : assetOperationLabel(asset) ?? 'inventaire sans capacité chiffrée'}
-            {asset.operation && <div className="mt-2 flex flex-wrap gap-1">{canOperate && <>
-              <Button size="sm" variant="outline" disabled={asset.status === 'closed' || asset.operation.deployed >= asset.operation.maximum - 0.001} onClick={() => operate(asset.id, 'mobilize')}>Mobiliser</Button>
-              <Button size="sm" variant="outline" disabled={asset.status === 'closed' || asset.operation.availabilityPct >= 99.9} onClick={() => operate(asset.id, 'maintain')}>Entretenir</Button>
-              <Button size="sm" variant="outline" disabled={asset.status === 'closed'} onClick={() => operate(asset.id, 'invest')}>Étendre</Button>
-              <Button size="sm" variant="outline" disabled={asset.status === 'closed'} onClick={() => operate(asset.id, 'close')}>Suspendre</Button>
-              {(asset.status !== 'operating' || asset.operation.availabilityPct < 95) && <Button size="sm" variant="outline" onClick={() => operate(asset.id, 'repair')}>Réparer</Button>}
-            </>}</div>}
-          </li>)}</ul>
+          {assets.length ? <ul>{assets.map((asset) => {
+            const pending = Object.values(world.actionPrograms ?? {}).find((program) => program.status === 'active' && program.territorialAssetId === asset.id);
+            return <li key={asset.id}><b>{asset.kind === 'port' || asset.kind === 'passage' || asset.kind === 'airport' ? '■' : '●'} {asset.name}</b> — {asset.operatorEntityId ? territorial.entities[asset.operatorEntityId]?.name : 'Opérateur à documenter'} · {asset.status === 'closed' ? 'fermé / arrêté au lancement' : assetOperationLabel(asset) ?? 'inventaire sans capacité chiffrée'}
+              {pending && <div className="mt-1 text-xs text-amber-300">Opération en cours · résolution prévue le {pending.expectedCompletionAt} · moyens temporairement engagés</div>}
+              {asset.operation && <div className="mt-2 flex flex-wrap gap-1">{canOperate && <>
+                <Button size="sm" variant="outline" disabled={Boolean(pending) || asset.status === 'closed' || asset.operation.deployed >= asset.operation.maximum - 0.001} onClick={() => operate(asset.id, 'mobilize')}>Mobiliser</Button>
+                <Button size="sm" variant="outline" disabled={Boolean(pending) || asset.status === 'closed' || asset.operation.availabilityPct >= 99.9} onClick={() => operate(asset.id, 'maintain')}>Entretenir</Button>
+                <Button size="sm" variant="outline" disabled={Boolean(pending) || asset.status === 'closed'} onClick={() => operate(asset.id, 'invest')}>Étendre</Button>
+                <Button size="sm" variant="outline" disabled={Boolean(pending) || asset.status === 'closed'} onClick={() => operate(asset.id, 'close')}>Suspendre</Button>
+                {(asset.status !== 'operating' || asset.operation.availabilityPct < 95) && <Button size="sm" variant="outline" disabled={Boolean(pending)} onClick={() => operate(asset.id, 'repair')}>Réparer</Button>}
+              </>}</div>}
+            </li>;
+          })}</ul>
             : <p>Aucun actif recensé dans ce premier lot — cela ne signifie pas que le territoire n’en possède pas.</p>}
           <p className="territory-help">Les actifs sans capacité restent un inventaire localisé. Les actifs énergétiques chiffrés ont un débit mensuel dérivé ; seuls ceux marqués comme raccordés au registre influencent les flux. Les boutons d’exploitation apparaissent uniquement pour le pays joué.</p>
           <details><summary>Méthode et sources</summary><p>{selected.note}</p>

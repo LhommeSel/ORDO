@@ -253,6 +253,8 @@ export function operateTerritorialAsset(
   const country = state.countries[actorId];
   const cost = assetActionCosts[kind];
   if (!country || country.metrics.budget < cost) return { ok: false as const, state, error: `Budget insuffisant pour ${assetActionLabels[kind].toLowerCase()} cet actif.` };
+  const pendingProgram = Object.values(state.actionPrograms ?? {}).find((program) => program.status === 'active' && program.territorialAssetId === asset.id);
+  if (pendingProgram) return { ok: false as const, state, error: `Une opération est déjà en cours sur cet actif (résolution prévue le ${pendingProgram.expectedCompletionAt}).` };
   const operation = asset.operation;
   if (kind !== 'close') {
     if (kind === 'mobilize' && asset.status === 'closed') return { ok: false as const, state, error: 'Un actif suspendu doit d’abord être réparé.' };
