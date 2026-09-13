@@ -35,6 +35,7 @@ import {
   structuralDiagnosisGroups,
   classifyAdvisorQuestion,
   createWorldPulseRequest, executeWorldPulse, rankDossierReviews, rankStrategicDossierReviews, rankWorldDossierReviews,
+  cancelAIJob, estimateAIJobSize, pendingAIJobs, retryAIJob,
   setDossierFollowed,
   dossierDecisionRecords,
   dossierPressureProfile,
@@ -53,6 +54,7 @@ import {
   type AdvisorAnswer, type AdvisorQuestionKind, type EnergyAdministrativeOffer, type EnergyCounterpartResponse,
   type CommonActionCategory, type CountryId, type EnergyOfferAdjustment, type HistoricalInterventionDirection, type ISODate, type StrategicDossier, type StrategicPlan,
   type NationalReformDomain, type PoliticalCampaignStrategy, type PreparedCommonAction, type PrototypeMeasureId, type PowerStrugglePlayerDecision, type StructuralDiagnosis, type TurnBriefing, type WorldState,
+  type AIJob,
   type DiplomaticBrief, type DiplomaticMeeting, type DiplomaticAgreementDraft,
 } from '@/lib/simulation';
 import { dossierScopeFor, dossierScopeLabel } from '@/lib/simulation/dossier-scope';
@@ -1266,6 +1268,102 @@ function AutonomousProgramsPanel({ world }: { world: WorldState }) {
   </section>;
 }
 
+const aiJobKindLabels: Record<AIJob['kind'], string> = {
+  power_struggle: 'Acteur émergent / crise politique',
+  diplomacy: 'Réponse diplomatique',
+  historical_interpretation: 'Interprétation historique',
+  advisor: 'Conseil stratégique',
+  free_action_interpretation: 'Interprétation d’action libre',
+};
+
+const aiJobPriorityLabels = { urgent: 'Urgente', normal: 'Normale', background: 'Arrière-plan' } as const;
+const aiJobPriorityTones = { urgent: 'text-red-300', normal: 'text-amber-200', background: 'text-muted-foreground' } as const;
+
+function AIJobQueuePanel({ world, onWorldChange, onNotice }: {
+  world: WorldState;
+  onWorldChange: (world: WorldState) => void;
+  onNotice: (message: string) => void;
+}) {
+  const [busyJobId, setBusyJobId] = useState<string | null>(null);
+  const pending = pendingAIJobs(world);
+  const failed = Object.values(world.aiJobs ?? {})
+    .filter((job) => job.status === 'failed')
+    .sort((a, b) => (b.resolvedAt ?? b.requestedAt).localeCompare(a.resolvedAt ?? a.requestedAt) || b.id.localeCompare(a.id))
+    .slice(0, 5);
+  const completed = Object.values(world.aiJobs ?? {})
+    .filter((job) => job.status === 'resolved' && job.execution)
+    .sort((a, b) => (b.resolvedAt ?? '').localeCompare(a.resolvedAt ?? '') || b.id.localeCompare(a.id))
+    .slice(0, 5);
+  const visibleJobs = [...pending, ...failed.filter((job) => !pending.some((item) => item.id === job.id))];
+  const jobSubject = (job: AIJob) => {
+    if (job.kind === 'power_struggle') {
+      const campaign = job.campaignId ? world.powerStruggleCampaigns?.[job.campaignId] : undefined;
+      const actorNames = campaign?.instigatorActorIds.map((id) => world.powerActors?.[id]?.name).filter(Boolean).join(', ');
+      const dossierId = campaign?.dossierId;
+      return dossierId ? world.strategicDossiers[dossierId]?.title ?? dossierId : actorNames || `${job.context.stakeholderLabel} · ${job.context.countryName}`;
+    }
+    const context = job.context as Record<string, unknown>;
+    const dossierId = typeof context.dossierId === 'string' ? context.dossierId : undefined;
+    if (dossierId) return world.strategicDossiers[dossierId]?.title ?? dossierId;
+    if (typeof context.dialogueId === 'string') return 'Dialogue diplomatique en cours';
+    if (typeof context.meetingId === 'string') return 'Rencontre diplomatique';
+    return job.purpose;
+  };
+  const run = async (job: AIJob) => {
+    if (busyJobId) return;
+    setBusyJobId(job.id);
+    onNotice(`Appel IA préparé pour « ${jobSubject(job)} » · aucune dépense sans cette confirmation.`);
+    try {
+      const result = await executeAIJob(world, job.id, worldPulseSessionId());
+      onWorldChange(result.state);
+      if (result.ok) {
+        onNotice(`Tâche IA résolue · ${result.response.usage.outputTokens} jetons sortants · coût estimé $${result.response.usage.estimatedCostUsd.toFixed(4)}.`);
+      } else {
+        onNotice(`Tâche IA non résolue : ${result.response.message} Elle est marquée en échec et peut être relancée.`);
+      }
+    } catch {
+      onNotice('Le service IA est inaccessible ; la tâche reste disponible dans la file pour une relance explicite.');
+    } finally {
+      setBusyJobId(null);
+    }
+  };
+  const retry = (job: AIJob) => {
+    const result = retryAIJob(world, job.id);
+    if (!result.ok) { onNotice(result.error); return; }
+    onWorldChange(result.state);
+    onNotice('Tâche IA remise en attente. Aucun appel ne sera lancé automatiquement.');
+  };
+  const cancel = (job: AIJob) => {
+    const result = cancelAIJob(world, job.id);
+    if (!result.ok) { onNotice(result.error); return; }
+    onWorldChange(result.state);
+    onNotice('Tâche IA mise de côté. Le dossier et le monde restent inchangés.');
+  };
+  return <section className="border border-violet-300/35 bg-violet-300/5 p-4">
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <div><div className="flex items-center gap-2 font-semibold"><BrainCircuit className="size-4 text-violet-200" /> File de résolution IA</div><p className="mt-1 text-xs text-muted-foreground">Les crises qui exigent Luna apparaissent ici. Un appel n’est jamais lancé sans clic explicite ; une réponse n’écrit dans le monde qu’après validation métier.</p></div>
+      <div className="font-mono text-[10px] text-violet-100">{pending.length} en attente · {failed.length} échec(s)</div>
+    </div>
+    {visibleJobs.length > 0 && <div className="mt-4 space-y-2">{visibleJobs.map((job) => {
+      const estimate = estimateAIJobSize(job);
+      const isFailed = job.status === 'failed';
+      return <details key={job.id} className="border border-border bg-background/35 p-3" open={job.priority === 'urgent'}>
+        <summary className="cursor-pointer list-none" aria-label={`Voir la tâche IA ${jobSubject(job)}`}>
+          <div className="flex flex-wrap items-start justify-between gap-2"><div><div className="font-medium">{jobSubject(job)}</div><div className="mt-1 text-xs text-muted-foreground">{aiJobKindLabels[job.kind]} · demandée le {job.requestedAt}</div></div><span className={`font-mono text-[10px] uppercase ${isFailed ? 'text-red-300' : aiJobPriorityTones[job.priority]}`}>{isFailed ? 'Échec' : aiJobPriorityLabels[job.priority]}</span></div>
+          <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[10px] text-muted-foreground"><span>entrée ≈ {estimate.approximateInputTokens.toLocaleString('fr-FR')} jetons</span><span>budget {job.budgetTier}</span><span>tentatives {job.attempts}</span></div>
+        </summary>
+        <div className="mt-3 border-t border-border/70 pt-3 text-xs">
+          <div className="space-y-1 text-muted-foreground">{job.reasons.slice(0, 3).map((reason) => <div key={reason}>— {reason}</div>)}</div>
+          {job.error && <div className="mt-2 border-l-2 border-red-300/60 pl-2 text-red-200">{job.error}</div>}
+          <div className="mt-3 flex flex-wrap gap-2">{isFailed ? <Button size="sm" onClick={() => retry(job)} disabled={busyJobId !== null}>Réessayer avec Luna</Button> : <Button size="sm" onClick={() => void run(job)} disabled={busyJobId !== null}>{busyJobId === job.id ? <LoaderCircle className="size-3 animate-spin" /> : <BrainCircuit className="size-3" />}Lancer avec Luna</Button>} {!isFailed && <Button size="sm" variant="outline" onClick={() => cancel(job)} disabled={busyJobId !== null} title="Aucun appel IA ni effet de simulation">Mettre de côté</Button>}</div>
+        </div>
+      </details>;
+    })}</div>}
+    {!visibleJobs.length && <div className="mt-4 border border-dashed border-border p-4 text-sm text-muted-foreground">Aucune tâche IA ne demande votre arbitrage. Les tâches résolues restent visibles dans l’historique ci-dessous.</div>}
+    {completed.length > 0 && <details className="mt-4 border-t border-border/70 pt-3"><summary className="cursor-pointer text-xs font-semibold text-muted-foreground">Dernières résolutions IA ({completed.length})</summary><div className="mt-2 space-y-1">{completed.map((job) => <div key={job.id} className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 pb-1 text-[11px]"><span>{job.outcome?.headline ?? job.purpose}</span><span className="font-mono text-muted-foreground">{job.execution?.model} · {job.execution?.outputTokens} sortants · ${job.execution?.estimatedCostUsd.toFixed(4)} · {job.execution?.latencyMs} ms</span></div>)}</div></details>}
+  </section>;
+}
+
 function DossiersPanel({ world, selectedId, onSelect, onWorldChange, onNotice, onOpenDiplomacy }: {
   world: WorldState; selectedId: string | null; onSelect: (id: string) => void; onWorldChange: (world: WorldState) => void; onNotice: (message: string) => void; onOpenDiplomacy?: (dialogueId: string) => void;
 }) {
@@ -1463,6 +1561,7 @@ function DossiersPanel({ world, selectedId, onSelect, onWorldChange, onNotice, o
       })}{filteredDossiers.length === 0 && <div className="p-6 text-sm text-muted-foreground">Aucun dossier dans cette file pour le moment.</div>}</div>
     </section>
     <section className="space-y-4">
+      <AIJobQueuePanel world={world} onWorldChange={onWorldChange} onNotice={onNotice} />
       <AutonomousProgramsPanel world={world} />
       <div className="border border-border bg-card/70 p-4">
         <div className="flex flex-wrap items-start justify-between gap-3"><div><div className={`font-mono text-[10px] uppercase tracking-wider ${dossierImportanceTone[selected.importance]}`}>{dossierScopeLabel(dossierScopeFor(world, selected))} · {selected.kind} · {selected.sleepingAt ? 'en sommeil' : selected.status}</div><h2 className="mt-1 text-xl font-semibold">{selected.title}</h2></div><div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => onWorldChange(setDossierFollowed(world, selected.id, !selected.followed))}>{selected.followed ? <PinOff className="size-4" /> : <Pin className="size-4" />}{selected.followed ? 'Ne plus épingler' : 'Épingler'}</Button>{selected.sleepingAt && <Button variant="outline" onClick={() => { onWorldChange(reactivateDossier(world, selected.id)); onNotice('Dossier réactivé dans le suivi actif.'); }}>Réactiver le dossier</Button>}{(selected.importance === 'moderate' || selected.importance === 'major' || selected.importance === 'critical') && <Button onClick={askDossierAI} disabled={dossierAIStatus === 'loading'}>{dossierAIStatus === 'loading' ? <LoaderCircle className="size-4 animate-spin" /> : <BrainCircuit className="size-4" />}Demander des options à l’IA</Button>}</div></div>

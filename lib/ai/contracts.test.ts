@@ -5,6 +5,7 @@ import { advisorAnswerGroundingIssues } from './contracts';
 import { worldPulseAIJsonSchema } from './world-pulse-contracts';
 import { compileContextForAIJob, selectSupplementalFacts } from '../simulation/ai/context';
 import { executeAIJob } from '../simulation/ai/executor';
+import { cancelAIJob, retryAIJob } from '../simulation/ai/orchestrator';
 import { createFrance2000World } from '../simulation/scenario-2000';
 import { createAdministrativeEnergyOffer, startEnergyNegotiationAI } from '../simulation/energy-negotiation';
 import { applyDiplomaticDialogueAIAnswer, openDiplomaticDialogue, requestDiplomaticDialogueAI, resolveDiplomaticDialogueResponse } from '../simulation/diplomacy-dialogue';
@@ -78,10 +79,37 @@ test('le pipeline IA compile un contexte visible, valide le contrat et conserve 
   assert.equal(result.ok, true);
   assert.equal(result.state.aiJobs[job.id].status, 'resolved');
   assert.equal(result.state.aiJobs[job.id].outcome?.headline, successful.answer.headline);
+  assert.equal(result.state.aiJobs[job.id].execution?.outputTokens, successful.usage.outputTokens);
+  assert.equal(result.state.aiJobs[job.id].execution?.estimatedCostUsd, successful.usage.estimatedCostUsd);
   assert.equal(result.state.diplomaticSessions[draft.offer.id].status, 'countered');
   assert.equal(result.state.diplomaticSessions[draft.offer.id].turns.length, 2);
   assert.match(result.state.diplomaticSessions[draft.offer.id].terms.priceSummary, /prime de sécurité/);
   assert.equal(result.state.relations['FRA:DZA'], undefined, 'un effectHint ne doit jamais modifier directement le monde');
+});
+
+test('un échec IA devient relançable sans effet métier', async () => {
+  const initial = createFrance2000World();
+  const draft = createAdministrativeEnergyOffer(initial, 'DZA', 'gas');
+  assert.equal(draft.ok, true);
+  if (!draft.ok) return;
+  const started = startEnergyNegotiationAI(initial, draft.offer);
+  assert.equal(started.ok, true);
+  if (!started.ok) return;
+  const failed = await executeAIJob(started.state, started.jobId, 'session-retry-test', (async () => {
+    throw new Error('offline');
+  }) as typeof fetch);
+  assert.equal(failed.ok, false);
+  assert.equal(failed.state.aiJobs[started.jobId].status, 'failed');
+  assert.equal(failed.state.diplomaticSessions[draft.offer.id].status, 'awaiting_response');
+  const retried = retryAIJob(failed.state, started.jobId);
+  assert.equal(retried.ok, true);
+  if (!retried.ok) return;
+  assert.equal(retried.state.aiJobs[started.jobId].status, 'pending');
+  const cancelled = cancelAIJob(retried.state, started.jobId);
+  assert.equal(cancelled.ok, true);
+  if (!cancelled.ok) return;
+  assert.equal(cancelled.state.aiJobs[started.jobId].status, 'cancelled');
+  assert.equal(cancelled.state.diplomaticSessions[draft.offer.id].status, 'awaiting_response');
 });
 
 test('une intention d’action IA doit cibler un acteur effectivement transmis', () => {

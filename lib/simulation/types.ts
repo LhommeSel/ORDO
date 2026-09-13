@@ -1058,6 +1058,18 @@ export type AIJobOutcome = {
   approximateInputTokens: number;
 };
 
+/** Trace compacte d'une exécution IA, conservée avec la tâche pour que le
+ * joueur puisse vérifier le coût et la latence sans exposer de secret. */
+export type AIJobExecution = {
+  model: string;
+  inputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+  estimatedCostUsd: number;
+  latencyMs: number;
+  completedAt: ISODate;
+};
+
 export type AIJobBase = {
   id: string;
   kind: AIJobKind;
@@ -1072,6 +1084,7 @@ export type AIJobBase = {
   inputText?: string;
   error?: string;
   outcome?: AIJobOutcome;
+  execution?: AIJobExecution;
 };
 
 export type AIJobPatch = Partial<Omit<AIJobBase, 'id' | 'kind' | 'schemaVersion'>>;
