@@ -1275,6 +1275,8 @@ export type ActionProgram = {
   lever?: CommonActionLever;
   actorId: CountryId;
   targetIds: EntityId[];
+  /** Actif territorial ciblé par un programme d’exploitation, si applicable. */
+  territorialAssetId?: string;
   /** Dossier stratégique à l'origine du programme, lorsqu'il existe. */
   linkedDossierId?: string;
   /** Posture choisie par le joueur quand le dossier est un ancrage historique. */

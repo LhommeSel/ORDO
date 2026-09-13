@@ -535,7 +535,12 @@ export function advanceCommonActionPrograms(state: WorldState, elapsedMonths: nu
   for (const program of Object.values(state.actionPrograms ?? {})) {
     if (program.status !== 'active') continue;
     const progressMonths = Math.min(program.durationMonths, program.progressMonths + elapsedMonths);
-    if (progressMonths < program.durationMonths) {
+    // Les durées sont exprimées en mois calendaires. Une frontière comme
+    // 1er janvier → 1er juillet peut représenter 5,99 mois en jours moyens ;
+    // la date d'échéance reste néanmoins atteinte et doit déclencher la
+    // résolution annoncée au joueur.
+    const reachedExpectedDate = next.currentDate >= program.expectedCompletionAt;
+    if (!reachedExpectedDate && progressMonths < program.durationMonths) {
       next = commitWorldAction(next, {
         kind: categoryKinds[program.category], actorId: program.actorId, targetIds: program.targetIds,
         origin: 'time', visibility: 'debug', intent: `Faire avancer : ${program.title}`,

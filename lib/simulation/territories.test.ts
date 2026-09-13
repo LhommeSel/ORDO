@@ -155,14 +155,30 @@ test('les actions d’actifs modifient la disponibilité et restent limitées au
   assert.ok(energyBalance(closed.state, 'FRA', 'gas')!.available < baseline, 'la fermeture ne réduit pas le bilan gazier');
   const repaired = operateTerritorialAsset(closed.state, 'asset:FRA:lacq', 'repair');
   assert.equal(repaired.ok, true);
-  assert.equal(repaired.state.territorial.assets['asset:FRA:lacq'].status, 'operating');
-  assert.ok(energyBalance(repaired.state, 'FRA', 'gas')!.available > energyBalance(closed.state, 'FRA', 'gas')!.available, 'la réparation ne restaure pas de débit');
-  const beforeExpansion = repaired.state.energyNodes['fra-gas'].annualCapacity;
-  const expanded = operateTerritorialAsset(repaired.state, 'asset:FRA:lacq', 'invest');
+  assert.equal(repaired.state.territorial.assets['asset:FRA:lacq'].status, 'closed', 'la réparation doit rester en attente pendant le délai');
+  const repairProgram = Object.values(repaired.state.actionPrograms).find((program) => program.territorialAssetId === 'asset:FRA:lacq');
+  assert.ok(repairProgram, 'programme de réparation absent');
+  assert.equal(repairProgram?.status, 'active');
+  assert.equal(repairProgram?.durationMonths, 6);
+  const repairedAdvanced = advanceWorld(repaired.state, '2000-07-01').state;
+  const repairedResult = Object.values(repairedAdvanced.actionPrograms).find((program) => program.id === repairProgram?.id);
+  assert.ok(repairedResult && repairedResult.status !== 'active', 'la réparation doit se résoudre à son échéance');
+  if (repairedResult?.status !== 'failed') {
+    assert.equal(repairedAdvanced.territorial.assets['asset:FRA:lacq'].status, 'operating');
+    assert.ok(energyBalance(repairedAdvanced, 'FRA', 'gas')!.available > energyBalance(closed.state, 'FRA', 'gas')!.available, 'la réparation ne restaure pas de débit');
+  }
+  const beforeExpansion = repairedAdvanced.energyNodes['fra-gas'].annualCapacity;
+  const expanded = operateTerritorialAsset(repairedAdvanced, 'asset:FRA:lacq', 'invest');
   assert.equal(expanded.ok, true);
-  assert.ok(expanded.state.energyNodes['fra-gas'].annualCapacity > beforeExpansion, 'l’extension ne progresse pas dans le registre');
+  const expansionProgram = Object.values(expanded.state.actionPrograms).find((program) => program.territorialAssetId === 'asset:FRA:lacq' && program.id !== repairProgram?.id);
+  assert.ok(expansionProgram, 'programme d’extension absent');
+  assert.equal(expansionProgram?.durationMonths, 12);
+  const expandedAdvanced = advanceWorld(expanded.state, '2001-07-01').state;
+  const expansionResult = Object.values(expandedAdvanced.actionPrograms).find((program) => program.id === expansionProgram?.id);
+  assert.ok(expansionResult && expansionResult.status !== 'active', 'l’extension doit se résoudre à son échéance');
+  if (expansionResult?.status !== 'failed') assert.ok(expandedAdvanced.energyNodes['fra-gas'].annualCapacity > beforeExpansion, 'l’extension ne progresse pas dans le registre');
   const foreign = operateTerritorialAsset(world, 'asset:GBR:bacton', 'maintain');
   assert.equal(foreign.ok, false);
   assert.match(foreign.error, /souverain/i);
-  console.log('Actions d’actifs validées : fermeture, réparation et extension affectent le registre ; contrôle de souveraineté actif.');
+  console.log('Actions d’actifs validées : fermeture immédiate, réparation/extension différées et contrôle de souveraineté actif.');
 });

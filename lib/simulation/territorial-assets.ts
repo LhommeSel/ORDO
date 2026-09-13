@@ -1,4 +1,4 @@
-import type { EnergyNode, WorldState } from './types';
+import type { ActionProgram, EnergyNode, WorldState } from './types';
 import type { TerritorialAsset, TerritorialAssetOperation, TerritorialState } from './territory-types';
 import { commitWorldAction } from './ledger';
 
@@ -179,6 +179,62 @@ const assetActionCosts: Record<TerritorialAssetActionKind, number> = {
   invest: 1.5, mobilize: 0.4, maintain: 0.5, close: 0, repair: 2.5,
 };
 
+const addMonths = (date: string, months: number) => {
+  const value = new Date(`${date}T12:00:00Z`);
+  value.setUTCMonth(value.getUTCMonth() + months);
+  return value.toISOString().slice(0, 10) as `${number}-${number}-${number}`;
+};
+
+function scheduleAssetOperation(state: WorldState, asset: TerritorialAsset, kind: Exclude<TerritorialAssetActionKind, 'close'>, actorId: string, cost: number) {
+  const operation = asset.operation!;
+  const durationMonths = kind === 'invest' ? 12 : kind === 'mobilize' ? 2 : kind === 'maintain' ? 1 : 6;
+  const maximumDelta = kind === 'invest' ? Math.max(0.1, operation.maximum * 0.08) : 0;
+  const deployedTarget = kind === 'mobilize' ? Math.min(operation.maximum, operation.deployed + Math.max(0.1, operation.maximum * 0.1)) : operation.deployed;
+  const availabilityTarget = kind === 'maintain' ? Math.min(100, operation.availabilityPct + 5) : kind === 'repair' ? Math.min(100, Math.max(80, operation.availabilityPct + 30)) : operation.availabilityPct;
+  const successPatch = kind === 'invest'
+    ? { operation: { maximum: Number((operation.maximum + maximumDelta).toFixed(3)) } }
+    : kind === 'mobilize'
+      ? { operation: { deployed: Number(deployedTarget.toFixed(3)) } }
+      : kind === 'maintain'
+        ? { operation: { availabilityPct: Number(availabilityTarget.toFixed(2)) } }
+        : { status: 'operating' as const, operation: { availabilityPct: Number(availabilityTarget.toFixed(2)) } };
+  const partialPatch = kind === 'invest'
+    ? { operation: { maximum: Number((operation.maximum + maximumDelta * 0.5).toFixed(3)) } }
+    : kind === 'mobilize'
+      ? { operation: { deployed: Number((operation.deployed + (deployedTarget - operation.deployed) * 0.5).toFixed(3)) } }
+      : kind === 'maintain'
+        ? { operation: { availabilityPct: Number(Math.min(100, operation.availabilityPct + 2).toFixed(2)) } }
+        : { status: 'operating' as const, operation: { availabilityPct: Number(Math.min(100, Math.max(65, operation.availabilityPct + 15)).toFixed(2)) } };
+  const node = operation.ledgerNodeId ? state.energyNodes[operation.ledgerNodeId] : undefined;
+  const nodeDelta = kind === 'invest' && node
+    ? [{ kind: 'energy_node_patch' as const, nodeId: node.id, patch: { annualCapacity: Number((node.annualCapacity + maximumDelta).toFixed(3)) }, reason: `Le registre ouvre une capacité supplémentaire correspondant à l’extension de « ${asset.name} ».` }]
+    : [];
+  const partialNodeDelta = kind === 'invest' && node
+    ? [{ kind: 'energy_node_patch' as const, nodeId: node.id, patch: { annualCapacity: Number((node.annualCapacity + maximumDelta * 0.5).toFixed(3)) }, reason: `Le registre n’ouvre qu’une partie de la capacité prévue pour « ${asset.name} ».` }]
+    : [];
+  const actionProgram: ActionProgram = {
+    id: `program-asset-${kind}-${String(state.sequence + 1).padStart(6, '0')}`,
+    category: 'economic', lever: 'energy_resilience', actorId, targetIds: [actorId], territorialAssetId: asset.id,
+    title: `${assetActionLabels[kind]} · ${asset.name}`, intent: `${assetActionLabels[kind]} ${asset.name}`,
+    startedAt: state.currentDate, expectedCompletionAt: addMonths(state.currentDate, durationMonths), durationMonths, progressMonths: 0, status: 'active',
+    requiredCapacities: [{ domain: 'economy', commitment: kind === 'repair' ? 3 : kind === 'invest' || kind === 'mobilize' ? 2 : 1 }],
+    budgetCost: cost, successProbability: kind === 'repair' ? 80 : kind === 'invest' ? 85 : kind === 'mobilize' ? 92 : 95,
+    risks: kind === 'invest' ? ['Le chantier peut ouvrir moins de capacité que prévu.', 'La mobilisation future reste nécessaire pour produire davantage.'] : ['Une indisponibilité ou un retard logistique peut réduire le résultat.'],
+    successEffects: [{ kind: 'territorial_asset_patch', assetId: asset.id, patch: successPatch, reason: `Le programme « ${assetActionLabels[kind]} » de « ${asset.name} » aboutit.` }, ...nodeDelta],
+    partialEffects: [{ kind: 'territorial_asset_patch', assetId: asset.id, patch: partialPatch, reason: `Le programme « ${assetActionLabels[kind]} » de « ${asset.name} » aboutit partiellement.` }, ...partialNodeDelta],
+  };
+  const effects: WorldState['actions'][number]['effects'] = [
+    { kind: 'action_program_add', program: actionProgram, reason: 'Le gouvernement engage le programme d’exploitation de l’actif.' },
+    ...(cost > 0 ? [{ kind: 'metric_delta' as const, countryId: actorId, metric: 'budget' as const, delta: -cost, reason: `Coût opérationnel de l’action « ${assetActionLabels[kind]} » sur « ${asset.name} ».` }] : []),
+    { kind: 'capacity_commitment', countryId: actorId, domain: 'economy', delta: actionProgram.requiredCapacities[0].commitment, reason: `Moyens mobilisés pour « ${actionProgram.title} » jusqu’à sa résolution.` },
+  ];
+  const next = commitWorldAction(state, {
+    kind: operation.resource ? 'energy' : 'economic', actorId, targetIds: [actorId], origin: 'player', intent: `Lancer : ${actionProgram.title}`,
+    effects, metadata: { territorialAssetAction: kind, assetId: asset.id },
+  });
+  return { ok: true as const, state: next, message: `${assetActionLabels[kind]} engagée sur ${asset.name} : résolution prévue le ${actionProgram.expectedCompletionAt}.` };
+}
+
 /**
  * Action locale jouable sur un actif du pays dirigé.
  * Les investissements restent volontairement simples : ils ouvrent une
@@ -198,40 +254,19 @@ export function operateTerritorialAsset(
   const cost = assetActionCosts[kind];
   if (!country || country.metrics.budget < cost) return { ok: false as const, state, error: `Budget insuffisant pour ${assetActionLabels[kind].toLowerCase()} cet actif.` };
   const operation = asset.operation;
+  if (kind !== 'close') {
+    if (kind === 'mobilize' && asset.status === 'closed') return { ok: false as const, state, error: 'Un actif suspendu doit d’abord être réparé.' };
+    if (kind === 'maintain' && asset.status === 'closed') return { ok: false as const, state, error: 'Un actif suspendu doit d’abord être réparé.' };
+    if (kind === 'mobilize' && operation.deployed >= operation.maximum - 0.001) return { ok: false as const, state, error: 'Cet actif est déjà entièrement déployé.' };
+    if (kind === 'maintain' && operation.availabilityPct >= 99.9) return { ok: false as const, state, error: 'La disponibilité de cet actif est déjà au maximum.' };
+    if (kind === 'repair' && asset.status === 'operating' && operation.availabilityPct >= 95) return { ok: false as const, state, error: 'Cet actif ne nécessite pas de réparation immédiate.' };
+    return scheduleAssetOperation(state, asset, kind, actorId, cost);
+  }
   const effects: WorldState['actions'][number]['effects'] = [];
   const targetIds = [actorId];
-  let message = '';
-  if (kind === 'invest') {
-    const delta = Math.max(0.1, operation.maximum * 0.08);
-    effects.push({ kind: 'territorial_asset_patch', assetId, patch: { operation: { maximum: Number((operation.maximum + delta).toFixed(3)) } }, reason: `Extension de capacité de « ${asset.name} » : +${delta.toFixed(2)} ${operation.unit}.` });
-    if (operation.ledgerNodeId && state.energyNodes[operation.ledgerNodeId]) effects.push({ kind: 'energy_node_patch', nodeId: operation.ledgerNodeId, patch: { annualCapacity: Number((state.energyNodes[operation.ledgerNodeId].annualCapacity + delta).toFixed(3)) }, reason: `Le registre ouvre une capacité supplémentaire correspondant à l’extension de « ${asset.name} ».` });
-    effects.push({ kind: 'capacity_commitment', countryId: actorId, domain: 'economy', delta: 2, reason: `L’administration économique suit l’extension de « ${asset.name} ».` });
-    message = `Extension engagée sur ${asset.name} : capacité maximale augmentée, déploiement à réaliser séparément.`;
-  } else if (kind === 'mobilize') {
-    if (asset.status === 'closed') return { ok: false as const, state, error: 'Un actif suspendu doit d’abord être réparé.' };
-    if (operation.deployed >= operation.maximum - 0.001) return { ok: false as const, state, error: 'Cet actif est déjà entièrement déployé.' };
-    const deployed = Math.min(operation.maximum, operation.deployed + Math.max(0.1, operation.maximum * 0.1));
-    effects.push({ kind: 'territorial_asset_patch', assetId, patch: { operation: { deployed: Number(deployed.toFixed(3)) } }, reason: `Mobilisation de « ${asset.name } » : la part déployée progresse.` });
-    effects.push({ kind: 'capacity_commitment', countryId: actorId, domain: 'economy', delta: 2, reason: `La mobilisation de « ${asset.name} » consomme une capacité administrative temporaire.` });
-    message = `Mobilisation engagée sur ${asset.name} : le débit effectif progressera immédiatement.`;
-  } else if (kind === 'maintain') {
-    if (asset.status === 'closed') return { ok: false as const, state, error: 'Un actif suspendu doit d’abord être réparé.' };
-    if (operation.availabilityPct >= 99.9) return { ok: false as const, state, error: 'La disponibilité de cet actif est déjà au maximum.' };
-    const availabilityPct = Math.min(100, operation.availabilityPct + 5);
-    effects.push({ kind: 'territorial_asset_patch', assetId, patch: { operation: { availabilityPct: Number(availabilityPct.toFixed(2)) } }, reason: `Entretien renforcé de « ${asset.name} » : disponibilité améliorée.` });
-    effects.push({ kind: 'capacity_commitment', countryId: actorId, domain: 'economy', delta: 1, reason: `Les équipes de maintenance sont mobilisées sur « ${asset.name} ».` });
-    message = `Entretien renforcé sur ${asset.name} : disponibilité portée à ${availabilityPct.toFixed(0)} %.`;
-  } else if (kind === 'close') {
-    if (asset.status === 'closed') return { ok: false as const, state, error: 'Cet actif est déjà suspendu.' };
-    effects.push({ kind: 'territorial_asset_patch', assetId, patch: { status: 'closed' }, reason: `Suspension de « ${asset.name} » : son débit devient nul tant qu’il reste fermé.` });
-    message = `${asset.name} est suspendu : ses flux effectifs sont interrompus jusqu’à réparation.`;
-  } else {
-    if (asset.status === 'operating' && operation.availabilityPct >= 95) return { ok: false as const, state, error: 'Cet actif ne nécessite pas de réparation immédiate.' };
-    const availabilityPct = Math.min(100, Math.max(80, operation.availabilityPct + 30));
-    effects.push({ kind: 'territorial_asset_patch', assetId, patch: { status: 'operating', operation: { availabilityPct: Number(availabilityPct.toFixed(2)) } }, reason: `Réparation de « ${asset.name} » : retour progressif vers le service.` });
-    effects.push({ kind: 'capacity_commitment', countryId: actorId, domain: 'economy', delta: 3, reason: `Le programme de réparation de « ${asset.name} » mobilise l’administration.` });
-    message = `Réparation engagée sur ${asset.name} : actif remis en service à ${availabilityPct.toFixed(0)} % de disponibilité.`;
-  }
+  if (asset.status === 'closed') return { ok: false as const, state, error: 'Cet actif est déjà suspendu.' };
+  effects.push({ kind: 'territorial_asset_patch', assetId, patch: { status: 'closed' }, reason: `Suspension de « ${asset.name} » : son débit devient nul tant qu’il reste fermé.` });
+  const message = `${asset.name} est suspendu : ses flux effectifs sont interrompus jusqu’à réparation.`;
   if (cost > 0) effects.push({ kind: 'metric_delta', countryId: actorId, metric: 'budget', delta: -cost, reason: `Coût opérationnel de l’action « ${assetActionLabels[kind]} » sur « ${asset.name} ».` });
   const next = commitWorldAction(state, {
     kind: operation.resource ? 'energy' : 'economic', actorId, targetIds, origin: 'player', intent: `${assetActionLabels[kind]} ${asset.name}`,
