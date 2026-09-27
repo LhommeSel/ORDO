@@ -9,10 +9,6 @@
     "dev": "vinext dev",
     "build": "vinext build",
     "start": "wrangler dev --config dist/server/wrangler.json",
-    "test:ai": "tsx --test lib/ai/contracts.test.ts",
-    "test:ai:mock": "tsx --test lib/ai/contracts.test.ts lib/ai/routes.mock.test.ts",
-    "test:simulation": "tsx --test lib/simulation/simulation.test.ts lib/simulation/dossier-reading.test.ts lib/simulation/diplomatic-feasibility.test.ts lib/simulation/diplomatic-graph.test.ts lib/simulation/energy-trade-network.test.ts lib/simulation/defense-network.test.ts lib/simulation/domestic-politics.test.ts lib/simulation/world-start-pack-2000.test.ts lib/simulation/dossier-scope.test.ts lib/simulation/diplomatic-contact-separation.test.ts lib/simulation/stakeholders.test.ts lib/simulation/world-dossier-arcs.test.ts lib/simulation/world-crisis-engine.test.ts lib/simulation/world-crisis-influence.test.ts lib/simulation/territory-data-americas-ports.test.ts lib/simulation/territory-data-europe-ports.test.ts lib/simulation/territory-data-africa-ports.test.ts lib/simulation/territory-data-asia-ports.test.ts lib/simulation/territory-data-oceania-ports.test.ts",
-    "test:workflow": "tsx --test lib/simulation/workflow.test.ts lib/simulation/national-politics.test.ts lib/simulation/program-consequences.test.ts lib/simulation/government-capacity.test.ts lib/simulation/retirement-audit-action.test.ts lib/simulation/policy-chain-integration.test.ts",
     "audit:world": "tsx scripts/audit-world-invariants.ts",
     "lint": "oxlint",
     "format": "oxfmt"
