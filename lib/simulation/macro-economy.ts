@@ -1,7 +1,8 @@
 import { energyBalance } from './energy';
 import { commitWorldAction } from './ledger';
 import { stakeholderPressureByChannel } from './stakeholders';
-import { debtCrisisEffects, projectDebtAndBanking } from './sovereign-debt';
+import { projectDebtAndBanking, sovereignDebtEventEffects } from './sovereign-debt';
+import { nodeOperationalProduction } from './territorial-assets';
 import type {
   AggregateSectorId,
   CountryId,
@@ -10,6 +11,7 @@ import type {
   EconomicShock,
   EconomicShockChannel,
   MacroeconomicState,
+  OilMarketState,
   ProductFamilyState,
   StrategicDossier,
   WorldEffect,
@@ -20,7 +22,13 @@ import type {
 const productFamilies: EconomicProductFamily[] = ['food', 'energy', 'raw_materials', 'industrial_inputs', 'manufactured_goods', 'strategic_technology'];
 const aggregateSectors: AggregateSectorId[] = ['agriculture', 'extractive', 'manufacturing', 'construction', 'market_services', 'public_services'];
 const clamp = (value: number, minimum: number, maximum: number) => Math.min(maximum, Math.max(minimum, value));
-const round = (value: number, digits = 3) => Number(value.toFixed(digits));
+// Number(-0) survives `toFixed`, which makes otherwise identical saves differ
+// in deep comparisons and in the compact change ledger.  Zero has no signed
+// meaning in the simulation, so canonicalise it at the numeric boundary.
+const round = (value: number, digits = 3) => {
+  const rounded = Number(value.toFixed(digits));
+  return Object.is(rounded, -0) ? 0 : rounded;
+};
 const transition = (speedPerYear: number, elapsedMonths: number) => 1 - Math.exp(-speedPerYear * elapsedMonths / 12);
 const cycleFor = (growth: number): WorldState['worldEconomy']['cycle'] =>
   growth < 0 ? 'recession' : growth < 2 ? 'slowdown' : growth < 3.6 ? 'balanced' : growth < 5 ? 'expansion' : 'overheating';
@@ -54,7 +62,6 @@ function shockDossier(state: WorldState, shock: EconomicShock): StrategicDossier
   if (existing) return {
     ...existing,
     sourceShockId: shock.id,
-    sourceShockEndedAt: undefined,
     status: 'active', importance: importance === 'major' || existing.importance === 'major' ? 'major' : existing.importance,
     scope: playerInvolved ? 'player_involved' : existing.scope ?? 'world',
     actorIds,
@@ -64,7 +71,6 @@ function shockDossier(state: WorldState, shock: EconomicShock): StrategicDossier
     publicSummary: summary,
     followed: playerInvolved || existing.followed,
     autoTracked: true,
-    sleepingAt: undefined,
     pendingDecisions: playerInvolved && Math.abs(shock.intensity) >= 60
       ? (existing.pendingDecisions.length ? existing.pendingDecisions : ['Choisir une réponse au choc économique et à ses effets de propagation.'])
       : existing.pendingDecisions,
@@ -132,7 +138,101 @@ function tradePartnerImpulse(state: WorldState, countryId: CountryId) {
   }, 0);
 }
 
-function evolveWorldMarket(state: WorldState, family: EconomicProductFamily, elapsedMonths: number): WorldProductMarket {
+function oilMarketDrivers(
+  demandIndex: number,
+  supplyIndex: number,
+  inventoryMonths: number,
+  spareCapacityPct: number,
+  disruptionRisk: number,
+): OilMarketState['drivers'] {
+  const direction = (value: number, threshold: number): 'up' | 'down' | 'neutral' =>
+    value > threshold ? 'up' : value < -threshold ? 'down' : 'neutral';
+  const demandPressure = demandIndex - 100;
+  const supplyPressure = 100 - supplyIndex;
+  const stockPressure = 1.95 - inventoryMonths;
+  const sparePressure = 12 - spareCapacityPct;
+  return [
+    {
+      id: 'demand', label: 'Demande mondiale', direction: direction(demandPressure, 1.5),
+      detail: demandPressure > 1.5 ? 'La demande dépasse son rythme de référence.' : demandPressure < -1.5 ? 'La demande ralentit par rapport au rythme de référence.' : 'La demande reste proche de son rythme de référence.',
+    },
+    {
+      id: 'supply', label: 'Offre disponible', direction: direction(supplyPressure, 1.5),
+      detail: supplyPressure > 1.5 ? 'L’offre effective est inférieure au niveau de référence.' : supplyPressure < -1.5 ? 'L’offre effective dépasse le niveau de référence.' : 'La production reste proche de son niveau de référence.',
+    },
+    {
+      id: 'stocks', label: 'Stocks', direction: direction(stockPressure, 0.12),
+      detail: stockPressure > 0.12 ? 'Les stocks offrent un amortisseur plus faible.' : stockPressure < -0.12 ? 'Les stocks amortissent mieux les tensions.' : 'Les stocks restent proches de leur couverture de référence.',
+    },
+    {
+      id: 'spare_capacity', label: 'Capacité inutilisée', direction: direction(sparePressure, 1.5),
+      detail: sparePressure > 1.5 ? 'La marge de production mobilisable se réduit.' : sparePressure < -1.5 ? 'Les producteurs conservent une marge de mobilisation.' : 'La marge de production mobilisable est stable.',
+    },
+    {
+      id: 'geopolitics', label: 'Risque géopolitique', direction: disruptionRisk >= 12 ? 'up' : 'neutral',
+      detail: disruptionRisk >= 35 ? 'Une perturbation majeure est intégrée au marché.' : disruptionRisk >= 12 ? 'Des risques sur l’offre ou les routes soutiennent les prix.' : 'Aucune perturbation pétrolière mondiale active.',
+    },
+  ];
+}
+
+/**
+ * Le registre de gisements est encore partiel. Il influence donc une part
+ * explicitement connue de l'offre mondiale ; le reste conserve une référence
+ * calibrée. Cela rend une panne ou une extension concrète sans transformer
+ * l'absence de données d'un pays en pénurie fictive.
+ */
+function evolveOilMarket(state: WorldState, elapsedMonths: number): OilMarketState {
+  const current = state.worldEconomy.oilMarket;
+  const oilNodes = Object.values(state.energyNodes).filter((node) => node.resource === 'oil');
+  const modelledProduction = oilNodes.reduce((sum, node) => sum + nodeOperationalProduction(state, node.id), 0);
+  const modelledCapacity = oilNodes.reduce((sum, node) => sum + Math.max(0, node.annualCapacity), 0);
+  const modelledSupplyDelta = current.baselineModelledProduction > 0
+    ? (modelledProduction / current.baselineModelledProduction - 1) * current.modelledSupplySharePct
+    : 0;
+  const physicalSupplyIndex = 100 + modelledSupplyDelta;
+  const demandIndex = clamp(weightedWorldValue(state, (economy) => economy.products.energy.demandIndex), 55, 180);
+  const supplyShock = shockPressure(state, 'supply', undefined, 'energy') + shockPressure(state, 'energy', undefined, 'energy');
+  const tradeShock = shockPressure(state, 'trade', undefined, 'energy');
+  const effectiveSupplyIndex = clamp(physicalSupplyIndex * (1 - supplyShock / 250) - Math.max(0, tradeShock) * 0.05, 45, 150);
+  const totalDemand = Object.values(state.countryEnergy).reduce((sum, energy) => sum + energy.annualDemand.oil, 0) || 1;
+  const totalStocks = Object.values(state.countryEnergy).reduce((sum, energy) => sum + energy.strategicStocks.oil, 0);
+  const physicalInventoryMonths = totalStocks / totalDemand * 12;
+  const inventoryTarget = clamp(
+    physicalInventoryMonths - Math.max(0, demandIndex - effectiveSupplyIndex) / 100 * elapsedMonths * 0.42,
+    0.2,
+    8,
+  );
+  const inventoryMonths = current.inventoryMonths + (inventoryTarget - current.inventoryMonths) * transition(2.4, elapsedMonths);
+  const spareCapacityPct = modelledProduction > 0
+    ? clamp((modelledCapacity - modelledProduction) / modelledProduction * 100, 0, 80)
+    : current.spareCapacityPct;
+  const disruptionRisk = clamp(Math.max(0, supplyShock, shockPressure(state, 'energy', undefined, 'energy')) * 0.78 + Math.max(0, tradeShock) * 0.16, 0, 100);
+  const shortage = (demandIndex - effectiveSupplyIndex) / 100;
+  const stockPressure = Math.max(-0.35, (current.baselineInventoryMonths - inventoryMonths) / Math.max(0.4, current.baselineInventoryMonths));
+  const sparePressure = Math.max(-0.4, (12 - spareCapacityPct) / 20);
+  const pressure = shortage * 1.35 + stockPressure * 0.24 + sparePressure * 0.18 + disruptionRisk / 100 * 0.34;
+  const targetPrice = clamp(28 * Math.exp(clamp(pressure, -0.65, 1.05)), 12, 120);
+  const benchmarkUsdPerBarrel = current.benchmarkUsdPerBarrel + (targetPrice - current.benchmarkUsdPerBarrel) * transition(2.15, elapsedMonths);
+  const monthlyChangePct = current.benchmarkUsdPerBarrel > 0
+    ? (benchmarkUsdPerBarrel / current.benchmarkUsdPerBarrel - 1) * 100
+    : 0;
+  const priceIndex = benchmarkUsdPerBarrel / 28 * 100;
+  return {
+    ...current,
+    benchmarkUsdPerBarrel: round(benchmarkUsdPerBarrel, 2),
+    priceIndex: round(priceIndex),
+    monthlyChangePct: round(monthlyChangePct, 2),
+    demandIndex: round(demandIndex),
+    supplyIndex: round(effectiveSupplyIndex),
+    inventoryMonths: round(inventoryMonths),
+    spareCapacityPct: round(spareCapacityPct),
+    disruptionRisk: round(disruptionRisk),
+    drivers: oilMarketDrivers(demandIndex, effectiveSupplyIndex, inventoryMonths, spareCapacityPct, disruptionRisk),
+    lastUpdatedAt: state.currentDate,
+  };
+}
+
+function evolveWorldMarket(state: WorldState, family: EconomicProductFamily, elapsedMonths: number, oilMarket?: OilMarketState): WorldProductMarket {
   const current = state.worldEconomy.productMarkets[family];
   const demandShock = shockPressure(state, 'demand', undefined, family);
   const tradeShock = shockPressure(state, 'trade', undefined, family);
@@ -148,11 +248,15 @@ function evolveWorldMarket(state: WorldState, family: EconomicProductFamily, ela
   const inventoryTarget = clamp(current.inventoryMonths - shortage * elapsedMonths * 0.8, 0.15, 8);
   const scarcityPremium = shortage * current.volatility + supplyShock * 0.22 - demandShock * 0.12 + tradeShock * 0.08;
   const priceTarget = clamp(100 + scarcityPremium, 35, 300);
-  const priceIndex = current.priceIndex + (priceTarget - current.priceIndex) * transition(3.2, elapsedMonths);
+  const priceIndex = family === 'energy' && oilMarket
+    ? oilMarket.priceIndex
+    : current.priceIndex + (priceTarget - current.priceIndex) * transition(3.2, elapsedMonths);
   return {
     ...current,
-    priceIndex: round(priceIndex), demandIndex: round(demandTarget), supplyIndex: round(supplyTarget),
-    inventoryMonths: round(inventoryTarget),
+    priceIndex: round(priceIndex),
+    demandIndex: family === 'energy' && oilMarket ? oilMarket.demandIndex : round(demandTarget),
+    supplyIndex: family === 'energy' && oilMarket ? oilMarket.supplyIndex : round(supplyTarget),
+    inventoryMonths: family === 'energy' && oilMarket ? oilMarket.inventoryMonths : round(inventoryTarget),
   };
 }
 
@@ -190,6 +294,93 @@ function strategicIndustryConstraint(state: WorldState, countryId: CountryId) {
   }, 0);
 }
 
+function criticalInputExposureFromSectors(state: WorldState, countryId: CountryId) {
+  const sectors = Object.values(state.sectors).filter((sector) => sector.countryId === countryId);
+  if (!sectors.length) return null;
+  const exposure = sectors.reduce((sum, sector) => {
+    const inputs = sector.inputRequirements;
+    if (!inputs) return sum + sector.foreignDependency * 0.45;
+    const materialIntensity = inputs.criticalMinerals * 0.62 + inputs.advancedComponents * 0.38;
+    return sum + materialIntensity * sector.foreignDependency / 10;
+  }, 0) / sectors.length;
+  return clamp(exposure, 0, 100);
+}
+
+/**
+ * Les indicateurs productifs ne sont pas décoratifs : ils déterminent le flux
+ * de capacité industrielle, l'ampleur d'un choc commercial et l'exposition
+ * des filières avancées aux intrants critiques.
+ */
+function nextProductiveSystem(
+  state: WorldState,
+  economy: MacroeconomicState,
+  products: MacroeconomicState['products'],
+  confidence: number,
+  elapsedMonths: number,
+) {
+  const profile = state.structuralProfiles[economy.countryId];
+  const country = state.countries[economy.countryId];
+  const current = economy.productiveSystem;
+  const tradeShare = economy.exportSharePctGdp + economy.importSharePctGdp;
+  const foreignDependencyTarget = clamp(
+    products.industrial_inputs.importDependencyPct * 0.42
+      + products.manufactured_goods.importDependencyPct * 0.23
+      + products.strategic_technology.importDependencyPct * 0.35,
+    5, 96,
+  );
+  const sectorExposure = criticalInputExposureFromSectors(state, economy.countryId);
+  const criticalInputTarget = clamp(
+    foreignDependencyTarget * 0.55
+      + products.strategic_technology.importDependencyPct * 0.2
+      + (sectorExposure ?? current.criticalInputExposure) * 0.25,
+    4, 96,
+  );
+  const productiveAttractivenessTarget = clamp(
+    10
+      + (profile?.infrastructureQuality ?? 50) * 0.22
+      + (profile?.industrialDepth ?? 50) * 0.18
+      + (profile?.financialResilience ?? 50) * 0.1
+      + economy.policy.tradeOpenness * 0.08
+      + economy.policy.laborFlexibility * 0.06
+      + economy.investmentSharePctGdp * 0.45
+      + confidence * 0.15
+      - Math.max(0, economy.inflationAnnualPct - 4) * 0.18
+      - Math.max(0, 55 - (country?.metrics.stability ?? 55)) * 0.16,
+    5, 96,
+  );
+  const integrationTarget = clamp(
+    tradeShare * 0.56
+      + economy.sectors.manufacturing.valueAddedSharePct * 0.5
+      + economy.policy.tradeOpenness * 0.18
+      + products.manufactured_goods.exportOrientationPct * 0.15,
+    5, 96,
+  );
+  const supplyConcentrationTarget = clamp(
+    foreignDependencyTarget * 0.56 + (profile?.exportConcentration ?? 50) * 0.26 + Math.max(0, 54 - economy.policy.tradeOpenness) * 0.22,
+    5, 96,
+  );
+  const worldGdp = Object.values(state.macroEconomies).reduce((sum, candidate) => sum + candidate.realGdpBillion2000Usd, 0) || 1;
+  const gdpWeight = Math.sqrt(Math.max(0, economy.realGdpBillion2000Usd / worldGdp));
+  const commercialInfluenceTarget = clamp(
+    gdpWeight * 122 + current.globalValueChainIntegration * 0.23 + products.strategic_technology.exportOrientationPct * 0.14,
+    3, 98,
+  );
+  const relocationTarget = clamp(
+    current.productiveRelocationBalanceAnnualPct * 0.78
+      + ((productiveAttractivenessTarget - 62) * 0.07 + (integrationTarget - 50) * 0.025 - foreignDependencyTarget * 0.012) * 0.22,
+    -4, 5,
+  );
+  return {
+    productiveAttractiveness: round(current.productiveAttractiveness + (productiveAttractivenessTarget - current.productiveAttractiveness) * transition(0.55, elapsedMonths)),
+    globalValueChainIntegration: round(current.globalValueChainIntegration + (integrationTarget - current.globalValueChainIntegration) * transition(0.45, elapsedMonths)),
+    foreignIndustrialDependency: round(current.foreignIndustrialDependency + (foreignDependencyTarget - current.foreignIndustrialDependency) * transition(0.6, elapsedMonths)),
+    supplyConcentration: round(current.supplyConcentration + (supplyConcentrationTarget - current.supplyConcentration) * transition(0.5, elapsedMonths)),
+    commercialInfluence: round(current.commercialInfluence + (commercialInfluenceTarget - current.commercialInfluence) * transition(0.35, elapsedMonths)),
+    criticalInputExposure: round(current.criticalInputExposure + (criticalInputTarget - current.criticalInputExposure) * transition(0.65, elapsedMonths)),
+    productiveRelocationBalanceAnnualPct: round(current.productiveRelocationBalanceAnnualPct + (relocationTarget - current.productiveRelocationBalanceAnnualPct) * transition(0.75, elapsedMonths)),
+  } satisfies MacroeconomicState['productiveSystem'];
+}
+
 function resourceExposure(economy: MacroeconomicState) {
   const energy = economy.products.energy;
   const materials = economy.products.raw_materials;
@@ -212,7 +403,10 @@ function nextProducts(
     const domesticProductionDemand = Math.max(5, demandIndex - product.importDependencyPct + product.exportOrientationPct);
     const utilization = clamp(domesticProductionDemand / Math.max(1, product.capacityIndex) * 100, 35, 108);
     const productionGrowth = clamp(growth * 0.45 + (utilization - 75) * 0.08, -15, 15);
-    const capacityGrowth = clamp((economy.investmentSharePctGdp - 18) * 0.075 + economy.policy.industrialSupport * 0.007 - 0.2, -2, 4);
+    const relocationImpulse = ['manufactured_goods', 'industrial_inputs', 'strategic_technology'].includes(family)
+      ? economy.productiveSystem.productiveRelocationBalanceAnnualPct * 0.22
+      : economy.productiveSystem.productiveRelocationBalanceAnnualPct * 0.06;
+    const capacityGrowth = clamp((economy.investmentSharePctGdp - 18) * 0.075 + economy.policy.industrialSupport * 0.007 + relocationImpulse - 0.2, -2, 5.5);
     const capacityIndex = product.capacityIndex * Math.pow(1 + capacityGrowth / 100, elapsedMonths / 12);
     const productionIndex = clamp(product.productionIndex * Math.pow(Math.max(0.2, 1 + productionGrowth / 100), elapsedMonths / 12), 5, capacityIndex * 1.08);
     const inventoryFlow = (productionIndex + product.importDependencyPct - product.exportOrientationPct - demandIndex) / Math.max(20, demandIndex);
@@ -233,7 +427,8 @@ function nextSectors(economy: MacroeconomicState, growth: number, potentialGrowt
     const cyclicalSensitivity = sectorId === 'construction' ? 1.6 : sectorId === 'manufacturing' ? 1.25 : sectorId === 'public_services' ? 0.25 : 0.75;
     const utilizationTarget = clamp(78 + economy.outputGapPct * 1.6 + (growth - potentialGrowth) * cyclicalSensitivity, 45, 98);
     const utilizationPct = sector.utilizationPct + (utilizationTarget - sector.utilizationPct) * transition(2.0, elapsedMonths);
-    const capacityGrowth = clamp((economy.investmentSharePctGdp - 17) * 0.1 + (sectorId === 'construction' ? investmentGrowth * 0.06 : 0), -2, 6);
+    const relocationImpulse = sectorId === 'manufacturing' ? economy.productiveSystem.productiveRelocationBalanceAnnualPct * 0.3 : 0;
+    const capacityGrowth = clamp((economy.investmentSharePctGdp - 17) * 0.1 + relocationImpulse + (sectorId === 'construction' ? investmentGrowth * 0.06 : 0), -2, 6);
     const capacityIndex = sector.capacityIndex * Math.pow(1 + capacityGrowth / 100, elapsedMonths / 12);
     const productivityGrowth = clamp((economy.potentialGrowthAnnualPct - economy.populationGrowthAnnualPct) * 0.5, -1, 5);
     const productivityIndex = sector.productivityIndex * Math.pow(1 + productivityGrowth / 100, elapsedMonths / 12);
@@ -255,12 +450,16 @@ function nextCountryEconomy(
   const demandShock = shockPressure(state, 'demand', economy.countryId) / 12;
   const supplyShock = shockPressure(state, 'supply', economy.countryId) / 15;
   const financialShock = shockPressure(state, 'financial', economy.countryId) / 10;
-  const tradeShock = shockPressure(state, 'trade', economy.countryId) / 13;
+  const tradeShock = shockPressure(state, 'trade', economy.countryId) / 13
+    * (0.62 + economy.productiveSystem.supplyConcentration / 100);
   const energyShock = shockPressure(state, 'energy', economy.countryId) / 12;
   const confidenceShock = shockPressure(state, 'confidence', economy.countryId) / 10;
   const physicalEnergyStress = energyConstraint(state, economy);
   const bottleneck = productConstraint(economy);
-  const strategicBottleneck = strategicIndustryConstraint(state, economy.countryId);
+  const strategicBottleneck = clamp(
+    strategicIndustryConstraint(state, economy.countryId) + economy.productiveSystem.criticalInputExposure / 1000,
+    0, 1,
+  );
   const stakeholderDrag = stakeholderPressureByChannel(state, economy.countryId, 'economic_confidence') * 0.018;
   const sovereignStatusDrag: Record<MacroeconomicState['sovereignDebt']['status'], number> = {
     // Une tension de refinancement renchérit le crédit et ralentit
@@ -307,7 +506,8 @@ function nextCountryEconomy(
     -30, 30,
   );
   const governmentGrowth = clamp(economy.potentialGrowthAnnualPct * 0.8 + fiscalImpulse - Math.max(0, economy.publicDebtPctGdp - 100) * 0.012, -8, 10);
-  const exportGrowth = clamp(globalGrowth + partnerImpulse * 0.7 + termsOfTrade + opennessImpulse - tradeShock * 0.8, -20, 20);
+  const commercialLeverage = (economy.productiveSystem.commercialInfluence - 50) * 0.018;
+  const exportGrowth = clamp(globalGrowth + partnerImpulse * 0.7 + termsOfTrade + opennessImpulse + commercialLeverage - tradeShock * 0.8, -20, 20);
   const importGrowth = clamp(consumptionGrowth * 0.45 + investmentGrowth * 0.32 + economy.importSharePctGdp / 100 + opennessImpulse * 0.5 - tradeShock * 0.25, -18, 22);
   const demandGrowth =
     consumptionGrowth * economy.householdConsumptionSharePctGdp / 100
@@ -401,6 +601,7 @@ function nextCountryEconomy(
   const reserves = clamp(economy.foreignReserveMonthsImports + currentAccount * 0.025 * years + economy.policy.capitalControls * 0.001 * years, 0.1, 48);
   const products = nextProducts(state, economy, growth, investmentGrowth, elapsedMonths);
   const sectors = nextSectors(economy, growth, potentialGrowth, investmentGrowth, elapsedMonths);
+  const productiveSystem = nextProductiveSystem(state, economy, products, confidence, elapsedMonths);
   const debtAndBanking = projectDebtAndBanking(state, economy, {
     publicDebtPctGdp: publicDebt, fiscalBalancePctGdp: fiscalBalance, policyRatePct: policyRate,
     inflationAnnualPct: inflation, realGrowthAnnualPct: growth, currentAccountPctGdp: currentAccount,
@@ -420,7 +621,7 @@ function nextCountryEconomy(
     exchangeRateIndex: round(exchangeRate), foreignReserveMonthsImports: round(reserves), productivityIndex: round(productivity),
     capitalStockIndex: round(capitalStock), humanCapitalIndex: round(humanCapital), confidenceIndex: round(confidence),
     sovereignDebt: debtAndBanking.sovereignDebt, bankingSystem: debtAndBanking.bankingSystem,
-    products, sectors, lastUpdatedAt: state.currentDate,
+    products, sectors, productiveSystem, lastUpdatedAt: state.currentDate,
   } satisfies Partial<MacroeconomicState>;
 }
 
@@ -440,7 +641,8 @@ export function advanceMacroeconomy(state: WorldState, elapsedMonths: number) {
   const globalGrowth = state.worldEconomy.globalGrowthAnnualPct + (globalTarget - state.worldEconomy.globalGrowthAnnualPct) * transition(2.5, elapsedMonths);
   const financialTarget = clamp(12 + financialShock * 0.85 + dotcomFinancialRisk, 3, 100);
   const globalFinancialStress = state.worldEconomy.financialStress + (financialTarget - state.worldEconomy.financialStress) * transition(3.0, elapsedMonths);
-  const productMarkets = Object.fromEntries(productFamilies.map((family) => [family, evolveWorldMarket(state, family, elapsedMonths)])) as WorldState['worldEconomy']['productMarkets'];
+  const oilMarket = evolveOilMarket(state, elapsedMonths);
+  const productMarkets = Object.fromEntries(productFamilies.map((family) => [family, evolveWorldMarket(state, family, elapsedMonths, oilMarket)])) as WorldState['worldEconomy']['productMarkets'];
   const priceImpulse = productFamilies.reduce((sum, family) => sum + (productMarkets[family].priceIndex - state.worldEconomy.productMarkets[family].priceIndex), 0) / productFamilies.length;
   const globalInflationTarget = clamp(2.2 + Math.max(0, globalGrowth - weightedPotential) * 0.3 + priceImpulse * 0.22, -2, 20);
   const globalInflation = state.worldEconomy.globalInflationAnnualPct + (globalInflationTarget - state.worldEconomy.globalInflationAnnualPct) * transition(1.0, elapsedMonths);
@@ -455,7 +657,7 @@ export function advanceMacroeconomy(state: WorldState, elapsedMonths: number) {
     kind: 'world_economy_patch',
     patch: {
       globalGrowthAnnualPct: round(globalGrowth), globalInflationAnnualPct: round(globalInflation), demandIndex: round(demandIndex),
-      tradeVolumeIndex: round(tradeVolumeIndex), financialStress: round(globalFinancialStress), productMarkets,
+      tradeVolumeIndex: round(tradeVolumeIndex), financialStress: round(globalFinancialStress), productMarkets, oilMarket,
       activeShocks: decayedShocks(state, elapsedMonths), cycle: cycleFor(globalGrowth), lastUpdatedAt: state.currentDate,
     },
     reason: 'La conjoncture mondiale agrège demande, commerce, marchés physiques, finance et chocs actifs.', visibility: 'debug',
@@ -487,11 +689,11 @@ export function advanceMacroeconomy(state: WorldState, elapsedMonths: number) {
     effects.push({
       kind: 'macro_patch', countryId: economy.countryId, patch,
       reason: automaticStandstill
-        ? 'Après des arriérés persistants, les créanciers imposent un reprofilage automatique de la dette ; les pertes restent visibles dans l’économie et le dossier souverain.'
+        ? 'Après des arriérés persistants, les créanciers imposent un reprofilage automatique ; les pertes restent visibles dans l’économie et le crédit.'
         : 'L’économie nationale équilibre demande, capacité productive, emploi, prix, budget, crédit, commerce, dette et démographie.',
       visibility: 'debug',
     });
-    effects.push(...debtCrisisEffects(state, economy.countryId, economy.sovereignDebt.status, patch.sovereignDebt.status, patch.sovereignDebt));
+    effects.push(...sovereignDebtEventEffects(state, economy.countryId, economy.sovereignDebt.status, patch.sovereignDebt.status, patch.sovereignDebt));
   }
   return commitWorldAction(state, {
     kind: 'economic', actorId: state.playerCountryId, origin: 'time',
@@ -506,11 +708,11 @@ export function addEconomicShock(state: WorldState, shock: EconomicShock) {
   const existingDossier = dossier && state.strategicDossiers?.[dossier.id];
   const effects: WorldEffect[] = [{ kind: 'world_economy_patch', patch: { activeShocks }, reason: 'Le choc entre dans les canaux de transmission du modèle.' }];
   if (dossier && existingDossier) effects.push({ kind: 'dossier_patch', dossierId: dossier.id, patch: {
-    sourceShockId: dossier.sourceShockId, sourceShockEndedAt: undefined,
+    sourceShockId: dossier.sourceShockId,
     status: dossier.status, importance: dossier.importance, scope: dossier.scope, actorIds: dossier.actorIds,
     updatedAt: dossier.updatedAt, phase: dossier.phase, trend: dossier.trend, publicSummary: dossier.publicSummary,
-    followed: dossier.followed, autoTracked: dossier.autoTracked, sleepingAt: undefined, pendingDecisions: dossier.pendingDecisions,
-  }, reason: 'Un nouveau choc actualise le dossier économique persistant.' });
+    followed: dossier.followed, autoTracked: dossier.autoTracked, pendingDecisions: dossier.pendingDecisions,
+  }, clear: ['sourceShockEndedAt', 'sleepingAt'], reason: 'Un nouveau choc actualise le dossier économique persistant.' });
   if (dossier && !existingDossier) effects.push({ kind: 'dossier_add', dossier, reason: 'Un choc économique suffisamment intense devient un dossier de suivi.' });
   if (dossier && existingDossier) {
     const entry = dossier.entries[dossier.entries.length - 1];
@@ -555,7 +757,6 @@ export function economicSnapshot(state: WorldState, countryId: CountryId) {
       ...(energyConstraint(state, economy) > 0.08 ? ['energy'] : []),
       ...(productConstraint(economy) > 0.08 ? ['productive_bottleneck'] : []),
       ...(economy.financialStress >= 50 ? ['finance'] : []),
-      ...(!['stable', 'watch'].includes(economy.sovereignDebt.status) ? ['sovereign_debt'] : []),
       ...(economy.bankingSystem.liquidityStress >= 55 ? ['banking_system'] : []),
       ...(economy.outputGapPct >= 4 ? ['productive_capacity'] : []),
       ...(economy.publicDebtPctGdp >= 120 ? ['public_debt'] : []),

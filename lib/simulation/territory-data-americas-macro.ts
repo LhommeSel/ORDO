@@ -66,7 +66,7 @@ function seeds(countryId: keyof typeof definitions): TerritorySeed[] {
     mapGroup: 'national',
     anchor: region.anchor,
     sourceIds: [worldBankWdi2000Source.id],
-    note: 'Maille macro-régionale ORDO : répartition normalisée sur les totaux nationaux WDI 2000. Elle sert aux chocs territoriaux et ne prétend pas être une statistique régionale observée.',
+    note: 'Maille macro-régionale de État-Nation : répartition normalisée sur les totaux nationaux WDI 2000. Elle sert aux chocs territoriaux et ne prétend pas être une statistique régionale observée.',
   }));
 }
 

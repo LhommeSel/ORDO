@@ -10,7 +10,7 @@ import type {
   DiplomaticAgreementType,
 } from '../simulation/types';
 import type { AIContextFact, AIContextPacket } from '../simulation/ai/context';
-import { ORDO_AI_MODEL, ORDO_AI_SCHEMA_VERSION, type AdvisorAIUsage } from './contracts';
+import { ETAT_NATION_AI_MODEL, ETAT_NATION_AI_SCHEMA_VERSION, type AdvisorAIUsage } from './contracts';
 
 export type AIJobDescriptor = {
   id: string;
@@ -25,7 +25,7 @@ export type AIJobDescriptor = {
 };
 
 export type AIJobAIRequest = {
-  schemaVersion: typeof ORDO_AI_SCHEMA_VERSION;
+  schemaVersion: typeof ETAT_NATION_AI_SCHEMA_VERSION;
   requestId: string;
   sessionId: string;
   job: AIJobDescriptor;
@@ -142,7 +142,7 @@ function descriptorFromJob(job: AIJob): AIJobDescriptor {
 
 export function createAIJobAIRequest(job: AIJob, context: AIContextPacket, sessionId: string): AIJobAIRequest {
   return {
-    schemaVersion: ORDO_AI_SCHEMA_VERSION,
+    schemaVersion: ETAT_NATION_AI_SCHEMA_VERSION,
     requestId: crypto.randomUUID(),
     sessionId: compactText(sessionId, 80),
     job: descriptorFromJob(job),
@@ -168,7 +168,7 @@ function isFact(value: unknown): value is AIContextFact {
 }
 
 export function parseAIJobAIRequest(value: unknown): AIJobAIRequest | null {
-  if (!isRecord(value) || value.schemaVersion !== ORDO_AI_SCHEMA_VERSION) return null;
+  if (!isRecord(value) || value.schemaVersion !== ETAT_NATION_AI_SCHEMA_VERSION) return null;
   if (!isString(value.requestId, 80, 8) || !isString(value.sessionId, 80, 8) || !isRecord(value.job) || !isRecord(value.context)) return null;
   const job = value.job;
   if (!isString(job.id, 120, 1)
@@ -262,11 +262,11 @@ function isDiplomaticMove(value: unknown): value is AIDiplomaticMove | null {
     && isStringArray(value.conditions, 5, 400)
     && isStringArray(value.redLines, 5, 400)
     && isString(value.timeline, 220, 1)
-    && (value.acceptedTerms === undefined || isStringArray(value.acceptedTerms, 5, 400))
-    && (value.rejectedTerms === undefined || isStringArray(value.rejectedTerms, 5, 400))
-    && (value.conditionalTerms === undefined || isStringArray(value.conditionalTerms, 5, 400))
-    && (value.decisionScope === undefined || (typeof value.decisionScope === 'string' && ['dialogue_only', 'principle', 'substance'].includes(value.decisionScope)))
-    && (value.participantResponses === undefined || (Array.isArray(value.participantResponses) && value.participantResponses.length <= 8 && value.participantResponses.every((item) => isRecord(item)
+    && (value.acceptedTerms === undefined || value.acceptedTerms === null || isStringArray(value.acceptedTerms, 5, 400))
+    && (value.rejectedTerms === undefined || value.rejectedTerms === null || isStringArray(value.rejectedTerms, 5, 400))
+    && (value.conditionalTerms === undefined || value.conditionalTerms === null || isStringArray(value.conditionalTerms, 5, 400))
+    && (value.decisionScope === undefined || value.decisionScope === null || (typeof value.decisionScope === 'string' && ['dialogue_only', 'principle', 'substance'].includes(value.decisionScope)))
+    && (value.participantResponses === undefined || value.participantResponses === null || (Array.isArray(value.participantResponses) && value.participantResponses.length <= 8 && value.participantResponses.every((item) => isRecord(item)
       && isString(item.participantId, 80, 1)
       && typeof item.kind === 'string' && ['accept', 'counter', 'refuse', 'request_clarification'].includes(item.kind)
       && isString(item.position, 900, 1)
@@ -364,7 +364,10 @@ const energyDiplomaticMoveSchema = {
 
 const generalDiplomaticMoveSchema = {
   type: 'object', additionalProperties: false,
-  required: ['scope', 'kind', 'agreementType', 'position', 'concessions', 'guaranteesRequested', 'conditions', 'redLines', 'timeline'],
+  // Structured Outputs strict exige que chaque propriété soit requise. Les
+  // champs de synthèse qui n'ont pas toujours de valeur restent donc
+  // explicitement nullable plutôt que facultatifs.
+  required: ['scope', 'kind', 'agreementType', 'position', 'concessions', 'guaranteesRequested', 'conditions', 'redLines', 'timeline', 'acceptedTerms', 'rejectedTerms', 'conditionalTerms', 'decisionScope', 'participantResponses'],
   properties: {
     scope: { type: 'string', enum: ['general_dialogue'] },
     kind: { type: 'string', enum: ['accept', 'counter', 'refuse', 'request_clarification', 'message'] },
@@ -375,11 +378,11 @@ const generalDiplomaticMoveSchema = {
     conditions: { type: 'array', maxItems: 5, items: { type: 'string', maxLength: 400 } },
     redLines: { type: 'array', maxItems: 5, items: { type: 'string', maxLength: 400 } },
     timeline: { type: 'string', maxLength: 220 },
-    acceptedTerms: { type: 'array', maxItems: 5, items: { type: 'string', maxLength: 400 } },
-    rejectedTerms: { type: 'array', maxItems: 5, items: { type: 'string', maxLength: 400 } },
-    conditionalTerms: { type: 'array', maxItems: 5, items: { type: 'string', maxLength: 400 } },
-    decisionScope: { type: 'string', enum: ['dialogue_only', 'principle', 'substance'] },
-    participantResponses: { type: 'array', maxItems: 8, items: {
+    acceptedTerms: { anyOf: [{ type: 'array', maxItems: 5, items: { type: 'string', maxLength: 400 } }, { type: 'null' }] },
+    rejectedTerms: { anyOf: [{ type: 'array', maxItems: 5, items: { type: 'string', maxLength: 400 } }, { type: 'null' }] },
+    conditionalTerms: { anyOf: [{ type: 'array', maxItems: 5, items: { type: 'string', maxLength: 400 } }, { type: 'null' }] },
+    decisionScope: { anyOf: [{ type: 'string', enum: ['dialogue_only', 'principle', 'substance'] }, { type: 'null' }] },
+    participantResponses: { anyOf: [{ type: 'array', maxItems: 8, items: {
       type: 'object', additionalProperties: false,
       required: ['participantId', 'kind', 'position', 'acceptedTerms', 'rejectedTerms', 'conditionalTerms', 'rationale'],
       properties: {
@@ -391,7 +394,7 @@ const generalDiplomaticMoveSchema = {
         conditionalTerms: { type: 'array', maxItems: 5, items: { type: 'string', maxLength: 400 } },
         rationale: { type: 'string', maxLength: 500 },
       },
-    } },
+    } }, { type: 'null' }] },
   },
 } as const;
 
@@ -431,4 +434,4 @@ export function toAIJobOutcome(answer: AIJobAIAnswer, context: AIContextPacket):
   };
 }
 
-export { ORDO_AI_MODEL };
+export { ETAT_NATION_AI_MODEL };

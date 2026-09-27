@@ -18,7 +18,18 @@ export type TurnResolutionSummary = {
   changesAdded: number;
   autonomousActions: number;
   dossiersCreatedOrUpdated: number;
+  /** Dossiers créés pendant ce passage, dans l'ordre de leur apparition. */
+  createdDossierIds: string[];
+  /** Dossiers existants dont la phase, l'état ou la chronologie a changé. */
+  updatedDossierIds: string[];
+  /** Dossiers dont une nouvelle décision explicite attend le joueur. */
+  decisionDossierIds: string[];
   programsCompleted: number;
+  /** Les programmes terminalisés gardent leur identifiant de dossier : le
+   * bilan peut donc toujours ramener le joueur vers leur conséquence. */
+  completedProgramIds: Array<{ id: string; dossierId?: string }>;
+  /** Faits clos créés pendant le passage. Ils restent distincts d'un dossier. */
+  eventIds: string[];
   aiJobsQueued: number;
   aiJobsPending: number;
   aiJobsFailed: number;
@@ -47,11 +58,25 @@ export function summarizeTurnResolution(
   const addedActions = after.actions.filter((action) => !beforeActionIds.has(action.id));
   const beforeChangeIds = new Set(before.ledger.map((change) => change.id));
   const addedChanges = after.ledger.filter((change) => !beforeChangeIds.has(change.id));
-  const dossiersCreatedOrUpdated = Object.values(after.strategicDossiers).filter((dossier) => dossierChanged(before.strategicDossiers[dossier.id], dossier)).length;
-  const programsCompleted = Object.values(after.actionPrograms).filter((program) => {
+  const changedDossiers = Object.values(after.strategicDossiers)
+    .filter((dossier) => dossierChanged(before.strategicDossiers[dossier.id], dossier));
+  const completedProgramIds = Object.values(after.actionPrograms).flatMap((program) => {
     const previous = before.actionPrograms[program.id];
-    return previous?.status === 'active' && program.status !== 'active';
-  }).length;
+    return previous?.status === 'active' && program.status !== 'active'
+      ? [{ id: program.id, ...(program.linkedDossierId ? { dossierId: program.linkedDossierId } : {}) }]
+      : [];
+  });
+  const decisionDossierIds = changedDossiers
+    .filter((dossier) => {
+      const previous = before.strategicDossiers[dossier.id];
+      const previousPrompts = new Set(previous?.pendingDecisions ?? []);
+      return dossier.pendingDecisions.some((prompt) => !previousPrompts.has(prompt));
+    })
+    .map((dossier) => dossier.id);
+  const beforeEventIds = new Set(before.worldEvents.map((event) => event.id));
+  const eventIds = after.worldEvents
+    .filter((event) => !beforeEventIds.has(event.id))
+    .map((event) => event.id);
   const beforeJobIds = new Set(Object.keys(before.aiJobs ?? {}));
   const aiJobsQueued = Object.values(after.aiJobs ?? {}).filter((job) => !beforeJobIds.has(job.id)).length;
   const aiJobsPending = Object.values(after.aiJobs ?? {}).filter((job) => job.status === 'pending').length;
@@ -67,8 +92,13 @@ export function summarizeTurnResolution(
     actionsAdded: addedActions.length,
     changesAdded: addedChanges.length,
     autonomousActions: addedActions.filter((action) => action.actorId !== after.playerCountryId).length,
-    dossiersCreatedOrUpdated,
-    programsCompleted,
+    dossiersCreatedOrUpdated: changedDossiers.length,
+    createdDossierIds: changedDossiers.filter((dossier) => !before.strategicDossiers[dossier.id]).map((dossier) => dossier.id),
+    updatedDossierIds: changedDossiers.filter((dossier) => Boolean(before.strategicDossiers[dossier.id])).map((dossier) => dossier.id),
+    decisionDossierIds,
+    programsCompleted: completedProgramIds.length,
+    completedProgramIds,
+    eventIds,
     aiJobsQueued,
     aiJobsPending,
     aiJobsFailed,

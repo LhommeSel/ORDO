@@ -36,7 +36,7 @@ export function createStructuralProfiles2000(countries?: Record<CountryId, Count
       countryId,
       ...values,
       source: {
-        basis: 'Profil structurel ORDO établi à partir de la situation connue en 2000 ; indices à calibrer sur des séries internationales.',
+        basis: 'Profil structurel de État-Nation établi à partir de la situation connue en 2000 ; indices à calibrer sur des séries internationales.',
         observationYear: 2000,
         confidence,
         estimated: true,
@@ -62,7 +62,7 @@ export function createStructuralProfiles2000(countries?: Record<CountryId, Count
       monetaryRegime: controlled ? 'sovereign_managed' : 'sovereign_floating',
       workforceTrend: 'stable',
       source: {
-        basis: 'Profil structurel ORDO généré à partir de la fiche nationale compacte du scénario 2000 ; valeurs de gameplay à calibrer.',
+        basis: 'Profil structurel de État-Nation généré à partir de la fiche nationale compacte du scénario 2000 ; valeurs de gameplay à calibrer.',
         observationYear: 2000, confidence: country.statisticalReliability, estimated: true,
       },
     };

@@ -12,6 +12,8 @@ const importanceByRank: StrategicDossier['importance'][] = ['minor', 'moderate',
 const resolutionQuietMonths: Record<StrategicDossier['importance'], number> = { minor: 3, moderate: 4, major: 6, critical: 9 };
 
 export type DossierResolutionAssessment = {
+  /** Une crise se stabilise ; une coopération se met en œuvre dans la durée. */
+  mode: 'stabilization' | 'implementation';
   stage: 'active' | 'stabilising' | 'blocked' | 'resolved';
   canResolve: boolean;
   quietMonths: number;
@@ -26,6 +28,22 @@ const entryVisibleToPlayer = (state: WorldState, entry: DossierEntry) =>
   || entry.visibility === 'player'
   || (entry.visibility === 'secret' && entry.actorIds.includes(state.playerCountryId));
 
+/**
+ * « Désescalade » ne décrit que la sortie d'une crise ou d'un choc. Une
+ * coopération, un accord politique ou une réforme n'est pas une crise que le
+ * joueur chercherait à faire disparaître : elle doit rester active et suivie.
+ */
+export function dossierNeedsStabilization(dossier: StrategicDossier) {
+  return dossier.kind === 'conflict'
+    || dossier.kind === 'diplomatic_crisis'
+    // Une crise économique peut précéder le choc macroéconomique qu'elle
+    // transmet (bulle, fuite des capitaux, rupture d'approvisionnement). Une
+    // réponse réussie doit donc pouvoir amorcer sa désescalade ; exiger un
+    // sourceShockId rendait ces dossiers impossibles à calmer avant que les
+    // dégâts aient déjà été matérialisés.
+    || dossier.kind === 'economic';
+}
+
 export function dossierUpdatesSinceView(state: WorldState, dossierId: string) {
   const dossier = state.strategicDossiers?.[dossierId];
   if (!dossier) return [];
@@ -39,6 +57,63 @@ export function dossierUnreadCount(state: WorldState, dossierId: string) {
   return dossierUpdatesSinceView(state, dossierId).length;
 }
 
+/** Un dossier peut être mis de côté tant qu’il n’attend pas une décision explicite du joueur. */
+export function dossierRequiresPlayerIntervention(state: WorldState, dossier: StrategicDossier) {
+  return dossier.pendingDecisions.length > 0
+    || (dossier.decisionRecords ?? []).some((record) => record.status === 'pending');
+}
+
+export function setDossierIgnored(state: WorldState, dossierId: string, ignored: boolean) {
+  const dossier = state.strategicDossiers?.[dossierId];
+  if (!dossier || (ignored && dossierRequiresPlayerIntervention(state, dossier))) return state;
+  if (Boolean(dossier.ignoredAt) === ignored) return state;
+  return {
+    ...state,
+    strategicDossiers: {
+      ...state.strategicDossiers,
+      [dossierId]: { ...dossier, ...(ignored ? { ignoredAt: state.currentDate } : { ignoredAt: undefined }) },
+    },
+  };
+}
+
+export type DossierActivityStatus = {
+  unreadCount: number;
+  /** Le joueur a-t-il consulté toutes les évolutions actuellement visibles ? */
+  consultedSinceLastChange: boolean;
+  /** Une action du joueur est-elle postérieure à la dernière évolution extérieure ? */
+  playerDecisionSinceLastChange: boolean;
+};
+
+const isPlayerDecisionEntry = (state: WorldState, entry: DossierEntry) =>
+  entry.origin === 'player'
+  || entry.actorId === state.playerCountryId
+  || /^(Directive du gouvernement|Décision du gouvernement|Réponse du gouvernement|Message du gouvernement)$/i.test(entry.title);
+
+/**
+ * Deux questions distinctes évitent le badge ambigu « nouveau » : le joueur a
+ * pu lire une évolution sans encore agir, ou agir après le dernier fait du monde.
+ * Les anciennes sauvegardes sont reconnues par les titres historiques connus.
+ */
+export function dossierActivityStatus(state: WorldState, dossierId: string): DossierActivityStatus {
+  const dossier = state.strategicDossiers?.[dossierId];
+  if (!dossier) return { unreadCount: 0, consultedSinceLastChange: false, playerDecisionSinceLastChange: false };
+  const visible = dossier.entries.filter((entry) => entryVisibleToPlayer(state, entry));
+  // La propre décision du joueur est déjà connue : elle ne doit pas recréer
+  // artificiellement une pastille « à consulter » dans la liste.
+  const unreadCount = dossierUpdatesSinceView(state, dossierId)
+    .filter((entry) => !isPlayerDecisionEntry(state, entry)).length;
+  const hasExternalChange = visible.some((entry) => !isPlayerDecisionEntry(state, entry));
+  const lastExternalChangeIndex = visible.reduce(
+    (latest, entry, index) => isPlayerDecisionEntry(state, entry) ? latest : index,
+    -1,
+  );
+  return {
+    unreadCount,
+    consultedSinceLastChange: hasExternalChange && unreadCount === 0,
+    playerDecisionSinceLastChange: visible.slice(lastExternalChangeIndex + 1).some((entry) => isPlayerDecisionEntry(state, entry)),
+  };
+}
+
 /**
  * Explique la sortie possible d'un dossier avec des faits déjà présents dans
  * le monde. Il n'ajoute aucune jauge arbitraire à la sauvegarde.
@@ -46,8 +121,9 @@ export function dossierUnreadCount(state: WorldState, dossierId: string) {
 export function assessDossierResolution(state: WorldState, dossier: StrategicDossier): DossierResolutionAssessment {
   const requiredQuietMonths = resolutionQuietMonths[dossier.importance];
   const quietMonths = monthsBetween(dossier.updatedAt, state.currentDate);
+  const mode = dossierNeedsStabilization(dossier) ? 'stabilization' as const : 'implementation' as const;
   if (dossier.status === 'resolved') return {
-    stage: 'resolved', canResolve: false, quietMonths, requiredQuietMonths,
+    mode, stage: 'resolved', canResolve: false, quietMonths, requiredQuietMonths,
     positiveSignals: ['La situation est stabilisée et sa chronologie reste archivée.'], blockers: [],
     nextMilestone: 'Le dossier ne sera rouvert que par un nouveau signal matériel.',
   };
@@ -63,6 +139,18 @@ export function assessDossierResolution(state: WorldState, dossier: StrategicDos
     ...recentPrograms.filter((program) => program.status === 'succeeded').slice(-2).map((program) => `Résultat obtenu : ${program.title}`),
     ...(dossier.trend === 'deescalating' ? ['La trajectoire observée est en désescalade.'] : []),
   ];
+  if (mode === 'implementation') {
+    const nextMilestone = dossier.pendingDecisions.length
+      ? 'Traiter les décisions en attente avant de modifier ou d’élargir l’engagement.'
+      : hasActiveProgram ? 'Suivre l’exécution du programme engagé.'
+        : hasOpenDialogue || hasOpenSession ? 'Lire la réponse des partenaires puis décider de la suite.'
+          : dossier.commitments.length ? 'Suivre les engagements actifs et leurs effets dans le temps.'
+            : 'Aucun engagement n’est encore conclu : poursuivre la consultation ou formuler une nouvelle proposition.';
+    return {
+      mode, stage: dossier.pendingDecisions.length ? 'blocked' : 'active', canResolve: false,
+      quietMonths, requiredQuietMonths, positiveSignals, blockers: [], nextMilestone,
+    };
+  }
   const blockers = [
     ...(dossier.pendingDecisions.length ? [`${dossier.pendingDecisions.length} décision(s) encore attendue(s)`] : []),
     ...(hasActiveProgram ? ['Un programme lié est encore en cours.'] : []),
@@ -82,7 +170,7 @@ export function assessDossierResolution(state: WorldState, dossier: StrategicDos
           : dossier.status !== 'deescalating' || dossier.trend !== 'deescalating' ? 'Obtenir un résultat concret capable d’amorcer la désescalade.'
             : quietMonths < requiredQuietMonths ? `Maintenir la désescalade encore ${requiredQuietMonths - quietMonths} mois.`
               : 'La clôture interviendra à la prochaine frontière mensuelle.';
-  return { stage: canResolve ? 'stabilising' : blockers.length ? 'blocked' : 'active', canResolve, quietMonths, requiredQuietMonths, positiveSignals, blockers, nextMilestone };
+  return { mode, stage: canResolve ? 'stabilising' : blockers.length ? 'blocked' : 'active', canResolve, quietMonths, requiredQuietMonths, positiveSignals, blockers, nextMilestone };
 }
 
 export function dossiersRequiringAttention(state: WorldState) {
@@ -93,6 +181,7 @@ export function dossiersRequiringAttention(state: WorldState) {
       return monthsBetween(dossier.reactivatedAt, state.currentDate) <= 1;
     }))
     .filter((dossier, index, all) => all.findIndex((candidate) => candidate.id === dossier.id) === index)
+    .filter((dossier) => !dossier.ignoredAt || dossierRequiresPlayerIntervention(state, dossier))
     .filter((dossier) => !dossier.sleepingAt || dossier.followed)
     .filter((dossier) => dossier.pendingDecisions.length > 0 || dossierUnreadCount(state, dossier.id) > 0)
     .sort((a, b) =>
@@ -158,7 +247,7 @@ function monthsBetween(start: `${number}-${number}-${number}`, end: `${number}-$
 export function advanceDossierEscalation(state: WorldState) {
   let next = state;
   for (const dossier of Object.values(state.strategicDossiers ?? {})) {
-    if (dossier.status === 'resolved' || dossier.pendingDecisions.length === 0) continue;
+    if (dossier.status === 'resolved' || dossier.sleepingAt || dossier.pendingDecisions.length === 0) continue;
     const records = dossierDecisionRecords(dossier);
     const overdue = records.some((record) => monthsBetween(record.createdAt, state.currentDate) >= decisionDelayMonths[record.urgency]);
     if (!overdue) continue;
@@ -287,7 +376,7 @@ export function advanceDossierLifecycle(state: WorldState) {
       effects: [
         {
           kind: 'dossier_patch', dossierId: dossier.id,
-          patch: { status: 'resolved', phase: 'Situation stabilisée', autoTracked: false, sleepingAt: undefined },
+          patch: { status: 'resolved', phase: 'Situation stabilisée', autoTracked: false }, clear: ['sleepingAt'],
           reason: 'La désescalade s’est maintenue sans nouveau signal, décision ou programme actif.', visibility: 'player',
         },
         {
@@ -368,7 +457,7 @@ export function reactivateDossier(state: WorldState, dossierId: string) {
     targetIds: dossier.actorIds.filter((id) => id !== state.playerCountryId), origin: 'player', visibility: 'player',
     intent: `Réactiver le dossier « ${dossier.title} »`,
     effects: [
-      { kind: 'dossier_patch', dossierId, patch: { sleepingAt: undefined, reactivatedAt: state.currentDate, status: 'active', trend: 'stable', phase: 'Réactivé par le joueur' }, reason: 'Le joueur remet un dossier secondaire dans le suivi actif.', visibility: 'player' },
+      { kind: 'dossier_patch', dossierId, patch: { reactivatedAt: state.currentDate, status: 'active', trend: 'stable', phase: 'Réactivé par le joueur' }, clear: ['sleepingAt'], reason: 'Le joueur remet un dossier secondaire dans le suivi actif.', visibility: 'player' },
       { kind: 'dossier_entry_add', dossierId, entry: { id: `dossier-reactivate-${dossierId}-${state.sequence + 1}`, date: state.currentDate, title: 'Dossier réactivé', summary: 'Le joueur demande à reprendre le suivi actif de cette situation.', importance: dossier.importance, actorIds: dossier.actorIds, requiresDecision: false, visibility: 'player' }, reason: 'La réactivation est conservée dans la chronologie.', visibility: 'player' },
     ],
   });
@@ -388,12 +477,21 @@ export function reactivateDossiersOnWorldSignals(state: WorldState, actionStartI
   let next = state;
   const signals = state.actions.slice(Math.max(0, actionStartIndex)).filter((action) => {
     if (action.origin === 'time' || action.metadata?.minorEvent === true) return false;
+    // Les initiatives générées par les règles locales (contrat de ressource,
+    // maintenance, écriture politique...) font vivre le monde, mais ne sont
+    // pas en elles-mêmes une information nouvelle sur tous les dossiers dont
+    // elles recoupent les acteurs. Seul un pouls mondial explicitement marqué
+    // peut les faire remonter comme signal.
+    if (action.origin === 'local_rule' && action.metadata?.worldPulse !== true) return false;
     if (!action.effects.some((effect) => !nonSignalEffects.has(effect.kind))) return false;
-    return action.kind !== 'political' || action.origin !== 'local_rule' || action.metadata?.worldPulse === true;
+    return true;
   });
   if (!signals.length) return next;
   for (const dossier of Object.values(state.strategicDossiers ?? {})) {
     if (!dossier.sleepingAt || dossier.status === 'resolved') continue;
+    // Un dossier relié à un processus encore latent ne peut pas être réveillé
+    // par les effets généraux du moteur : sa manifestation est la seule
+    // transition qui le rend observable par le joueur.
     const actorSet = new Set(dossier.actorIds);
     const signal = signals.find((action) => {
       const touchesActor = [action.actorId, ...(action.targetIds ?? [])].some((id) => actorSet.has(id));
@@ -402,6 +500,16 @@ export function reactivateDossiersOnWorldSignals(state: WorldState, actionStartI
       // ont cette propriété. Les signaux extérieurs restent plus ouverts.
       if (action.actorId === state.playerCountryId && action.origin === 'player'
         && action.metadata?.linkedDossierId !== dossier.id) return false;
+      const remainsLatent = dossier.relatedCurrentIds.some((currentId) => Object.values(state.latentProcesses ?? {})
+        .some((process) => process.currentId === currentId && process.status === 'preparing'));
+      // Une écriture structurelle interne ne révèle pas à elle seule une
+      // veille : la bulle technologique ne doit pas surgir dès le premier
+      // calcul mensuel. En revanche, un geste extérieur adressé à l'un des
+      // acteurs du dossier est un signal matériel et le réactive sans attendre
+      // la manifestation du processus latent.
+      const directExternalSignal = action.actorId !== state.playerCountryId
+        && (action.targetIds ?? []).some((id) => actorSet.has(id));
+      if (remainsLatent && !directExternalSignal && action.metadata?.linkedDossierId !== dossier.id) return false;
       return touchesActor;
     });
     if (!signal) continue;
@@ -412,7 +520,7 @@ export function reactivateDossiersOnWorldSignals(state: WorldState, actionStartI
       effects: [
         {
           kind: 'dossier_patch', dossierId: dossier.id,
-          patch: { sleepingAt: undefined, reactivatedAt: state.currentDate, status: 'active', trend: 'stable', phase: 'Réactivé par signal externe' },
+          patch: { reactivatedAt: state.currentDate, status: 'active', trend: 'stable', phase: 'Réactivé par signal externe' }, clear: ['sleepingAt'],
           reason: 'Un changement significatif touche un acteur du dossier endormi.', visibility: 'player',
         },
         {
@@ -494,6 +602,56 @@ export function resolveDossierDecision(
         ? historicalAnchorChannelEffects(state, dossierId, { sourceId: selectedRecord.id, resolution: 'explicit_silence' })
         : []),
     ],
+  });
+}
+
+/**
+ * Enregistre une orientation politique sans la déguiser en « programme »
+ * chiffré. Les programmes restent pertinents pour ce qui est matériellement
+ * mesurable (troupes, mission de renseignement, chantier), mais une ligne
+ * diplomatique, économique ou historique est d'abord une directive : elle
+ * devient la posture officielle du joueur et nourrit les réponses des acteurs.
+ */
+export function adoptDossierDirective(
+  state: WorldState,
+  dossierId: string,
+  input: {
+    directive: string;
+    execution: string;
+    decisionPrompt?: string;
+    phase?: string;
+  },
+) {
+  const initial = state.strategicDossiers?.[dossierId];
+  const directive = input.directive.trim();
+  if (!initial || directive.length < 12) return state;
+  const afterDecision = input.decisionPrompt && initial.pendingDecisions.includes(input.decisionPrompt)
+    ? resolveDossierDecision(state, dossierId, input.decisionPrompt, 'local_action')
+    : state;
+  const dossier = afterDecision.strategicDossiers?.[dossierId];
+  if (!dossier) return afterDecision;
+  const phase = input.phase
+    ?? (dossier.kind === 'cooperation'
+      ? 'Directive gouvernementale · réponse des partenaires attendue'
+      : dossier.kind === 'historical'
+        ? 'Orientation nationale déclarée'
+        : 'Directive gouvernementale engagée');
+  const execution = input.execution.trim() || 'Les modalités concrètes seront précisées par les acteurs concernés et les prochaines échéances du dossier.';
+  return recordDossierUpdate(afterDecision, dossierId, {
+    id: `directive-${dossierId}-${afterDecision.sequence + 1}`,
+    title: 'Directive du gouvernement',
+    summary: `Ordre adopté : ${directive}\n\nMise en œuvre annoncée : ${execution}`,
+    importance: dossier.importance,
+    actorIds: dossier.actorIds,
+    actorId: afterDecision.playerCountryId,
+    origin: 'player',
+    patch: {
+      playerStance: directive,
+      phase,
+      status: dossier.status === 'resolved' ? 'active' : dossier.status,
+      trend: dossier.kind === 'cooperation' ? 'stable' : dossier.trend,
+      updatedAt: afterDecision.currentDate,
+    },
   });
 }
 

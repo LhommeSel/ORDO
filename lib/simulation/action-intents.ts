@@ -23,6 +23,9 @@ export type ActionIntent =
       targetIds: CountryId[];
       resource: EnergyResource;
       objective: string;
+      /** Terminal d'arrivée facultatif pour une route maritime ; une route
+       * abstraite reste autorisée lorsque le joueur ne choisit pas de port. */
+      portAssetId?: string;
       source: 'player' | 'local_rule' | 'ai';
       requestId?: string;
     };

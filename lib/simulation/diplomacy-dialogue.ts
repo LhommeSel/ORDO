@@ -3,9 +3,10 @@ import { commitWorldAction } from './ledger';
 import { relationBetween } from './ledger';
 import { resolveDossierDecision } from './dossiers';
 import { historicalAnchorChannelEffects } from './history';
-import { enforceDiplomaticMove } from './diplomatic-feasibility';
+import { enforceDiplomaticMove, resourceDemandStillActive } from './diplomatic-feasibility';
+import { diplomaticAgreementReactionEffects } from './stakeholders';
 import type { DiplomaticAgreementType, DiplomaticDialogue, DiplomaticDialogueResponse, DiplomaticTurn, GeneralAIJob, CountryId, WorldState, WorldEffect, AIJobOutcome, DossierEntry, StrategicDossier, TreatyImplementation } from './types';
-import type { AIDiplomaticMove } from '../ai/job-contracts';
+import type { AIDiplomaticMove, AIGenericDiplomaticMove } from '../ai/job-contracts';
 
 const unique = <T,>(items: T[]) => [...new Set(items)];
 
@@ -26,6 +27,54 @@ function nextSpeaker(state: WorldState, dialogue: Pick<DiplomaticDialogue, 'part
 
 function turn(id: string, date: `${number}-${number}-${number}`, speakerId: CountryId, kind: DiplomaticTurn['kind'], publicMessage: string): DiplomaticTurn {
   return { id, date, speakerId, kind, publicMessage };
+}
+
+/**
+ * Une réponse de groupe doit rester lisible même si le modèle n'a rempli que
+ * la position de son interlocuteur actif. Les entrées manquantes sont
+ * explicitement marquées « en attente » : cela évite d'inventer un consensus
+ * et empêche le bouton d'acceptation de créer un accord collectif par défaut.
+ *
+ * Le participant actif est toutefois déjà en train de répondre : son objet
+ * `diplomaticMove` constitue sa position individuelle, même si le modèle n'a
+ * pas recopié cette position dans `participantResponses`. Sans cette fusion,
+ * la dernière réponse d'un groupe pouvait apparaître à tort comme « en
+ * attente » et bloquer une validation pourtant complète.
+ */
+function participantResponsesFor(
+  dialogue: DiplomaticDialogue,
+  move?: Extract<AIDiplomaticMove, { scope: 'general_dialogue' }> | null,
+): NonNullable<AIGenericDiplomaticMove['participantResponses']> | undefined {
+  if (dialogue.kind !== 'multilateral_dialogue' || !move) return undefined;
+  const counterparts = dialogue.participantIds.filter((id) => id !== dialogue.initiatorId);
+  const provided = move.participantResponses ?? [];
+  return counterparts.map((participantId) => {
+    const response = provided.find((item) => item.participantId === participantId);
+    if (response) return response;
+    if (participantId === dialogue.activeSpeakerId) {
+      const kind = move.kind === 'message' || move.kind === 'request_clarification'
+        ? 'request_clarification' as const
+        : move.kind;
+      return {
+        participantId,
+        kind,
+        position: move.position,
+        acceptedTerms: move.acceptedTerms ?? (move.kind === 'accept' ? [move.position] : move.concessions.slice(0, 5)),
+        rejectedTerms: move.rejectedTerms ?? move.redLines.slice(0, 5),
+        conditionalTerms: move.conditionalTerms ?? [...move.conditions, ...move.guaranteesRequested].slice(0, 5),
+        rationale: 'Position reprise depuis la réponse structurée du participant actif.',
+      };
+    }
+    return {
+      participantId,
+      kind: 'request_clarification' as const,
+      position: `La position de ${participantId} n’a pas encore été exprimée séparément.`,
+      acceptedTerms: [],
+      rejectedTerms: [],
+      conditionalTerms: ['Réponse individuelle requise avant toute validation collective.'],
+      rationale: 'Le moteur refuse de déduire un consensus d’une réponse agrégée.',
+    };
+  });
 }
 
 /**
@@ -86,12 +135,21 @@ export function openDiplomaticDialogue(state: WorldState, participantIds: Countr
       turn(`${id}-player-1`, state.currentDate, state.playerCountryId, 'message', openingMessage.trim()),
     ],
   };
+  // Un canal libre doit exister dans la sauvegarde dès son ouverture, même si
+  // l'appel IA échoue ou si le joueur quitte la page avant la première
+  // réponse. Les contacts bilatéraux reçoivent donc leur fiche immédiatement;
+  // les groupes explicitement ouverts gardent une fiche commune.
+  const contactDossier = linkedDossierId ? undefined : initialContactDossier(state, dialogue, null, '');
+  const persistedDialogue: DiplomaticDialogue = contactDossier
+    ? { ...dialogue, linkedDossierId: contactDossier.id }
+    : dialogue;
   return { ok: true as const, state: commitWorldAction(state, {
     kind: 'diplomatic', actorId: state.playerCountryId, targetIds: counterparts, origin: 'player', visibility: 'player',
-    intent: `Ouvrir un dialogue ${dialogue.kind === 'multilateral_dialogue' ? 'multilatéral' : 'bilatéral'}`,
-    ...(linkedDossierId ? { metadata: { linkedDossierId } } : {}),
+    intent: `Ouvrir un dialogue ${persistedDialogue.kind === 'multilateral_dialogue' ? 'multilatéral' : 'bilatéral'}`,
+    ...(persistedDialogue.linkedDossierId ? { metadata: { linkedDossierId: persistedDialogue.linkedDossierId } } : {}),
     effects: [
-      { kind: 'diplomatic_dialogue_add', dialogue, reason: 'Le canal diplomatique conserve le premier message et attend une réponse IA contextualisée.', visibility: 'player' },
+      { kind: 'diplomatic_dialogue_add', dialogue: persistedDialogue, reason: 'Le canal diplomatique conserve le premier message et attend une réponse IA contextualisée.', visibility: 'player' },
+      ...(contactDossier ? [{ kind: 'dossier_add' as const, dossier: contactDossier, reason: 'L’ouverture du contact diplomatique crée immédiatement une fiche indépendante de suivi.', visibility: 'player' as const }] : []),
       ...(linkedDossierId && state.strategicDossiers[linkedDossierId] ? [{
         kind: 'dossier_entry_add' as const,
         dossierId: linkedDossierId,
@@ -156,6 +214,80 @@ function dialogueDossier(
     actorIds: dialogue.participantIds, regionTags: [], startedAt: state.currentDate, updatedAt: state.currentDate,
     phase: options.phase ?? (title.startsWith('Procédure') ? 'Procédure d’accord' : 'Accord conclu'), trend: 'stable', publicSummary: summary,
     followed: true, autoTracked: options.autoTracked ?? true, commitments, pendingDecisions: [], relatedCurrentIds: [], relatedActionIds: [], entries: [entry],
+  };
+}
+
+/**
+ * Tout premier contact reçoit sa propre fiche, avant même que le joueur ne
+ * tranche la réponse étrangère. Cela évite que deux exigences envoyées à deux
+ * pays différents restent seulement dans le journal du canal ou soient
+ * regroupées par une analyse ultérieure. Un groupe explicitement ouvert par
+ * le joueur garde, lui, une fiche multilatérale unique.
+ */
+function initialContactDossier(
+  state: WorldState,
+  dialogue: DiplomaticDialogue,
+  move: Extract<AIDiplomaticMove, { scope: 'general_dialogue' }> | null,
+  publicMessage: string,
+): StrategicDossier {
+  const counterparts = dialogue.participantIds.filter((id) => id !== state.playerCountryId);
+  const names = counterparts.map((id) => state.countries[id]?.name ?? id).join(' et ');
+  const responseKind = move?.kind ?? 'message';
+  const securityAgreement = move?.agreementType === 'security_cooperation'
+    || move?.agreementType === 'defense_cooperation';
+  const kind: StrategicDossier['kind'] = responseKind === 'refuse' ? 'diplomatic_crisis' : securityAgreement ? 'security' : 'cooperation';
+  const phase = responseKind === 'refuse' ? 'Refus initial et défense des intérêts'
+    : responseKind === 'counter' || responseKind === 'request_clarification' ? 'Contre-proposition initiale'
+      : 'Position initiale reçue';
+  const trend: StrategicDossier['trend'] = responseKind === 'refuse' ? 'escalating' : 'stable';
+  const opening = dialogue.turns.find((item) => item.speakerId === state.playerCountryId)?.publicMessage ?? '';
+  const response = publicMessage.trim() || move?.position || 'L’interlocuteur réserve sa position.';
+  const entries: DossierEntry[] = [{
+    id: `dialogue-contact-opening-${dialogue.id}`,
+    date: state.currentDate,
+    title: 'Demande initiale du gouvernement',
+    summary: opening || 'Ouverture d’un contact diplomatique.',
+    importance: 'moderate',
+    actorIds: dialogue.participantIds,
+    requiresDecision: false,
+    visibility: 'player',
+  }];
+  // À l’ouverture, l’interlocuteur n’a pas encore répondu : ne fabriquons pas
+  // une fausse réponse « en attente » dans la chronologie. Elle sera ajoutée
+  // par applyDiplomaticDialogueAIAnswer dès qu’elle existe.
+  if (move || publicMessage.trim()) entries.push({
+    id: `dialogue-contact-response-${dialogue.id}`,
+    date: state.currentDate,
+    title: `Réponse initiale · ${names || 'interlocuteur'}`,
+    summary: response,
+    importance: responseKind === 'refuse' ? 'major' : 'moderate',
+    actorIds: dialogue.participantIds,
+    requiresDecision: false,
+    visibility: 'player',
+  });
+  return {
+    id: `diplomatic-dialogue-${dialogue.id}`,
+    title: `Contact diplomatique · ${names || 'interlocuteur'}`,
+    kind,
+    status: 'active',
+    importance: responseKind === 'refuse' ? 'major' : 'moderate',
+    actorIds: dialogue.participantIds,
+    regionTags: [],
+    startedAt: state.currentDate,
+    updatedAt: state.currentDate,
+    phase,
+    trend,
+    publicSummary: responseKind === 'refuse'
+      ? `${names} rejette la demande initiale ; la relation et les suites de ce contact doivent être arbitrées séparément.`
+      : `Le premier échange avec ${names} est enregistré séparément ; sa suite dépendra de la réponse du gouvernement et des conditions proposées.`,
+    followed: true,
+    autoTracked: responseKind === 'refuse',
+    playerStance: opening || undefined,
+    commitments: [],
+    pendingDecisions: [],
+    relatedCurrentIds: [],
+    relatedActionIds: [],
+    entries,
   };
 }
 
@@ -262,7 +394,7 @@ export function diplomaticCommitmentEffects(
     industrial_cooperation: 36, energy_cooperation: 24, information_sharing: 24, security_cooperation: 24,
     political_guarantee: 18, mediation: 12, defense_cooperation: 36,
   };
-  const monthlyByType: Record<DiplomaticAgreementType, Array<{ countryId: CountryId; metric: 'budget' | 'industry' | 'stability' | 'security'; delta: number }>> = {
+  const monthlyByType: Record<DiplomaticAgreementType, Array<{ countryId: CountryId; metric: 'industry' | 'stability' | 'security'; delta: number }>> = {
     industrial_cooperation: dialogue.participantIds.map((countryId) => ({ countryId, metric: 'industry', delta: countryId === state.playerCountryId ? 0.05 : 0.035 })),
     // Un cadre de coopération ne crée pas de croissance ou de fiabilité
     // « magiques » : les effets matériels passent par les registres dédiés.
@@ -295,6 +427,7 @@ export function diplomaticCommitmentEffects(
     reason: 'La signature transforme la proposition diplomatique en engagement persistant.',
     visibility: 'player',
   }];
+  effects.push(...diplomaticAgreementReactionEffects(state, dialogue, response, treatyId));
   if (response.agreementType === 'information_sharing') {
     effects.push(...dialogue.participantIds.filter((id) => id !== state.playerCountryId).map((targetId) => ({
       kind: 'intelligence_delta' as const, observerId: state.playerCountryId, targetId, delta: 8,
@@ -311,16 +444,27 @@ export function diplomaticCommitmentEffects(
 }
 
 /** Ouvre un dialogue depuis une décision de dossier et consomme cette décision. */
-export function openDiplomaticDialogueForDossier(state: WorldState, dossierId: string, openingMessage?: string, decisionPrompt?: string) {
+export function openDiplomaticDialogueForDossier(
+  state: WorldState,
+  dossierId: string,
+  openingMessage?: string,
+  decisionPrompt?: string,
+  requestedCounterpartIds?: CountryId[],
+) {
   const dossier = state.strategicDossiers?.[dossierId];
   if (!dossier) return { ok: false as const, state, error: 'Dossier introuvable.' };
-  const existing = Object.values(state.diplomaticDialogues ?? {}).find((dialogue) => dialogue.linkedDossierId === dossierId && dialogue.status !== 'closed');
+  const requested = requestedCounterpartIds?.filter((id) => id !== state.playerCountryId && Boolean(state.countries[id])) ?? [];
+  const existing = Object.values(state.diplomaticDialogues ?? {}).find((dialogue) => dialogue.linkedDossierId === dossierId
+    && dialogue.status !== 'closed'
+    && (!requested.length || (dialogue.participantIds.length === requested.length + 1 && requested.every((id) => dialogue.participantIds.includes(id)))));
   if (existing) {
     const decision = decisionPrompt && dossier.pendingDecisions.includes(decisionPrompt) ? decisionPrompt : undefined;
     const nextState = decision ? resolveDossierDecision(state, dossierId, decision, 'dialogue') : state;
     return { ok: true as const, state: nextState, dialogueId: existing.id };
   }
-  const counterparts = dossier.actorIds.filter((id) => id !== state.playerCountryId && Boolean(state.countries[id]));
+  const counterparts = requested.length
+    ? requested
+    : dossier.actorIds.filter((id) => id !== state.playerCountryId && Boolean(state.countries[id]));
   const message = openingMessage?.trim() || `Le gouvernement souhaite ouvrir une consultation sur le dossier « ${dossier.title} » et recueillir vos lignes rouges.`;
   const opened = openDiplomaticDialogue(state, counterparts, message, dossierId);
   if (!opened.ok) return opened;
@@ -398,7 +542,10 @@ export function resolveDiplomaticDialogueResponse(
     return { ok: false as const, state, error: 'Cette réponse est une prise de position, pas une proposition formalisable.' };
   }
   const hasOpenTerms = response.conditions.length > 0 || response.guaranteesRequested.length > 0 || response.redLines.length > 0;
-  const formalAgreement = decision === 'accept' && response.kind === 'accept' && !hasOpenTerms;
+  const counterpartIds = dialogue.participantIds.filter((id) => id !== dialogue.initiatorId);
+  const multilateralPositionsComplete = dialogue.kind !== 'multilateral_dialogue'
+    || (response.participantPositions?.length === counterpartIds.length && response.participantPositions.every((item) => item.kind === 'accept'));
+  const formalAgreement = decision === 'accept' && response.kind === 'accept' && !hasOpenTerms && multilateralPositionsComplete;
   const conditionalAcceptance = decision === 'accept' && (response.kind === 'accept' || response.kind === 'counter') && !formalAgreement;
   const labels = {
     accept: formalAgreement ? 'Position acceptée : un engagement diplomatique est inscrit.' : 'Position acceptée sous conditions : une formalisation reste nécessaire.',
@@ -464,9 +611,28 @@ export function resolveDiplomaticDialogueResponse(
   }
   if (dialogue.linkedDossierId && state.strategicDossiers[dialogue.linkedDossierId]) {
     const dossier = state.strategicDossiers[dialogue.linkedDossierId];
+    const dossierPhase = formalAgreement
+      ? 'Accord signé · mise en œuvre suivie'
+      : conditionalAcceptance
+        ? 'Formalisation requise'
+        : unresolvedStrategicPosition
+          ? 'Négociation exploratoire en suspens'
+          : decision === 'request_revision'
+            ? 'Procédure d’accord'
+            : decision === 'refuse'
+              ? 'Refus et suites à arbitrer'
+              : dossier.phase;
+    // Refuser la position ferme le canal mais ne clôt pas le différend : le
+    // dossier reste actif pour que la tension et ses suites puissent évoluer.
+    const dossierStatus = formalAgreement || conditionalAcceptance ? 'active' as const : dossier.status;
+    // Une coopération conclue n'est pas une désescalade : elle entre dans une
+    // phase de mise en œuvre. Le mot ne reste pertinent que pour une crise
+    // réellement désamorcée.
+    const dossierTrend = decision === 'refuse' ? 'escalating' as const
+      : formalAgreement || conditionalAcceptance ? 'stable' as const : dossier.trend;
     effects.push(
-      { kind: 'dossier_patch', dossierId: dossier.id, patch: { commitments: formalAgreement ? [...dossier.commitments, `Engagement diplomatique : ${response.position}`] : conditionalAcceptance ? [...dossier.commitments, `Intention à formaliser : ${response.position}`] : dossier.commitments, playerStance: messages[decision] }, reason: 'La décision du joueur actualise les engagements du dossier.', visibility: 'player' },
-      { kind: 'dossier_entry_add', dossierId: dossier.id, entry: { id: `dialogue-resolution-${dialogue.id}-${state.sequence + 1}`, date: state.currentDate, title: labels[decision], summary: messages[decision], importance: dossier.importance, actorIds: dialogue.participantIds, requiresDecision: false, visibility: 'player' }, reason: 'La résolution du dialogue est conservée dans la chronologie du dossier.', visibility: 'player' },
+      { kind: 'dossier_patch', dossierId: dossier.id, patch: { status: dossierStatus, phase: dossierPhase, trend: dossierTrend, autoTracked: unresolvedStrategicPosition ? false : dossier.autoTracked, commitments: formalAgreement ? [...dossier.commitments, `Engagement diplomatique : ${response.position}`] : conditionalAcceptance ? [...dossier.commitments, `Intention à formaliser : ${response.position}`] : dossier.commitments, playerStance: messages[decision], updatedAt: state.currentDate }, reason: 'La décision du joueur actualise les engagements et la phase du dossier.', visibility: 'player' },
+      { kind: 'dossier_entry_add', dossierId: dossier.id, entry: { id: `dialogue-resolution-${dialogue.id}-${state.sequence + 1}`, date: state.currentDate, title: unresolvedStrategicPosition ? 'Position reçue sans accord formel' : labels[decision], summary: messages[decision], importance: dossier.importance, actorIds: dialogue.participantIds, requiresDecision: false, visibility: 'player' }, reason: 'La résolution du dialogue est conservée dans la chronologie du dossier.', visibility: 'player' },
     );
     const historicalResolution = formalAgreement
       ? 'diplomatic_agreement' as const
@@ -490,6 +656,9 @@ export function requestDiplomaticDialogueAI(state: WorldState, dialogueId: strin
     return { ok: false as const, state, error: 'L’interlocuteur du dialogue est invalide ; aucun appel IA n’a été lancé.' };
   }
   const speaker = state.countries[dialogue.activeSpeakerId];
+  const playerTurns = dialogue.turns.filter((item) => item.speakerId === state.playerCountryId);
+  const initialPlayerMessage = playerTurns[0]?.publicMessage;
+  const unresolvedCoerciveDemand = resourceDemandStillActive(playerTurns.map((item) => item.publicMessage));
   const job: GeneralAIJob = {
     id: `diplomacy-dialogue:${dialogue.id}:${dialogue.turns.length}`,
     kind: 'diplomacy', schemaVersion: 1, priority: 'normal', budgetTier: 'standard', status: 'pending', requestedAt: state.currentDate, attempts: 0,
@@ -499,7 +668,7 @@ export function requestDiplomaticDialogueAI(state: WorldState, dialogueId: strin
     // Le journal complet reste local dans le dialogue ; Luna ne reçoit que les
     // huit derniers tours, suffisants pour garder les lignes rouges sans payer
     // à nouveau toute l'histoire du canal à chaque réponse.
-    context: { dialogueId: dialogue.id, respondingCountryId: dialogue.activeSpeakerId, participantIds: dialogue.participantIds, recentTurns: dialogue.turns.slice(-8), playerIntent: dialogue.turns.at(-1)?.publicMessage ?? '' },
+    context: { dialogueId: dialogue.id, respondingCountryId: dialogue.activeSpeakerId, participantIds: dialogue.participantIds, recentTurns: dialogue.turns.slice(-8), initialPlayerMessage, unresolvedCoerciveDemand, playerIntent: dialogue.turns.at(-1)?.publicMessage ?? '' },
   };
   const queued = enqueueAIJob(state, job);
   const patched = commitWorldAction(queued, {
@@ -521,12 +690,24 @@ export function applyDiplomaticDialogueAIAnswer(state: WorldState, jobId: string
   const nextSpeakerId = nextSpeaker(state, dialogue, [state.playerCountryId, speaker]);
   const response = outcome.publicMessage.trim();
   const normalizedMove = move ? normalizeDialogueMove(move, response) : null;
+  const playerTurns = dialogue.turns.filter((item) => item.speakerId === state.playerCountryId);
+  const initialPlayerMessage = playerTurns[0]?.publicMessage ?? '';
+  const currentPlayerMessage = job.inputText ?? '';
+  const unresolvedCoerciveDemand = resourceDemandStillActive([...playerTurns.map((item) => item.publicMessage), currentPlayerMessage]);
+  // Une révision ou une demande de garanties ne vaut pas retrait d'un
+  // ultimatum : tant que le joueur ne le retire pas clairement, l'interlocuteur
+  // conserve sa réponse souveraine et le moteur peut l'imposer au modèle.
+  const feasibilityText = unresolvedCoerciveDemand && currentPlayerMessage !== initialPlayerMessage
+    ? `${initialPlayerMessage}\nPosition ultérieure du joueur : ${currentPlayerMessage}`
+    : currentPlayerMessage;
   const constrained = normalizedMove
     // Seule l'intention du tour courant déclenche une ligne rouge : les
-    // anciens messages sont déjà de la mémoire, pas une nouvelle demande.
-    ? enforceDiplomaticMove(state, speaker, dialogue.participantIds, job.inputText ?? '', normalizedMove, response)
+    // anciens messages sont déjà de la mémoire, sauf une exigence coercitive
+    // encore active : celle-ci doit être explicitement retirée.
+    ? enforceDiplomaticMove(state, speaker, dialogue.participantIds, feasibilityText, normalizedMove, response)
     : null;
   const effectiveMove = constrained?.move ?? normalizedMove;
+  const participantResponses = effectiveMove?.scope === 'general_dialogue' ? participantResponsesFor(dialogue, effectiveMove) : undefined;
   const effectiveResponse = constrained?.publicMessage ?? response;
   const isEnergyFramework = effectiveMove?.scope === 'general_dialogue' && effectiveMove.agreementType === 'energy_cooperation';
   const relationEffect = effectiveMove?.kind === 'accept'
@@ -548,14 +729,42 @@ export function applyDiplomaticDialogueAIAnswer(state: WorldState, jobId: string
     conditionalTerms: effectiveMove.conditionalTerms,
     decisionScope: effectiveMove.decisionScope,
     feasibilityIssues: constrained?.feasibility.issues,
-    participantPositions: constrained?.move.participantResponses?.map((item) => ({
-      participantId: item.participantId, kind: item.kind === 'request_clarification' ? 'counter' as const : item.kind,
+    participantPositions: participantResponses?.map((item) => ({
+      participantId: item.participantId, kind: item.kind === 'request_clarification' ? 'pending' as const : item.kind,
       position: item.position, acceptedTerms: item.acceptedTerms, rejectedTerms: item.rejectedTerms,
       conditionalTerms: item.conditionalTerms, rationale: item.rationale,
     })),
   } : dialogue.lastResponse;
+  // Le premier retour ferme, contre-proposé ou simplement informatif crée
+  // déjà une fiche pour ce contact. Le lien est posé sur le dialogue afin que
+  // les décisions suivantes complètent cette même fiche au lieu d’en ouvrir
+  // une seconde. Les canaux explicitement multilatéraux restent regroupés.
+  const contactDossier = !dialogue.linkedDossierId
+    ? initialContactDossier(state, dialogue, normalizedMove, effectiveResponse || outcome.assessment.slice(0, 600))
+    : undefined;
+  const linkedDossier = dialogue.linkedDossierId ? state.strategicDossiers[dialogue.linkedDossierId] : undefined;
+  const isPersistedContactDossier = Boolean(linkedDossier?.title.startsWith('Contact diplomatique ·'));
+  const responseKind = normalizedMove?.kind ?? 'message';
+  const contactDossierPatch = isPersistedContactDossier && normalizedMove ? {
+    kind: responseKind === 'refuse'
+      ? 'diplomatic_crisis' as const
+      : normalizedMove.agreementType === 'security_cooperation' || normalizedMove.agreementType === 'defense_cooperation'
+        ? 'security' as const
+        : 'cooperation' as const,
+    importance: responseKind === 'refuse' ? 'major' as const : linkedDossier!.importance,
+    phase: responseKind === 'refuse' ? 'Refus initial et défense des intérêts'
+      : responseKind === 'counter' || responseKind === 'request_clarification' ? 'Contre-proposition initiale'
+        : 'Position initiale reçue',
+    trend: responseKind === 'refuse' ? 'escalating' as const : 'stable' as const,
+    publicSummary: responseKind === 'refuse'
+      ? `${linkedDossier!.actorIds.filter((id) => id !== state.playerCountryId).map((id) => state.countries[id]?.name ?? id).join(' et ')} rejette la demande initiale ; la relation et les suites de ce contact doivent être arbitrées séparément.`
+      : `Le premier échange avec ${linkedDossier!.actorIds.filter((id) => id !== state.playerCountryId).map((id) => state.countries[id]?.name ?? id).join(' et ')} est enregistré séparément ; sa suite dépendra de la réponse du gouvernement et des conditions proposées.`,
+    autoTracked: responseKind === 'refuse' ? true : linkedDossier!.autoTracked,
+    updatedAt: state.currentDate,
+  } : undefined;
   const nextDialogue: DiplomaticDialogue = {
     ...dialogue, status: 'awaiting_player', aiMode: 'ai', activeSpeakerId: nextSpeakerId, updatedAt: state.currentDate,
+    ...(contactDossier ? { linkedDossierId: contactDossier.id } : {}),
     resolution: undefined,
     lastResponse: structuredResponse,
     turns: [...dialogue.turns, turn(`${dialogue.id}-${speaker}-${dialogue.turns.length + 1}`, state.currentDate, speaker, 'message', effectiveResponse || outcome.assessment.slice(0, 600))],
@@ -567,6 +776,8 @@ export function applyDiplomaticDialogueAIAnswer(state: WorldState, jobId: string
     kind: 'diplomatic', actorId: speaker, targetIds: dialogue.participantIds.filter((id) => id !== speaker), origin: 'ai', visibility: 'player',
     intent: `Réponse diplomatique de ${speaker} dans « ${dialogue.id} »`, effects: [
       { kind: 'diplomatic_dialogue_patch', dialogueId: dialogue.id, patch: nextDialogue, reason: 'La réponse IA est ajoutée à la mémoire du canal diplomatique.', visibility: 'player' },
+      ...(contactDossier ? [{ kind: 'dossier_add' as const, dossier: contactDossier, reason: 'Chaque premier contact diplomatique reçoit une fiche indépendante de suivi.', visibility: 'player' as const }] : []),
+      ...(contactDossierPatch && dialogue.linkedDossierId ? [{ kind: 'dossier_patch' as const, dossierId: dialogue.linkedDossierId, patch: contactDossierPatch, reason: 'La première réponse actualise la fiche créée dès l’ouverture du contact.', visibility: 'player' as const }] : []),
       ...(relationEffect ? dialogue.participantIds.filter((id) => id !== speaker).map((targetId) => ({ kind: 'relation_delta' as const, from: speaker, to: targetId, relation: relationEffect.relation, trust: relationEffect.trust, reason: `Position diplomatique ${effectiveMove?.kind === 'accept' ? 'favorable' : effectiveMove?.kind === 'refuse' ? 'refusée' : 'contre-proposée'} dans le dialogue.`, visibility: 'player' as const })) : []),
       ...(dialogue.linkedDossierId && state.strategicDossiers[dialogue.linkedDossierId] ? [{ kind: 'dossier_entry_add' as const, dossierId: dialogue.linkedDossierId, entry: { id: `dialogue-entry-${dialogue.id}-${dialogue.turns.length + 1}`, date: state.currentDate, title: `Réponse de ${state.countries[speaker]?.name ?? speaker}`, summary: effectiveResponse || outcome.assessment.slice(0, 600), importance: state.strategicDossiers[dialogue.linkedDossierId].importance, actorIds: dialogue.participantIds, requiresDecision: false, visibility: 'player' as const }, reason: 'Le dialogue associé actualise directement le dossier suivi.', visibility: 'player' as const }] : []),
       { kind: 'ai_job_patch', jobId, patch: { status: 'resolved', resolvedAt: state.currentDate, attempts: job.attempts + 1, outcome: effectiveOutcome }, reason: 'La réponse diplomatique IA est conservée dans la tâche.', visibility: 'debug' },

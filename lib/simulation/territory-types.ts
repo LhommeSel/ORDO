@@ -26,6 +26,52 @@ export type Territory = {
 export type TerritorialAssetCapacityUnit = 'MW' | 'bcm_per_year' | 'million_tonnes_per_year';
 
 /**
+ * Anciennes étiquettes internes conservées pour relire les premiers états
+ * sauvegardés. Elles ne sont plus affichées au joueur : les ports exposent
+ * désormais un profil large et stable (voir TerritorialPortProfile).
+ */
+export type TerritorialAssetRole =
+  | 'container_gateway'
+  | 'bulk_export'
+  | 'hydrocarbon'
+  | 'naval'
+  | 'canal'
+  | 'riverine'
+  | 'transshipment'
+  | 'multi_purpose';
+
+/** Niveau qualitatif de desserte d'un port, indépendant de sa capacité courante. */
+export type TerritorialPortClass = 'local' | 'regional' | 'national' | 'major' | 'global_hub' | 'megahub';
+
+/** Capacités portuaires volontairement larges, utilisables par le moteur. */
+export type TerritorialPortCapability =
+  | 'general_cargo'
+  | 'solid_bulk'
+  | 'liquid_hydrocarbons'
+  | 'lng'
+  | 'passengers_ferries';
+
+export type TerritorialPortOperationalState = 'operating' | 'congested' | 'damaged' | 'blockaded' | 'closed';
+
+/**
+ * Profil léger d'un port. Les notes 0–10 n'imitent pas un tonnage réel : elles
+ * servent de curseurs cohérents pour les règles du moteur et peuvent évoluer.
+ * `infrastructureCapacity` est le plafond installé ; `goodsCapacity` est la
+ * capacité de marchandises actuellement disponible.
+ */
+export type TerritorialPortProfile = {
+  classification: TerritorialPortClass;
+  goodsCapacity: number;
+  infrastructureCapacity: number;
+  nationalReach: number;
+  governanceRisk: number;
+  laborFriction: number;
+  capabilities: TerritorialPortCapability[];
+  developmentPotential: number;
+  operationalState: TerritorialPortOperationalState;
+};
+
+/**
  * Couche opérationnelle légère des actifs énergétiques.
  *
  * `maximum` est la capacité installée ou mobilisable, `deployed` la part
@@ -54,6 +100,10 @@ export type TerritorialAsset = {
   capacity: { value: number; unit: TerritorialAssetCapacityUnit } | null;
   /** Présent pour les actifs énergétiques calibrés ; absent = inventaire seul. */
   operation?: TerritorialAssetOperation;
+  /** Profil présent uniquement pour les actifs de type `port`. */
+  portProfile?: TerritorialPortProfile;
+  /** Rôle stratégique indicatif, surtout utilisé pour les ports du catalogue réduit. */
+  roles?: TerritorialAssetRole[];
   /** Initial catalogue is NOT a second production ledger. */
   integration: 'inventory_only';
   sourceIds: string[];

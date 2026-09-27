@@ -6,6 +6,13 @@ import { relationBetween } from './ledger';
 import type { AdvisorQuestionDimension, AdvisorQuestionKind, AdvisorResponseMode } from '../ai/contracts';
 import { countryIdsMentionedInText, countryMentionedInText, countrySheet } from './country-sheet';
 import { militaryTheatersForCountry } from './military-theaters';
+import { americasPortsForCountry, effectivePortGoodsCapacity } from './territory-data-americas-ports';
+import { europePortsForCountry } from './territory-data-europe-ports';
+import { africaPortsForCountry } from './territory-data-africa-ports';
+import { asiaPortsForCountry } from './territory-data-asia-ports';
+import { oceaniaPortsForCountry } from './territory-data-oceania-ports';
+import { governmentCapacitySnapshot } from './government-capacity';
+import { retirementProjectionFor } from './retirement-projection';
 import type {
   AiBudgetPolicy,
   CapacityDomainId,
@@ -108,6 +115,12 @@ function collectCountryFacts(state: WorldState, countryId: CountryId, prefix: st
   const labelPrefix = prefix === 'player' ? '' : `${country.name} · `;
   const facts: AdvisorFact[] = [];
   const macro = sheet.macro;
+  const governmentCapacity = governmentCapacitySnapshot(state, countryId);
+  facts.push({
+    id: `${prefix}-government-capacity`, label: `${labelPrefix}Capacité gouvernementale`,
+    value: `${governmentCapacity.score}/100 · ${Object.values(governmentCapacity.dimensions).map((item) => `${item.label} ${item.score}`).join(' · ')}`,
+    confidence: 100, sourcePath: `derived.governmentCapacity.${countryId}`,
+  });
   if (macro) facts.push(
     { id: `${prefix}-gdp`, label: `${labelPrefix}PIB réel`, value: `${macro.gdp.toFixed(0)} Md$ (base 2000)`, confidence: 100, sourcePath: `macroEconomies.${countryId}.realGdpBillion2000Usd` },
     { id: `${prefix}-growth`, label: `${labelPrefix}Croissance réelle`, value: percent(macro.growth), confidence: 100, sourcePath: `macroEconomies.${countryId}.realGrowthAnnualPct` },
@@ -117,15 +130,41 @@ function collectCountryFacts(state: WorldState, countryId: CountryId, prefix: st
     { id: `${prefix}-debt`, label: `${labelPrefix}Dette publique`, value: `${percent(macro.debt)} du PIB`, confidence: 100, sourcePath: `macroEconomies.${countryId}.publicDebtPctGdp` },
     { id: `${prefix}-fiscal`, label: `${labelPrefix}Solde public`, value: `${percent(macro.fiscalBalance)} du PIB`, confidence: 100, sourcePath: `macroEconomies.${countryId}.fiscalBalancePctGdp` },
   );
+  const retirement = retirementProjectionFor(state, countryId, 2025);
+  if (retirement) facts.push(
+    { id: `${prefix}-retirement-current-cost`, label: `${labelPrefix}Retraites · coût annuel 2000`, value: `${retirement.baselineSharePctGdp.toFixed(1)} % du PIB · ${retirement.baselineAnnualBillion2000Usd.toFixed(1)} Md$ constants 2000`, confidence: 78, sourcePath: `derived.retirementProjection.${countryId}.baselineAnnualBillion2000Usd` },
+    { id: `${prefix}-retirement-2025-cost`, label: `${labelPrefix}Retraites · projection 2025`, value: `${retirement.horizonSharePctGdp.toFixed(1)} % du PIB · ${retirement.horizonAnnualBillion2000Usd.toFixed(1)} Md$ constants 2000/an`, confidence: 68, sourcePath: `derived.retirementProjection.${countryId}.horizonAnnualBillion2000Usd` },
+    { id: `${prefix}-retirement-2025-delta`, label: `${labelPrefix}Retraites · écart annuel 2000–2025`, value: `+${retirement.annualIncreaseBillion2000Usd.toFixed(1)} Md$ constants 2000/an avant réforme`, confidence: 68, sourcePath: `derived.retirementProjection.${countryId}.annualIncreaseBillion2000Usd` },
+  );
+  const productiveSystem = state.macroEconomies[countryId]?.productiveSystem;
+  if (productiveSystem) facts.push(
+    { id: `${prefix}-productive-attractiveness`, label: `${labelPrefix}Attractivité productive`, value: `${productiveSystem.productiveAttractiveness.toFixed(0)}/100`, confidence: 82, sourcePath: `macroEconomies.${countryId}.productiveSystem.productiveAttractiveness` },
+    { id: `${prefix}-value-chain-integration`, label: `${labelPrefix}Intégration aux chaînes mondiales`, value: `${productiveSystem.globalValueChainIntegration.toFixed(0)}/100`, confidence: 82, sourcePath: `macroEconomies.${countryId}.productiveSystem.globalValueChainIntegration` },
+    { id: `${prefix}-industrial-dependency`, label: `${labelPrefix}Dépendance industrielle extérieure`, value: `${productiveSystem.foreignIndustrialDependency.toFixed(0)}/100`, confidence: 82, sourcePath: `macroEconomies.${countryId}.productiveSystem.foreignIndustrialDependency` },
+    { id: `${prefix}-critical-input-exposure`, label: `${labelPrefix}Exposition aux intrants critiques`, value: `${productiveSystem.criticalInputExposure.toFixed(0)}/100`, confidence: 82, sourcePath: `macroEconomies.${countryId}.productiveSystem.criticalInputExposure` },
+  );
   if (sheet.energy) facts.push(
     { id: `${prefix}-oil`, label: `${labelPrefix}Pétrole`, value: `${sheet.energy.oilImports.toFixed(1)} unités/an importées · ${monthLabel(sheet.energy.oilStocksMonths)} de stocks`, confidence: 100, sourcePath: `countryEnergy.${countryId}.oil` },
     { id: `${prefix}-gas`, label: `${labelPrefix}Gaz`, value: `${sheet.energy.gasImports.toFixed(1)} unités/an importées · ${monthLabel(sheet.energy.gasStocksMonths)} de stocks`, confidence: 100, sourcePath: `countryEnergy.${countryId}.gas` },
   );
+  for (const resource of ['oil', 'gas'] as const) {
+    const balance = energyBalance(state, countryId, resource);
+    if (!balance) continue;
+    const label = resource === 'oil' ? 'pétrolier' : 'gazier';
+    const domesticProduction = Math.max(0, balance.available - balance.imports + balance.exports);
+    facts.push({
+      id: `${prefix}-${resource}-balance`,
+      label: `${labelPrefix}Bilan ${label}`,
+      value: `Production ${domesticProduction.toFixed(1)} · importations ${balance.imports.toFixed(1)} · exportations ${balance.exports.toFixed(1)} · ${balance.deficit > 0 ? `déficit ${balance.deficit.toFixed(1)}` : `excédent ${balance.surplus.toFixed(1)}`} unités/an`,
+      confidence: 100,
+      sourcePath: `countryEnergy.${countryId}.${resource}`,
+    });
+  }
   const defense = sheet.defense;
   if (defense) {
     facts.push(
-      { id: `${prefix}-defense-budget`, label: `${labelPrefix}Budget de défense`, value: `${defense.budgetBillionUsd.toFixed(1)} Md$${defense.modelingLevel === 'aggregate' ? ' · ordre de grandeur ORDO' : ''}`, confidence: 100, sourcePath: defense.modelingLevel === 'aggregate' ? `macroEconomies.${countryId}.realGdpBillion2000Usd` : `defenseReference2000.${countryId}.budgetBillionUsd` },
-      { id: `${prefix}-defense-personnel`, label: `${labelPrefix}Effectifs actifs`, value: `${defense.activePersonnelThousands.toFixed(0)} milliers · ${defense.posture}${defense.modelingLevel === 'aggregate' ? ' · ordre de grandeur ORDO' : ''}`, confidence: 100, sourcePath: defense.modelingLevel === 'aggregate' ? `countries.${countryId}.metrics.security` : `defenseReference2000.${countryId}.activePersonnelThousands` },
+      { id: `${prefix}-defense-budget`, label: `${labelPrefix}Budget de défense`, value: `${defense.budgetBillionUsd.toFixed(1)} Md$${defense.modelingLevel === 'aggregate' ? ' · estimation de scénario' : ''}`, confidence: 100, sourcePath: defense.modelingLevel === 'aggregate' ? `macroEconomies.${countryId}.realGdpBillion2000Usd` : `defenseReference2000.${countryId}.budgetBillionUsd` },
+      { id: `${prefix}-defense-personnel`, label: `${labelPrefix}Effectifs actifs`, value: `${defense.activePersonnelThousands.toFixed(0)} milliers · ${defense.posture}${defense.modelingLevel === 'aggregate' ? ' · estimation de scénario' : ''}`, confidence: 100, sourcePath: defense.modelingLevel === 'aggregate' ? `countries.${countryId}.metrics.security` : `defenseReference2000.${countryId}.activePersonnelThousands` },
     );
     if (defense.deployments?.length) {
       const dynamicTheaters = militaryTheatersForCountry(state, countryId);
@@ -158,6 +197,31 @@ function collectCountryFacts(state: WorldState, countryId: CountryId, prefix: st
       confidence: 100, sourcePath: `intelligenceServices.${countryId}.regionalCoverage`,
     });
   }
+  const ports = [
+    ...americasPortsForCountry(state.territorial, countryId),
+    ...europePortsForCountry(state.territorial, countryId),
+    ...africaPortsForCountry(state.territorial, countryId),
+    ...asiaPortsForCountry(state.territorial, countryId),
+    ...oceaniaPortsForCountry(state.territorial, countryId),
+  ].filter((asset) => asset.portProfile)
+    .filter((asset, index, all) => all.findIndex((candidate) => candidate.id === asset.id) === index);
+  if (ports.length) {
+    const available = ports.reduce((sum, asset) => sum + effectivePortGoodsCapacity(asset.portProfile!), 0);
+    facts.push({
+      id: `${prefix}-port-capacity`, label: `${labelPrefix}Capacité portuaire exploitable`,
+      value: `${ports.length} port(s) documenté(s) · ${available.toFixed(2)}/10 cumulée`, confidence: 86,
+      sourcePath: `territorial.assets.ports.${countryId}`,
+    });
+    const detailedPorts = ports.slice().sort((a, b) => effectivePortGoodsCapacity(b.portProfile!) - effectivePortGoodsCapacity(a.portProfile!)).slice(0, 8);
+    for (const asset of detailedPorts) {
+      const profile = asset.portProfile!;
+      facts.push({
+        id: `${prefix}-port-${asset.id.replace(/[^a-z0-9]+/gi, '-')}`, label: `${labelPrefix}${asset.name}`,
+        value: `${profile.classification} · marchandises ${profile.goodsCapacity}/10 (plafond ${profile.infrastructureCapacity}/10) · desserte ${profile.nationalReach}/10 · gouvernance ${profile.governanceRisk}/10 · friction ${profile.laborFriction}/5 · ${profile.capabilities.join(', ')} · état ${profile.operationalState}`,
+        confidence: 86, sourcePath: `territorial.assets.${asset.id}.portProfile`,
+      });
+    }
+  }
   return facts;
 }
 
@@ -185,16 +249,22 @@ function collectStructuralFacts(state: WorldState, countryId: CountryId, prefix:
 function relevantFacts(facts: AdvisorFact[], question: string, questionKind: AdvisorQuestionKind, responseMode: AdvisorResponseMode): AdvisorFact[] {
   const normalized = question.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('fr');
   const military = /(armee|militaire|defense|effectif|force|otan|missile|troupe)/.test(normalized);
-  const economy = /(pib|croissance|economie|dette|chomage|industrie|budget|inflation|commerce|semi|emploi|investissement)/.test(normalized);
+  const economy = /(pib|croissance|economie|dette|chomage|industrie|budget|inflation|commerce|semi|emploi|investissement|relocalis|delocalis|chaine de valeur|intrant|metal critique|composant)/.test(normalized);
+  const retirement = /(retrait|pension|vieill|assurance vieillesse|protection sociale|securite sociale|capitalisation|repartition)/.test(normalized);
   const energy = /(gaz|petrole|energie|energetique|stock|approvisionnement|fournisseur|gisement|importation)/.test(normalized);
   const intelligence = /(renseignement|dgse|dgsi|espion|surveillance|reseau|infiltration|contre.?espionnage|agent)/.test(normalized);
+  const ports = /(port|portuaire|terminal|quai|douane|corruption|detournement|desengorg|marseille|fos|conteneur|hydrocarbure)/.test(normalized);
+  const government = /(capacite.{0,20}(etat|gouvernement)|gouvernance|administration|mise en oeuvre|executer|execution|fiscal|territorial)/.test(normalized);
   const strategic = questionKind !== 'fact' || /(objectif|priorite|vulnerabilite|resilience|interet|crainte|menace|ligne rouge)/.test(normalized);
   const score = (fact: AdvisorFact) => {
     let value = 0;
     if (fact.id.includes('defense') && military) value += 8;
     if ((fact.id.includes('oil') || fact.id.includes('gas')) && energy) value += 8;
-    if ((fact.id.includes('gdp') || fact.id.includes('growth') || fact.id.includes('debt') || fact.id.includes('inflation') || fact.id.includes('unemployment')) && economy) value += 7;
+    if ((fact.id.includes('gdp') || fact.id.includes('growth') || fact.id.includes('debt') || fact.id.includes('inflation') || fact.id.includes('unemployment') || fact.id.includes('productive') || fact.id.includes('value-chain') || fact.id.includes('industrial-dependency') || fact.id.includes('critical-input')) && economy) value += 7;
+    if (fact.id.includes('retirement') && retirement) value += 16;
     if (fact.id.includes('intelligence') && intelligence) value += 9;
+    if (fact.id.includes('port') && ports) value += 12;
+    if (fact.id.includes('government-capacity') && (government || strategic)) value += 10;
     if ((fact.id.includes('industrial') || fact.id.includes('innovation') || fact.id.includes('financial') || fact.id.includes('demographic')) && strategic) value += 6;
     if ((fact.id.includes('top-goal') || fact.id.includes('vulnerability')) && strategic) value += 7;
     if ((fact.id.includes('leader') || fact.id.includes('apparatus')) && strategic) value += 7;
@@ -203,7 +273,7 @@ function relevantFacts(facts: AdvisorFact[], question: string, questionKind: Adv
     if (fact.id === 'relation' || fact.id === 'target-strategy' || fact.id.endsWith('-relation') || fact.id.endsWith('-strategy')) value += 8;
     return value;
   };
-  const limit = responseMode === 'facts_and_options' ? 64 : questionKind === 'diplomacy' ? 48 : questionKind === 'strategy' ? 40 : questionKind === 'fact' ? 24 : 32;
+  const limit = responseMode === 'facts_and_options' ? 84 : questionKind === 'diplomacy' ? 72 : questionKind === 'strategy' ? 72 : questionKind === 'fact' ? 32 : 48;
   const ranked = facts
     .map((fact, index) => ({ fact, score: score(fact), index }))
     .sort((a, b) => b.score - a.score || a.index - b.index)
@@ -217,9 +287,13 @@ function relevantFacts(facts: AdvisorFact[], question: string, questionKind: Adv
   for (const prefix of prefixes) {
     const essentials = facts.filter((fact) => fact.id === `${prefix}-relation` || fact.id === `${prefix}-strategy`
       || fact.id === `${prefix}-gdp` || fact.id === `${prefix}-growth` || fact.id === `${prefix}-gas` || fact.id === `${prefix}-oil`
+      || fact.id === `${prefix}-gas-balance` || fact.id === `${prefix}-oil-balance`
+      || fact.id === `${prefix}-retirement-current-cost` || fact.id === `${prefix}-retirement-2025-cost` || fact.id === `${prefix}-retirement-2025-delta`
       || fact.id === `${prefix}-defense-personnel` || fact.id === `${prefix}-defense-deployments`
       || fact.id === `${prefix}-intelligence-capacity` || fact.id === `${prefix}-intelligence-coverage`);
-    const preferred = energy ? essentials.filter((fact) => fact.id.endsWith('-gas') || fact.id.endsWith('-oil'))
+    essentials.push(...facts.filter((fact) => fact.id === `${prefix}-government-capacity`));
+    const preferred = retirement ? essentials.filter((fact) => fact.id.includes('-retirement-'))
+      : energy ? essentials.filter((fact) => fact.id.endsWith('-gas') || fact.id.endsWith('-oil'))
       : economy ? essentials.filter((fact) => fact.id.endsWith('-gdp') || fact.id.endsWith('-growth'))
       : military ? essentials.filter((fact) => fact.id.endsWith('-defense-personnel') || fact.id.endsWith('-defense-deployments'))
         : intelligence ? essentials.filter((fact) => fact.id.endsWith('-intelligence-capacity') || fact.id.endsWith('-intelligence-coverage')) : essentials;
@@ -248,7 +322,7 @@ function collectFacts(state: WorldState, focusCountryId?: CountryId, question = 
       id: 'date', label: 'Date de situation', value: state.currentDate, confidence: 100,
       sourcePath: 'currentDate',
     },
-    { id: 'budget', label: 'Marge budgétaire opérationnelle', value: `${player.metrics.budget.toFixed(1)} unités budgétaires ORDO`, confidence: 100, sourcePath: `countries.${player.id}.metrics.budget` },
+    { id: 'budget', label: 'Marge discrétionnaire', value: `${player.fiscal.discretionaryMargin.toFixed(1)} crédits de jeu`, confidence: 100, sourcePath: `countries.${player.id}.fiscal.discretionaryMargin` },
   ];
   const playerFacts = collectCountryFacts(state, player.id, 'player');
   facts.push(...playerFacts, ...collectStructuralFacts(state, player.id, 'player'));
@@ -353,7 +427,7 @@ function industrialPlan(state: WorldState): StrategicPlan | null {
     title: `Consolider la filière ${sector.sector.replaceAll('_', ' ')}`,
     intent: 'Transformer une vulnérabilité documentée en programme industriel borné et vérifiable.',
     rationale: `La dépendance extérieure atteint ${sector.foreignDependency}/100, pour une santé industrielle de ${sector.health}/100. Un programme de deux ans protège les compétences sans simuler chaque intrant.`,
-    factsUsed: [`Dépendance : ${sector.foreignDependency}/100`, `Santé : ${sector.health}/100`, `Technologie : ${sector.technology}/100`],
+    factsUsed: [`Dépendance : ${sector.foreignDependency}/100`, `Santé : ${sector.health}/100`, `Niveau technique : ${sector.technologyTier ?? Math.max(1, Math.ceil(sector.technology / 10))}/10`],
     measures: [
       { actor: 'Administration économique', action: 'Cartographier trois dépendances bloquantes et contractualiser les capacités critiques', target: sector.sector, deadline: 'Sous 3 mois' },
       { actor: 'Gouvernement', action: 'Conditionner les aides à des jalons de capacité et de technologie', target: 'Industriels du secteur', deadline: 'Au prochain budget' },
@@ -437,7 +511,7 @@ export function answerAdvisorQuestion(
   const focus = focusCountryId ? state.countries[focusCountryId]?.name : interpretation.targetLabel;
   const resourceLabel = interpretation.resource === 'gas' ? 'gaz' : interpretation.resource === 'oil' ? 'pétrole' : 'énergie';
   const energySynthesis = interpretation.targetStatus === 'unmodeled'
-    ? `${interpretation.targetLabel} a bien été identifié, mais ses capacités ne sont pas encore présentes dans le monde simulé. ORDO ne fabrique donc pas de contrat fictif.`
+    ? `${interpretation.targetLabel} a bien été identifié, mais ses capacités ne sont pas encore présentes dans le monde simulé. Le moteur ne fabrique donc pas de contrat fictif.`
     : interpretation.targetStatus === 'modeled' && plans.length === 0
       ? `${focus} est bien identifié, mais aucune capacité exportatrice de ${resourceLabel} compatible n’est actuellement disponible dans le registre physique.`
       : interpretation.targetStatus === 'unspecified'

@@ -1,7 +1,7 @@
 import type { CountryId } from './types';
 
 /**
- * Observations macroéconomiques brutes, séparées de la calibration ORDO.
+ * Observations macroéconomiques brutes, séparées de la calibration ÉTAT-NATION.
  *
  * Une valeur présente ici est une série internationale comparable. Les taux
  * budgétaires, financiers et les indices de produit restent, eux, des
@@ -47,7 +47,7 @@ export const americasWdi2000: Record<'USA' | 'CAN' | 'MEX' | 'BRA', MacroObserva
 };
 
 /**
- * Deuxième lot normalisé : noyau européen ORDO. Les valeurs proviennent des
+ * Deuxième lot normalisé : noyau européen ÉTAT-NATION. Les valeurs proviennent des
  * mêmes indicateurs WDI et de la même année que le lot américain ; les unités
  * sont déjà converties en milliards de dollars et millions d'habitants pour
  * rester directement compatibles avec le moteur macro.
@@ -65,9 +65,9 @@ export const europeWdi2000: Record<'FRA' | 'DEU' | 'ITA' | 'ESP' | 'POL' | 'GBR'
 };
 
 /**
- * Troisième lot normalisé : Afrique et Moyen-Orient du noyau ORDO. Le WDI ne
+ * Troisième lot normalisé : Afrique et Moyen-Orient du noyau ÉTAT-NATION. Le WDI ne
  * publie pas trois séries 2000 pour le Nigeria (investissement, exportations,
- * importations) ; ces trois champs conservent donc une calibration ORDO
+ * importations) ; ces trois champs conservent donc une calibration ÉTAT-NATION
  * explicite, tandis que les autres indicateurs restent observés dans le WDI.
  */
 export const africaMiddleEastWdi2000: Record<'ZAF' | 'DZA' | 'EGY' | 'MLI' | 'NGA' | 'IRN' | 'SAU' | 'TUR', MacroObservation2000> = {
@@ -82,7 +82,7 @@ export const africaMiddleEastWdi2000: Record<'ZAF' | 'DZA' | 'EGY' | 'MLI' | 'NG
 };
 
 /**
- * Quatrième lot normalisé : Asie–Pacifique du noyau ORDO. Les valeurs sont
+ * Quatrième lot normalisé : Asie–Pacifique du noyau ÉTAT-NATION. Les valeurs sont
  * les mêmes séries WDI 2000 que les lots précédents, converties dans les
  * unités attendues par le moteur (milliards de dollars et millions
  * d'habitants). La Corée du Nord reste sur sa fiche de scénario : le WDI ne
@@ -103,7 +103,7 @@ export const asiaPacificWdi2000: Record<'RUS' | 'CHN' | 'IND' | 'JPN' | 'KOR' | 
 /**
  * Dernier lot du noyau de 37 : Pays-Bas, Pakistan, Israël, Libye et Niger.
  * La part industrielle libyenne n'est pas publiée par le WDI en 2000 et
- * conserve donc la calibration de scénario déjà utilisée par ORDO ; Taïwan
+ * conserve donc la calibration de scénario déjà utilisée par ÉTAT-NATION ; Taïwan
  * et la Corée du Nord restent également sur leurs fiches de scénario, faute
  * de série WDI complète et comparable.
  */
@@ -119,7 +119,7 @@ export const remainingCoreWdi2000: Record<'NLD' | 'PAK' | 'ISR' | 'LBY' | 'NER',
  * Observation partielle : le WDI publie population, croissance démographique
  * et chômage pour la Corée du Nord, mais pas de PIB ni de comptes extérieurs
  * comparables. Les autres variables restent volontairement sur l'archétype
- * ORDO afin d'éviter de transformer des estimations en faux chiffres précis.
+ * ÉTAT-NATION afin d'éviter de transformer des estimations en faux chiffres précis.
  */
 export const partialWdi2000: Record<'PRK', PartialMacroObservation2000> = {
   PRK: { populationMillions: 23.665910, populationGrowthAnnualPct: 0.714, unemploymentPct: 3.653 },
@@ -129,7 +129,7 @@ export const wdiPartiallyObservedIndicatorCodes: Record<string, string[]> = {
   PRK: ['SP.POP.TOTL', 'SP.POP.GROW', 'SL.UEM.TOTL.ZS'],
 };
 
-/** Séries WDI absentes en 2000 et remplacées par une calibration ORDO. */
+/** Séries WDI absentes en 2000 et remplacées par une calibration ÉTAT-NATION. */
 export const wdiCalibratedIndicatorCodes: Record<string, string[]> = {
   NGA: ['NE.GDI.FTOT.ZS', 'NE.EXP.GNFS.ZS', 'NE.IMP.GNFS.ZS'],
   LBY: ['NV.IND.TOTL.ZS'],

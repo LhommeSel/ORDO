@@ -81,6 +81,13 @@ export function createWarZoneForDossier(state: WorldState, dossier: StrategicDos
   };
 }
 
+/** Une tension, même majeure, n'est pas encore un front. Le seuil doit être
+ * explicitement confirmé par une action du joueur ou un événement équivalent
+ * du moteur ; cela évite que « préparer une invasion » crée une guerre. */
+export function conflictHasReachedWarThreshold(dossier: StrategicDossier) {
+  return dossier.conflictState?.stage === 'war' && dossier.conflictState.warThresholdConfirmed === true;
+}
+
 export function warZonesForCountry(state: WorldState, countryId: CountryId): WarZone[] {
   return Object.values(state.warZones ?? {}).filter((zone) => zone.countryIds.includes(countryId));
 }
@@ -121,7 +128,7 @@ function impactEffects(zone: WarZone): WorldEffect[] {
   return effects;
 }
 
-function restorationEffects(zone: WarZone): WorldEffect[] {
+export function restorationEffectsForWarZone(zone: WarZone): WorldEffect[] {
   const effects: WorldEffect[] = [];
   for (const [countryId, value] of Object.entries(zone.baselineGrowthAnnualPct)) {
     const inflation = zone.baselineInflationAnnualPct[countryId as CountryId];
@@ -158,7 +165,7 @@ export function advanceWarZones(state: WorldState): WorldState {
   const dossiers = Object.values(state.strategicDossiers ?? {});
 
   for (const dossier of dossiers) {
-    if (dossier.kind !== 'conflict' || dossier.status === 'emerging') continue;
+    if (dossier.kind !== 'conflict' || dossier.status === 'emerging' || !conflictHasReachedWarThreshold(dossier)) continue;
     const id = `war-zone-${dossier.id}`;
     if (!next.warZones?.[id]) {
       const zone = createWarZoneForDossier(next, dossier);
@@ -183,7 +190,7 @@ export function advanceWarZones(state: WorldState): WorldState {
         intent: `Clore la zone de guerre « ${zone.name} »`,
         effects: [
           { kind: 'war_zone_patch', warZoneId: zone.id, patch: { status: 'resolved', updatedAt: next.currentDate }, reason: 'Le dossier de conflit associé est résolu.', visibility: 'public' },
-          ...restorationEffects(zone),
+          ...restorationEffectsForWarZone(zone),
         ],
       });
       continue;

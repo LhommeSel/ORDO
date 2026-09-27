@@ -30,6 +30,18 @@ import { createNationalReforms2000 } from './reforms';
 import { createMilitaryBases2000, createMilitaryTheaters2000 } from './military-theaters';
 import { initializeTerritorialAssetOperations, territorialEnergyNodeAdditions } from './territorial-assets';
 import { createIntelligenceServices2000 } from './intelligence-services';
+import { createNationalPolitics2000 } from './national-politics';
+import { capacitiesFromBaseline, allMajorCapacityBaselines, france2000CapacityBaseline, topTenCapacityBaselines } from './capacity-baselines';
+import { fiscalStateForCredits } from './fiscal';
+import { createInitialWorldDossiers2000 } from './world-dossier-arcs';
+import { createInitialWorldEvents2000 } from './world-start-pack-2000';
+import { createInternationalOrganizations2000 } from './international-organizations';
+import { applyMajorCountryPack2000 } from './major-country-pack-2000';
+import { applySecondaryCountryPack2000 } from './secondary-country-pack-2000';
+import { applyGlobalCoveragePack2000 } from './global-coverage-pack-2000';
+import { initializeStructuralModifiers } from './structural-modifiers';
+import { createGoldStocks2000 } from './gold-stocks-2000';
+import { createResourceState2000, goldStocksFromResourceState } from './resource-data-2000';
 
 const capacities = (values: Partial<Record<keyof CapacityState, [number, number]>> = {}): CapacityState => ({
   government: { maximum: values.government?.[0] ?? 55, committed: values.government?.[1] ?? 25 },
@@ -40,18 +52,19 @@ const capacities = (values: Partial<Record<keyof CapacityState, [number, number]
   defense: { maximum: values.defense?.[0] ?? 55, committed: values.defense?.[1] ?? 30 },
 });
 
-function country(input: Omit<CountryState, 'metrics' | 'capacities'> & {
+function country(input: Omit<CountryState, 'metrics' | 'capacities' | 'fiscal'> & {
   metrics?: Partial<CountryState['metrics']>;
   capacities?: CapacityState;
+  fiscal?: CountryState['fiscal'];
 }): CountryState {
   return {
     ...input,
     metrics: {
-      budget: input.metrics?.budget ?? 100,
       industry: input.metrics?.industry ?? 100,
       stability: input.metrics?.stability ?? 60,
       security: input.metrics?.security ?? 55,
     },
+    fiscal: input.fiscal ?? fiscalStateForCredits(100),
     capacities: input.capacities ?? capacities(),
   };
 }
@@ -59,12 +72,14 @@ function country(input: Omit<CountryState, 'metrics' | 'capacities'> & {
 const countries: Record<string, CountryState> = {
   FRA: country({
     id: 'FRA', name: 'France', flag: '🇫🇷', weight: 82, statisticalReliability: 92,
-    metrics: { budget: 246, industry: 100, stability: 68, security: 54 },
-    capacities: capacities({ government: [68, 31], administration: [72, 42], diplomacy: [64, 36], economy: [62, 39], intelligence: [55, 30], defense: [70, 43] }),
+    metrics: { industry: 100, stability: 68, security: 54 },
+    fiscal: fiscalStateForCredits(246, { annualRevenuePctGDP: 49.5, annualSpendingPctGDP: 51, fiscalBalancePctGDP: -1.5, publicDebtPctGDP: 58, annualDiscretionaryAllocation: 210, discretionaryMargin: 210, emergencyReserve: 36 }),
+    capacityBaseline: france2000CapacityBaseline,
+    capacities: capacitiesFromBaseline(france2000CapacityBaseline),
     politics: {
       regime: 'République semi-présidentielle en cohabitation', executive: 'Jacques Chirac',
       headOfGovernment: 'Lionel Jospin', governmentLabel: 'Gouvernement de la gauche plurielle',
-      legislatureSeats: 577, governingSeats: 319, publicApproval: 57, administrativeCompliance: 78,
+      legislatureSeats: 577, governingSeats: 318, publicApproval: 57, administrativeCompliance: 78,
       doctrine: { economic: -18, social: 28, sovereignty: 18, security: 8 },
     },
     strategy: {
@@ -80,7 +95,8 @@ const countries: Record<string, CountryState> = {
   DEU: country({
     id: 'DEU', name: 'Allemagne', flag: '🇩🇪', weight: 84, statisticalReliability: 94,
     metrics: { industry: 112, stability: 72, security: 62 },
-    capacities: capacities({ government: [72, 34], administration: [78, 40], diplomacy: [66, 33], economy: [78, 45], intelligence: [58, 28], defense: [66, 36] }),
+    capacityBaseline: topTenCapacityBaselines.DEU,
+    capacities: capacitiesFromBaseline(topTenCapacityBaselines.DEU),
     politics: {
       regime: 'République fédérale parlementaire', executive: 'Johannes Rau', headOfGovernment: 'Gerhard Schröder',
       governmentLabel: 'Coalition SPD–Verts', legislatureSeats: 669, governingSeats: 345,
@@ -95,6 +111,8 @@ const countries: Record<string, CountryState> = {
   }),
   ITA: country({
     id: 'ITA', name: 'Italie', flag: '🇮🇹', weight: 68, statisticalReliability: 86,
+    capacityBaseline: allMajorCapacityBaselines.ITA,
+    capacities: capacitiesFromBaseline(allMajorCapacityBaselines.ITA),
     politics: {
       regime: 'République parlementaire', executive: 'Carlo Azeglio Ciampi', headOfGovernment: 'Massimo D’Alema',
       governmentLabel: 'Coalition de centre gauche', legislatureSeats: 630, governingSeats: 330,
@@ -109,6 +127,8 @@ const countries: Record<string, CountryState> = {
   }),
   POL: country({
     id: 'POL', name: 'Pologne', flag: '🇵🇱', weight: 54, statisticalReliability: 78,
+    capacityBaseline: allMajorCapacityBaselines.POL,
+    capacities: capacitiesFromBaseline(allMajorCapacityBaselines.POL),
     politics: {
       regime: 'République parlementaire', executive: 'Aleksander Kwaśniewski', headOfGovernment: 'Jerzy Buzek',
       governmentLabel: 'Coalition AWS–UW', legislatureSeats: 460, governingSeats: 261,
@@ -124,7 +144,8 @@ const countries: Record<string, CountryState> = {
   USA: country({
     id: 'USA', name: 'États-Unis', flag: '🇺🇸', weight: 100, statisticalReliability: 91,
     metrics: { industry: 128, stability: 74, security: 70 },
-    capacities: capacities({ government: [92, 51], administration: [94, 54], diplomacy: [100, 58], economy: [100, 61], intelligence: [100, 65], defense: [100, 67] }),
+    capacityBaseline: topTenCapacityBaselines.USA,
+    capacities: capacitiesFromBaseline(topTenCapacityBaselines.USA),
     politics: {
       regime: 'République fédérale présidentielle', executive: 'Bill Clinton', headOfGovernment: 'Bill Clinton',
       governmentLabel: 'Administration Clinton', legislatureSeats: 535, governingSeats: 260,
@@ -139,6 +160,8 @@ const countries: Record<string, CountryState> = {
   }),
   GBR: country({
     id: 'GBR', name: 'Royaume-Uni', flag: '🇬🇧', weight: 76, statisticalReliability: 92,
+    capacityBaseline: topTenCapacityBaselines.GBR,
+    capacities: capacitiesFromBaseline(topTenCapacityBaselines.GBR),
     politics: {
       regime: 'Monarchie parlementaire', executive: 'Élisabeth II', headOfGovernment: 'Tony Blair',
       governmentLabel: 'Gouvernement travailliste', legislatureSeats: 659, governingSeats: 418,
@@ -154,6 +177,8 @@ const countries: Record<string, CountryState> = {
   RUS: country({
     id: 'RUS', name: 'Russie', flag: '🇷🇺', weight: 80, statisticalReliability: 55,
     metrics: { industry: 74, stability: 45, security: 64 },
+    capacityBaseline: topTenCapacityBaselines.RUS,
+    capacities: capacitiesFromBaseline(topTenCapacityBaselines.RUS),
     politics: {
       regime: 'République fédérale présidentielle en transition', executive: 'Vladimir Poutine', headOfGovernment: 'Vladimir Poutine',
       governmentLabel: 'Présidence par intérim', legislatureSeats: 450, governingSeats: 170,
@@ -169,7 +194,8 @@ const countries: Record<string, CountryState> = {
   CHN: country({
     id: 'CHN', name: 'Chine', flag: '🇨🇳', weight: 86, statisticalReliability: 52,
     metrics: { industry: 92, stability: 70, security: 72 },
-    capacities: capacities({ government: [90, 46], administration: [82, 48], diplomacy: [72, 34], economy: [88, 57], intelligence: [78, 45], defense: [84, 49] }),
+    capacityBaseline: topTenCapacityBaselines.CHN,
+    capacities: capacitiesFromBaseline(topTenCapacityBaselines.CHN),
     politics: {
       regime: 'République populaire à parti unique', executive: 'Jiang Zemin', headOfGovernment: 'Zhu Rongji',
       governmentLabel: 'Direction du Parti communiste chinois', legislatureSeats: 2979, governingSeats: 2979,
@@ -184,6 +210,8 @@ const countries: Record<string, CountryState> = {
   }),
   NOR: country({
     id: 'NOR', name: 'Norvège', flag: '🇳🇴', weight: 42, statisticalReliability: 96,
+    capacityBaseline: allMajorCapacityBaselines.NOR,
+    capacities: capacitiesFromBaseline(allMajorCapacityBaselines.NOR),
     politics: {
       regime: 'Monarchie parlementaire', executive: 'Harald V', headOfGovernment: 'Kjell Magne Bondevik',
       governmentLabel: 'Coalition centriste', legislatureSeats: 165, governingSeats: 42,
@@ -194,6 +222,8 @@ const countries: Record<string, CountryState> = {
   }),
   DZA: country({
     id: 'DZA', name: 'Algérie', flag: '🇩🇿', weight: 46, statisticalReliability: 56,
+    capacityBaseline: allMajorCapacityBaselines.DZA,
+    capacities: capacitiesFromBaseline(allMajorCapacityBaselines.DZA),
     politics: {
       regime: 'République présidentielle', executive: 'Abdelaziz Bouteflika', headOfGovernment: 'Ahmed Benbitour',
       governmentLabel: 'Présidence Bouteflika', legislatureSeats: 380, governingSeats: 240,
@@ -204,6 +234,8 @@ const countries: Record<string, CountryState> = {
   }),
   LBY: country({
     id: 'LBY', name: 'Libye', flag: '🇱🇾', weight: 38, statisticalReliability: 28,
+    capacityBaseline: allMajorCapacityBaselines.LBY,
+    capacities: capacitiesFromBaseline(allMajorCapacityBaselines.LBY),
     politics: {
       regime: 'Jamahiriya autoritaire', executive: 'Mouammar Kadhafi', headOfGovernment: 'Mouammar Kadhafi',
       governmentLabel: 'Direction révolutionnaire', legislatureSeats: 1000, governingSeats: 1000,
@@ -214,6 +246,8 @@ const countries: Record<string, CountryState> = {
   }),
   SAU: country({
     id: 'SAU', name: 'Arabie saoudite', flag: '🇸🇦', weight: 62, statisticalReliability: 48,
+    capacityBaseline: allMajorCapacityBaselines.SAU,
+    capacities: capacitiesFromBaseline(allMajorCapacityBaselines.SAU),
     politics: {
       regime: 'Monarchie absolue', executive: 'Fahd ben Abdelaziz Al Saoud', headOfGovernment: 'Abdallah ben Abdelaziz Al Saoud',
       governmentLabel: 'Maison Al Saoud', legislatureSeats: 90, governingSeats: 90,
@@ -224,8 +258,9 @@ const countries: Record<string, CountryState> = {
   }),
   BRA: country({
     id: 'BRA', name: 'Brésil', flag: '🇧🇷', weight: 70, statisticalReliability: 78,
-    metrics: { budget: 132, industry: 82, stability: 63, security: 57 },
-    capacities: capacities({ government: [70, 37], administration: [68, 40], diplomacy: [70, 34], economy: [72, 48], intelligence: [58, 30], defense: [66, 36] }),
+    metrics: { industry: 82, stability: 63, security: 57 }, fiscal: fiscalStateForCredits(132),
+    capacityBaseline: topTenCapacityBaselines.BRA,
+    capacities: capacitiesFromBaseline(topTenCapacityBaselines.BRA),
     politics: {
       regime: 'République fédérale présidentielle', executive: 'Fernando Henrique Cardoso', headOfGovernment: 'Fernando Henrique Cardoso',
       governmentLabel: 'Coalition présidentielle autour du PSDB', legislatureSeats: 594, governingSeats: 340,
@@ -243,8 +278,9 @@ const countries: Record<string, CountryState> = {
   }),
   ZAF: country({
     id: 'ZAF', name: 'Afrique du Sud', flag: '🇿🇦', weight: 55, statisticalReliability: 78,
-    metrics: { budget: 74, industry: 64, stability: 58, security: 52 },
-    capacities: capacities({ government: [60, 33], administration: [62, 36], diplomacy: [65, 29], economy: [62, 40], intelligence: [48, 23], defense: [53, 30] }),
+    metrics: { industry: 64, stability: 58, security: 52 }, fiscal: fiscalStateForCredits(74),
+    capacityBaseline: allMajorCapacityBaselines.ZAF,
+    capacities: capacitiesFromBaseline(allMajorCapacityBaselines.ZAF),
     politics: {
       regime: 'République parlementaire constitutionnelle', executive: 'Thabo Mbeki', headOfGovernment: 'Thabo Mbeki',
       governmentLabel: 'Gouvernement de l’ANC', legislatureSeats: 400, governingSeats: 266,
@@ -262,8 +298,9 @@ const countries: Record<string, CountryState> = {
   }),
   AUS: country({
     id: 'AUS', name: 'Australie', flag: '🇦🇺', weight: 60, statisticalReliability: 94,
-    metrics: { budget: 118, industry: 66, stability: 76, security: 64 },
-    capacities: capacities({ government: [66, 30], administration: [74, 35], diplomacy: [72, 32], economy: [70, 37], intelligence: [62, 29], defense: [65, 33] }),
+    metrics: { industry: 66, stability: 76, security: 64 }, fiscal: fiscalStateForCredits(118),
+    capacityBaseline: allMajorCapacityBaselines.AUS,
+    capacities: capacitiesFromBaseline(allMajorCapacityBaselines.AUS),
     politics: {
       regime: 'Monarchie parlementaire fédérale', executive: 'Élisabeth II', headOfGovernment: 'John Howard',
       governmentLabel: 'Coalition libérale–nationale', legislatureSeats: 150, governingSeats: 80,
@@ -281,8 +318,9 @@ const countries: Record<string, CountryState> = {
   }),
   IND: country({
     id: 'IND', name: 'Inde', flag: '🇮🇳', weight: 78, statisticalReliability: 72,
-    metrics: { budget: 96, industry: 76, stability: 62, security: 72 },
-    capacities: capacities({ government: [76, 42], administration: [64, 43], diplomacy: [78, 39], economy: [74, 49], intelligence: [68, 36], defense: [78, 46] }),
+    metrics: { industry: 76, stability: 62, security: 72 }, fiscal: fiscalStateForCredits(96),
+    capacityBaseline: topTenCapacityBaselines.IND,
+    capacities: capacitiesFromBaseline(topTenCapacityBaselines.IND),
     politics: {
       regime: 'République fédérale parlementaire', executive: 'K. R. Narayanan', headOfGovernment: 'Atal Bihari Vajpayee',
       governmentLabel: 'Coalition NDA', legislatureSeats: 543, governingSeats: 296,
@@ -300,8 +338,9 @@ const countries: Record<string, CountryState> = {
   }),
   JPN: country({
     id: 'JPN', name: 'Japon', flag: '🇯🇵', weight: 88, statisticalReliability: 95,
-    metrics: { budget: 226, industry: 118, stability: 70, security: 68 },
-    capacities: capacities({ government: [80, 43], administration: [88, 49], diplomacy: [82, 40], economy: [90, 55], intelligence: [68, 35], defense: [70, 38] }),
+    metrics: { industry: 118, stability: 70, security: 68 }, fiscal: fiscalStateForCredits(226),
+    capacityBaseline: topTenCapacityBaselines.JPN,
+    capacities: capacitiesFromBaseline(topTenCapacityBaselines.JPN),
     politics: {
       regime: 'Monarchie constitutionnelle parlementaire', executive: 'Akihito', headOfGovernment: 'Yoshiro Mori',
       governmentLabel: 'Coalition PLD–Kōmeitō–Conservateur', legislatureSeats: 480, governingSeats: 271,
@@ -319,8 +358,9 @@ const countries: Record<string, CountryState> = {
   }),
   TUR: country({
     id: 'TUR', name: 'Turquie', flag: '🇹🇷', weight: 64, statisticalReliability: 68,
-    metrics: { budget: 78, industry: 70, stability: 49, security: 75 },
-    capacities: capacities({ government: [66, 42], administration: [61, 42], diplomacy: [72, 39], economy: [64, 50], intelligence: [65, 41], defense: [78, 50] }),
+    metrics: { industry: 70, stability: 49, security: 75 }, fiscal: fiscalStateForCredits(78),
+    capacityBaseline: allMajorCapacityBaselines.TUR,
+    capacities: capacitiesFromBaseline(allMajorCapacityBaselines.TUR),
     politics: {
       regime: 'République parlementaire', executive: 'Süleyman Demirel', headOfGovernment: 'Bülent Ecevit',
       governmentLabel: 'Coalition DSP–MHP–ANAP', legislatureSeats: 550, governingSeats: 351,
@@ -333,13 +373,14 @@ const countries: Record<string, CountryState> = {
         { id: 'tur-eu-candidacy', label: 'Transformer la candidature européenne en levier stratégique', priority: 88, progress: 48, status: 'active' },
       ],
       vulnerabilities: ['Inflation extrême', 'Dette de court terme', 'Question kurde', 'Fragilité bancaire'],
-      redLines: ['Partition territoriale', 'Isolement de l’OTAN'], partners: ['USA'], rivals: [], lastReviewDate: '2000-01-01',
+      redLines: ['Partition territoriale', 'Isolement de l’OTAN', 'Recul unilatéral en mer Égée'], partners: ['USA'], rivals: ['GRC'], lastReviewDate: '2000-01-01',
     },
   }),
   VNM: country({
     id: 'VNM', name: 'Vietnam', flag: '🇻🇳', weight: 48, statisticalReliability: 58,
-    metrics: { budget: 42, industry: 54, stability: 61, security: 58 },
-    capacities: capacities({ government: [62, 35], administration: [60, 37], diplomacy: [58, 27], economy: [61, 42], intelligence: [52, 28], defense: [62, 36] }),
+    metrics: { industry: 54, stability: 61, security: 58 }, fiscal: fiscalStateForCredits(42),
+    capacityBaseline: allMajorCapacityBaselines.VNM,
+    capacities: capacitiesFromBaseline(allMajorCapacityBaselines.VNM),
     politics: {
       regime: 'République socialiste à parti unique', executive: 'Trần Đức Lương', headOfGovernment: 'Phan Văn Khải',
       governmentLabel: 'Direction du Parti communiste vietnamien', legislatureSeats: 450, governingSeats: 450,
@@ -363,8 +404,9 @@ const allCountries: Record<string, CountryState> = {
   ...createNationalBaselineCountries2000(),
   ESP: country({
     id: 'ESP', name: 'Espagne', flag: '🇪🇸', weight: 70, statisticalReliability: 88,
-    metrics: { budget: 118, industry: 88, stability: 64, security: 55 },
-    capacities: capacities({ government: [70, 35], administration: [68, 38], diplomacy: [68, 34], economy: [72, 42], intelligence: [58, 30], defense: [66, 36] }),
+    metrics: { industry: 88, stability: 64, security: 55 }, fiscal: fiscalStateForCredits(118),
+    capacityBaseline: allMajorCapacityBaselines.ESP,
+    capacities: capacitiesFromBaseline(allMajorCapacityBaselines.ESP),
     politics: {
       regime: 'Monarchie parlementaire', executive: 'Juan Carlos I', headOfGovernment: 'José María Aznar',
       governmentLabel: 'Gouvernement conservateur du Partido Popular', legislatureSeats: 350, governingSeats: 183,
@@ -382,8 +424,9 @@ const allCountries: Record<string, CountryState> = {
   }),
   CAN: country({
     id: 'CAN', name: 'Canada', flag: '🇨🇦', weight: 72, statisticalReliability: 90,
-    metrics: { budget: 128, industry: 90, stability: 77, security: 66 },
-    capacities: capacities({ government: [74, 35], administration: [82, 40], diplomacy: [78, 34], economy: [78, 42], intelligence: [62, 27], defense: [64, 31] }),
+    metrics: { industry: 90, stability: 77, security: 66 }, fiscal: fiscalStateForCredits(128),
+    capacityBaseline: topTenCapacityBaselines.CAN,
+    capacities: capacitiesFromBaseline(topTenCapacityBaselines.CAN),
     politics: {
       regime: 'Monarchie parlementaire fédérale', executive: 'Élisabeth II', headOfGovernment: 'Jean Chrétien',
       governmentLabel: 'Gouvernement libéral majoritaire', legislatureSeats: 301, governingSeats: 172,
@@ -402,8 +445,9 @@ const allCountries: Record<string, CountryState> = {
   }),
   MEX: country({
     id: 'MEX', name: 'Mexique', flag: '🇲🇽', weight: 63, statisticalReliability: 82,
-    metrics: { budget: 124, industry: 78, stability: 57, security: 49 },
-    capacities: capacities({ government: [68, 36], administration: [66, 38], diplomacy: [68, 32], economy: [70, 44], intelligence: [50, 24], defense: [62, 34] }),
+    metrics: { industry: 78, stability: 57, security: 49 }, fiscal: fiscalStateForCredits(124),
+    capacityBaseline: allMajorCapacityBaselines.MEX,
+    capacities: capacitiesFromBaseline(allMajorCapacityBaselines.MEX),
     politics: {
       regime: 'République fédérale présidentielle en ouverture démocratique', executive: 'Ernesto Zedillo', headOfGovernment: 'Ernesto Zedillo',
       governmentLabel: 'PRI en transition électorale', legislatureSeats: 500, governingSeats: 239,
@@ -451,7 +495,10 @@ const currents: Record<string, HistoricalCurrent> = {
 };
 
 const latentProcesses: Record<string, LatentProcess> = {
-  'dotcom-repricing': { id: 'dotcom-repricing', currentId: 'dotcom-exuberance', actorId: 'GLOBAL_MARKETS', objective: 'Réévaluer brutalement les actifs technologiques', progress: 70, capability: 86, secrecy: 10, window: { start: '2000-03-01', end: '2001-12-31' }, possibleOutcomes: ['Correction progressive', 'Krach technologique'], status: 'preparing' },
+  // La tension existe déjà en janvier 2000, mais sa correction n'est pas
+  // encore une décision joueur. Elle peut devenir visible après trois tours,
+  // et au plus tard pendant la première année de partie.
+  'dotcom-repricing': { id: 'dotcom-repricing', currentId: 'dotcom-exuberance', actorId: 'GLOBAL_MARKETS', objective: 'Réévaluer brutalement les actifs technologiques', progress: 92, capability: 86, secrecy: 10, window: { start: '2000-04-01', end: '2001-01-01' }, possibleOutcomes: ['Correction progressive', 'Krach technologique'], status: 'preparing' },
   'lisbon-agenda': { id: 'lisbon-agenda', currentId: 'lisbon-convergence', actorId: 'EU', objective: 'Produire une stratégie économique européenne commune', progress: 58, capability: 72, secrecy: 18, window: { start: '2000-03-01', end: '2000-06-30' }, possibleOutcomes: ['Stratégie ambitieuse', 'Compromis limité'], status: 'preparing' },
   'major-external-operation': { id: 'major-external-operation', currentId: 'transnational-jihadism', actorId: 'AL_QAEDA_NETWORK', objective: 'Organiser une opération extérieure majeure contre les États-Unis', progress: 42, capability: 58, secrecy: 91, window: { start: '2001-01-01', end: '2003-12-31' }, possibleOutcomes: ['Attentat majeur', 'Tentative déjouée', 'Opération retardée'], status: 'preparing' },
 };
@@ -460,9 +507,12 @@ const strategicDossiers: Record<string, StrategicDossier> = {
   'current-dotcom-exuberance': {
     id: 'current-dotcom-exuberance', title: 'Surchauffe des valeurs technologiques', kind: 'economic',
     status: 'active', importance: 'major', actorIds: ['USA', 'FRA', 'DEU', 'GBR'], regionTags: ['Amérique du Nord', 'Europe'],
+    scope: 'player_involved',
     startedAt: '2000-01-01', updatedAt: '2000-01-01', phase: 'Accumulation des vulnérabilités', trend: 'escalating',
     publicSummary: 'Les valorisations technologiques et les flux de capitaux s’éloignent des revenus observables.',
-    followed: false, autoTracked: true, commitments: [],
+    // Le dossier conserve sa continuité causale, mais reste invisible au
+    // joueur tant que la réévaluation des marchés ne s'est pas manifestée.
+    followed: false, autoTracked: false, sleepingAt: '2000-01-01', commitments: [],
     pendingDecisions: ['Déterminer si la France prépare un dispositif de prévention financière.'],
     relatedCurrentIds: ['dotcom-exuberance'], relatedActionIds: [],
     entries: [{ id: 'dotcom-opening', date: '2000-01-01', title: 'Valorisations sous tension', summary: 'L’exposition des marchés occidentaux au secteur technologique devient un sujet stratégique durable.', importance: 'moderate', actorIds: ['USA', 'FRA', 'DEU', 'GBR'], requiresDecision: false, visibility: 'public' }],
@@ -470,6 +520,7 @@ const strategicDossiers: Record<string, StrategicDossier> = {
   'current-lisbon-convergence': {
     id: 'current-lisbon-convergence', title: 'Stratégie économique européenne', kind: 'cooperation',
     status: 'active', importance: 'moderate', actorIds: ['FRA', 'DEU', 'ITA', 'GBR'], regionTags: ['Europe'],
+    scope: 'player_involved',
     startedAt: '2000-01-01', updatedAt: '2000-01-01', phase: 'Préparation de l’agenda commun', trend: 'stable',
     publicSummary: 'Les gouvernements européens cherchent un compromis sur l’économie de la connaissance et l’emploi.',
     followed: false, autoTracked: false, commitments: [], pendingDecisions: [],
@@ -501,7 +552,7 @@ const baselineFlow = (
   id: string, buyerId: string, resource: 'oil' | 'gas', annualVolume: number, route: string, sourceNodeId?: string,
 ): BaselineEnergyFlow => ({
   id, buyerId, resource, annualVolume, route, sourceNodeId,
-  ...(sourceNodeId ? {} : { externalSourceLabel: 'Marché hors périmètre ORDO' }),
+  ...(sourceNodeId ? {} : { externalSourceLabel: 'Marché hors périmètre du monde simulé' }),
   startDate: '2000-01-01', endDate: '2025-12-31',
 });
 
@@ -531,7 +582,10 @@ const baselineEnergyFlows: Record<string, BaselineEnergyFlow> = Object.fromEntri
 const sectors: Record<string, StrategicSectorState> = {
   'FRA-defense': { id: 'FRA-defense', countryId: 'FRA', sector: 'defense', capacity: 82, utilization: 71, workloadMonths: 30, health: 78, foreignDependency: 22, technology: 86, expansionLeadMonths: 30 },
   'FRA-semiconductors': { id: 'FRA-semiconductors', countryId: 'FRA', sector: 'semiconductors', capacity: 48, utilization: 76, workloadMonths: 12, health: 61, foreignDependency: 64, technology: 66, expansionLeadMonths: 42, vulnerability: 'Dépendance aux procédés les plus avancés' },
-  'FRA-nuclear': { id: 'FRA-nuclear', countryId: 'FRA', sector: 'nuclear', capacity: 92, utilization: 68, workloadMonths: 54, health: 88, foreignDependency: 18, technology: 91, expansionLeadMonths: 72 },
+  // La France dispose déjà d’une filière exceptionnellement solide en 2000,
+  // mais elle n’a ni génération IV industrielle ni fusion : capacité et santé
+  // élevées ne doivent pas épuiser son horizon technologique de trente ans.
+  'FRA-nuclear': { id: 'FRA-nuclear', countryId: 'FRA', sector: 'nuclear', capacity: 92, utilization: 68, workloadMonths: 54, health: 88, foreignDependency: 18, technology: 55, expansionLeadMonths: 72 },
   'DEU-machine-tools': { id: 'DEU-machine-tools', countryId: 'DEU', sector: 'machine_tools', capacity: 94, utilization: 84, workloadMonths: 18, health: 91, foreignDependency: 24, technology: 92, expansionLeadMonths: 24 },
   'USA-semiconductors': { id: 'USA-semiconductors', countryId: 'USA', sector: 'semiconductors', capacity: 100, utilization: 86, workloadMonths: 14, health: 94, foreignDependency: 28, technology: 100, expansionLeadMonths: 30 },
   'CHN-semiconductors': { id: 'CHN-semiconductors', countryId: 'CHN', sector: 'semiconductors', capacity: 32, utilization: 91, workloadMonths: 22, health: 64, foreignDependency: 82, technology: 48, expansionLeadMonths: 48, vulnerability: 'Dépendance aux équipements et conceptions étrangers' },
@@ -576,13 +630,29 @@ export function createWorld2000(requestedPlayerCountryId: CountryId = 'FRA'): Wo
     createTerritorialState({ countries: allCountries, macroEconomies }),
     energyNodesWithAssets,
   );
-  const dossiers = structuredClone(strategicDossiers);
+  const dossiers = {
+    ...structuredClone(strategicDossiers),
+    ...createInitialWorldDossiers2000(),
+  };
+  const historicalAnchors = createHistoricalAnchors2000();
+  // L'intégration chinoise est déjà une tendance lisible au 1er janvier 2000.
+  // Elle informe le joueur, sans lui imposer d'arbitrage avant qu'un fait
+  // nouveau ne crée une décision concrète.
+  const chinaIntegration = historicalAnchors['china-wto-integration'];
+  historicalAnchors[chinaIntegration.id] = {
+    ...chinaIntegration,
+    status: 'active',
+    proposedAt: '2000-01-01',
+    activatedAt: '2000-01-01',
+  };
   const dotcom = dossiers['current-dotcom-exuberance'];
   const playerDirectlyExposed = dotcom.actorIds.includes(playerCountryId);
   dotcom.pendingDecisions = playerDirectlyExposed
     ? [`Déterminer si ${playerCountry.name} prépare un dispositif de prévention financière.`]
     : [];
-  return {
+  const initialGoldStocks = createGoldStocks2000(allCountries);
+  const initialResources = createResourceState2000(allCountries, territorialWithOperations.territorial, '2000-01-01', initialGoldStocks);
+  const baseWorld: WorldState = {
     version: 1,
     territorial: territorialWithOperations.territorial,
     scenarioId: `${playerCountryId.toLowerCase()}-2000-01`,
@@ -596,6 +666,10 @@ export function createWorld2000(requestedPlayerCountryId: CountryId = 'FRA'): Wo
       'FRA:ITA': { from: 'FRA', to: 'ITA', relation: 57, trust: 53, tradeIntensity: 69, securityAlignment: 54, memories: [] },
       'FRA:POL': { from: 'FRA', to: 'POL', relation: 44, trust: 39, tradeIntensity: 34, securityAlignment: 41, memories: [] },
       'FRA:USA': { from: 'FRA', to: 'USA', relation: 73, trust: 66, tradeIntensity: 74, securityAlignment: 81, memories: [] },
+      // Rivalité presque hostile, mais pas guerre : l'appartenance commune à
+      // l'OTAN maintient encore un canal de sécurité et de désescalade.
+      'TUR:GRC': { from: 'TUR', to: 'GRC', relation: 18, trust: 14, tradeIntensity: 36, securityAlignment: 42, memories: ['Contentieux égéens', 'Crise d’Imia/Kardak', 'Rivalité autour de Chypre'] },
+      'GRC:TUR': { from: 'GRC', to: 'TUR', relation: 18, trust: 14, tradeIntensity: 36, securityAlignment: 42, memories: ['Contentieux égéens', 'Crise d’Imia/Kardak', 'Rivalité autour de Chypre'] },
     },
     intelligence: { 'FRA:DEU': 0, 'FRA:ITA': 0, 'FRA:POL': 0, 'FRA:USA': 0, 'FRA:RUS': 0, 'FRA:CHN': 0 },
     intelligenceServices: createIntelligenceServices2000(allCountries),
@@ -605,8 +679,9 @@ export function createWorld2000(requestedPlayerCountryId: CountryId = 'FRA'): Wo
     treaties: {
       'industrial-protocol': { id: 'industrial-protocol', parties: ['FRA', 'DEU'], label: 'Protocole industriel', status: 'draft', monthlyEffects: [{ countryId: 'FRA', metric: 'industry', delta: 0.6 }] },
     },
+    internationalOrganizations: createInternationalOrganizations2000(allCountries, playerCountryId),
     historicalCurrents: structuredClone(currents),
-    historicalAnchors: createHistoricalAnchors2000(),
+    historicalAnchors,
     latentProcesses: structuredClone(latentProcesses),
     energyNodes: territorialWithOperations.energyNodes,
     energyContracts: {},
@@ -636,6 +711,8 @@ export function createWorld2000(requestedPlayerCountryId: CountryId = 'FRA'): Wo
       VNM: { countryId: 'VNM', annualDemand: { oil: 8, gas: 6 }, domesticProduction: { oil: 17, gas: 6 }, legacyImports: { oil: 0, gas: 0 }, strategicStocks: { oil: 1, gas: 0.4 }, storageCapacity: { oil: 3, gas: 1 }, desiredCoverageMonths: { oil: 1, gas: 0.5 } },
       ...Object.fromEntries(Object.values(allCountries).filter((country) => !['FRA', 'DEU', 'ITA', 'POL', 'GBR', 'USA', 'CAN', 'MEX', 'RUS', 'CHN', 'NOR', 'DZA', 'LBY', 'SAU', 'BRA', 'ZAF', 'AUS', 'IND', 'JPN', 'TUR', 'VNM'].includes(country.id)).map((country) => [country.id, defaultCountryEnergy2000(country)])),
     },
+    goldStocks: goldStocksFromResourceState(initialResources),
+    resources: initialResources,
     macroEconomies,
     worldEconomy: structuredClone(worldEconomy2000),
     tradeFlows: createTradeFlows2000(),
@@ -643,6 +720,7 @@ export function createWorld2000(requestedPlayerCountryId: CountryId = 'FRA'): Wo
     leadership: createLeadership2000(allCountries),
     politicalCycles: createPoliticalCycles2000(allCountries),
     politicalApparatus: createPoliticalApparatus2000(allCountries),
+    nationalPolitics: createNationalPolitics2000(),
     structuralProfiles,
     stakeholderGroups: createStakeholderGroups2000(allCountries, structuralProfiles),
     stakeholderReactions: {},
@@ -651,6 +729,8 @@ export function createWorld2000(requestedPlayerCountryId: CountryId = 'FRA'): Wo
     powerStruggleCampaigns: {},
     aiJobs: {},
     actionPrograms: {},
+    reports: {},
+    territorialProjects: {},
     militaryTheaters: createMilitaryTheaters2000(),
     militaryBases: createMilitaryBases2000(),
     warZones: {},
@@ -662,8 +742,10 @@ export function createWorld2000(requestedPlayerCountryId: CountryId = 'FRA'): Wo
     sectors: createStrategicSectors2000(allCountries, structuralProfiles, macroEconomies, sectors),
     armamentProducts: structuredClone(armamentProducts),
     strategicDossiers: dossiers,
+    worldEvents: createInitialWorldEvents2000(),
     actions: [], ledger: [], processedStopIds: [],
   };
+  return initializeStructuralModifiers(applyGlobalCoveragePack2000(applySecondaryCountryPack2000(applyMajorCountryPack2000(baseWorld))));
 }
 
 /** Alias conservé pour les anciennes sauvegardes, tests et intégrations. */

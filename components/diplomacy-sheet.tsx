@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 
-import { Bot, CalendarDays, Check, Clock3, FileText, Handshake, MessageSquareText, Route, ShieldCheck, UserRoundCog } from 'lucide-react';
+import { Bot, Check, Clock3, MessageSquareText, ShieldCheck, UserRoundCog } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -45,6 +45,8 @@ type SheetCountry = {
   trust: number;
   interests: string[];
   redLines: string[];
+  initialPosition?: string;
+  negotiationStyle?: string;
 };
 
 type SheetMessage = {
@@ -205,14 +207,6 @@ const dialogueStatusLabel = (status: string) => ({
   closed: 'Canal fermé',
 }[status] ?? status);
 
-const dialogueHasResponse = (messages: SheetMessage[]) => messages.some((message) => message.author === 'foreign');
-
-const agreementTypeLabels: Record<StructuredDiplomaticResponse['agreementType'], string> = {
-  industrial_cooperation: 'Coopération industrielle', energy_cooperation: 'Coopération énergétique', information_sharing: 'Partage d’informations',
-  security_cooperation: 'Coopération de sécurité', political_guarantee: 'Garantie politique',
-  mediation: 'Médiation', defense_cooperation: 'Coopération militaire',
-};
-
 export function DiplomacySheet({
   open,
   onOpenChange,
@@ -230,17 +224,6 @@ export function DiplomacySheet({
   messages,
   structuredResponse,
   responseResolution,
-  brief,
-  briefLoading = false,
-  onRequestBrief,
-  onProposeMeeting,
-  onReviseAgreement,
-  onSignAgreement,
-  onRequestMeetingAI,
-  meetingAIAvailable = false,
-  meetingAILoading = false,
-  meeting,
-  agreementDraft,
   onResolveResponse,
   draft,
   onDraftChange,
@@ -261,14 +244,7 @@ export function DiplomacySheet({
   agreements = [],
 }: DiplomacySheetProps) {
   const tags = relationshipTags(selectedCountry);
-  const responseHasOpenTerms = Boolean(structuredResponse && (
-    structuredResponse.conditions.length > 0 ||
-    structuredResponse.guaranteesRequested.length > 0 ||
-    structuredResponse.redLines.length > 0
-  ));
   const [participantToAdd, setParticipantToAdd] = useState(participantOptions[0]?.id ?? '');
-  const [resolvedConditions, setResolvedConditions] = useState<string[]>([]);
-  useEffect(() => { setResolvedConditions([]); }, [agreementDraft?.id]);
   useEffect(() => {
     if (!participantOptions.some((country) => country.id === participantToAdd)) setParticipantToAdd(participantOptions[0]?.id ?? '');
   }, [participantOptions, participantToAdd]);
@@ -315,19 +291,10 @@ export function DiplomacySheet({
           <section className="diplomacy-conversation">
             <div className="diplomacy-country-heading">
               <span className="text-3xl" aria-hidden="true">{selectedCountry.flag}</span>
-              <div className="min-w-0 flex-1"><p className="font-mono text-[8px] tracking-[0.12em] text-muted-foreground">CANAL {participantCount > 2 ? 'MULTILATÉRAL' : 'BILATÉRAL'} CHIFFRÉ</p><h2>{playerCountryName} — {selectedCountry.name}</h2>{participantCount > 2 && <p className="mt-1 text-[11px] text-muted-foreground">Participants : {participantIds.filter((id) => id !== selectedCountry.id).map((id) => countries.find((country) => country.id === id)?.name ?? id).join(', ')}</p>}{statusLabel && <p className="mt-1 text-xs text-sky-300">{statusLabel}</p>}{activeSpeakerLabel && <p className="mt-1 text-xs text-amber-300">Prochain intervenant : {activeSpeakerLabel}</p>}{onAddParticipant && participantOptions.length > 0 && <div className="mt-2 flex flex-wrap items-center gap-2"><select aria-label="Ajouter un pays au canal" value={participantToAdd} onChange={(event) => setParticipantToAdd(event.target.value)} className="border border-border bg-background px-2 py-1 text-xs">{participantOptions.map((country) => <option key={country.id} value={country.id}>{country.flag} {country.name}</option>)}</select><Button type="button" size="sm" variant="outline" onClick={() => { if (participantToAdd) onAddParticipant(participantToAdd); }}>Ajouter au canal</Button></div>}</div>
+              <div className="min-w-0 flex-1"><p className="font-mono text-[8px] tracking-[0.12em] text-muted-foreground">CANAL {participantCount > 2 ? 'MULTILATÉRAL' : 'BILATÉRAL'}</p><h2>{playerCountryName} — {selectedCountry.name}</h2>{participantCount > 2 && <p className="mt-1 text-[11px] text-muted-foreground">Participants : {participantIds.filter((id) => id !== selectedCountry.id).map((id) => countries.find((country) => country.id === id)?.name ?? id).join(', ')}</p>}{statusLabel && <p className="mt-1 text-xs text-sky-300">{statusLabel}</p>}{activeSpeakerLabel && <p className="mt-1 text-xs text-amber-300">Prochain intervenant : {activeSpeakerLabel}</p>}{onAddParticipant && participantOptions.length > 0 && <div className="mt-2 flex flex-wrap items-center gap-2"><select aria-label="Ajouter un pays au canal" value={participantToAdd} onChange={(event) => setParticipantToAdd(event.target.value)} className="border border-border bg-background px-2 py-1 text-xs">{participantOptions.map((country) => <option key={country.id} value={country.id}>{country.flag} {country.name}</option>)}</select><Button type="button" size="sm" variant="outline" onClick={() => { if (participantToAdd) onAddParticipant(participantToAdd); }}>Ajouter au canal</Button></div>}</div>
             </div>
 
-            {(brief || onRequestBrief) && <section className="border-b border-border bg-muted/10 p-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="flex items-center gap-2 font-mono text-[9px] tracking-[0.1em] text-primary"><FileText className="size-3.5" /> SYNTHÈSE DE NÉGOCIATION</p>
-                {onRequestBrief && <Button type="button" size="sm" variant="outline" onClick={onRequestBrief} disabled={briefLoading || !dialogueHasResponse(messages)}>{briefLoading ? 'Synthèse en cours…' : 'Résumer avec l’IA'}</Button>}
-              </div>
-              {brief ? <div className="mt-2 space-y-2 text-xs"><p>{brief.summary}</p><div className="grid gap-2 sm:grid-cols-3"><div><b>Acquis</b><ul>{brief.pointsOfAgreement.map((item) => <li key={item}>— {item}</li>)}</ul></div><div><b>À régler</b><ul>{brief.openPoints.map((item) => <li key={item}>— {item}</li>)}</ul></div><div><b>Ajustements</b><ul>{brief.recommendedChanges.map((item) => <li key={item}>— {item}</li>)}</ul></div></div><p className="text-[10px] text-muted-foreground">Synthèse {brief.source === 'ai' ? 'IA' : 'locale'} · {brief.generatedAt}</p></div> : <p className="mt-2 text-xs text-muted-foreground">La synthèse sépare les lignes rouges du futur projet d’accord. Elle ne signe rien.</p>}
-              {brief && onProposeMeeting && !meeting && <div className="mt-3 flex flex-wrap gap-2 border-t border-border/70 pt-2"><span className="flex items-center gap-1 text-[10px] text-muted-foreground"><CalendarDays className="size-3" /> Convoquer une rencontre</span><Button type="button" size="sm" variant="outline" onClick={() => onProposeMeeting(brief.suggestedMeeting ?? 'official')}>Officielle</Button><Button type="button" size="sm" variant="outline" onClick={() => onProposeMeeting('discreet')}>Discrète</Button><Button type="button" size="sm" variant="outline" onClick={() => onProposeMeeting('technical')}>Technique</Button></div>}
-              {meeting && <div className="mt-3 border-t border-border/70 pt-2 text-xs"><p className="flex items-center gap-1 font-medium"><Handshake className="size-3.5 text-primary" /> Rencontre {meeting.mode === 'official' ? 'officielle' : meeting.mode === 'discreet' ? 'discrète' : 'technique'} · {meeting.status}</p><p className="mt-1 text-muted-foreground">Prévue le {meeting.scheduledAt ?? 'à confirmer'}. La rencontre produit un projet, pas une signature automatique.</p><ul className="mt-1">{meeting.agenda.map((item) => <li key={item}>— {item}</li>)}</ul>{meeting.participantPositions && meeting.participantPositions.length > 0 && <div className="mt-3 border-t border-border/60 pt-2"><p className="font-medium">Positions par participant</p><ul className="mt-1 space-y-1">{meeting.participantPositions.map((item) => <li key={item.participantId}><strong>{countries.find((country) => country.id === item.participantId)?.name ?? item.participantId} · {item.kind === 'accept' ? 'accord' : item.kind === 'refuse' ? 'refus' : item.kind === 'counter' ? 'contre-proposition' : 'en attente'}</strong> — {item.position}</li>)}</ul></div>}{meeting.status === 'scheduled' && meeting.scheduledAt && meeting.counterpartDecision !== 'accepted' && meeting.counterpartDecision !== 'refused' && <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-border/60 pt-2"><span className="text-amber-200">{meetingAIAvailable ? 'Réponse finale disponible' : `Réponse disponible le ${meeting.scheduledAt}`}</span>{meetingAIAvailable && onRequestMeetingAI && <Button type="button" size="sm" variant="outline" onClick={onRequestMeetingAI} disabled={meetingAILoading}>{meetingAILoading ? 'Réponse en cours…' : 'Demander la réponse des participants (IA)'}</Button>}</div>}{meeting.counterpartDecision === 'accepted' && <p className="mt-2 text-emerald-200">Les participants acceptent le projet. Il reste à régler les points ouverts puis à signer explicitement.</p>}{meeting.counterpartDecision === 'countered' && <p className="mt-2 text-amber-200">Les participants proposent des ajustements. Le projet reste révisable et aucun engagement n’est actif.</p>}{meeting.counterpartDecision === 'refused' && <p className="mt-2 text-red-300">Les participants refusent le projet. Aucun effet matériel n’a été appliqué.</p>}</div>}
-              {agreementDraft && <div className="mt-3 border-t border-primary/30 pt-2 text-xs"><p className="font-medium">Projet d’accord · {agreementDraft.domain} · {agreementDraft.stage === 'final_proposal' ? 'proposition finale' : agreementDraft.stage}</p><p className="mt-1">{agreementDraft.summary}</p><dl className="mt-2 grid gap-1 sm:grid-cols-2">{Object.entries(agreementDraft.terms).map(([key, value]) => <div key={key}><dt className="inline text-muted-foreground">{key} : </dt><dd className="inline">{value}</dd></div>)}</dl>{agreementDraft.stage === 'final_proposal' && <p className={`mt-2 ${agreementDraft.counterpartDecision === 'accepted' ? 'text-emerald-200' : agreementDraft.counterpartDecision === 'countered' ? 'text-amber-200' : 'text-muted-foreground'}`}>{agreementDraft.counterpartDecision === 'accepted' ? 'Réponse des participants : acceptée.' : agreementDraft.counterpartDecision === 'countered' ? 'Réponse des participants : contre-proposition à traiter.' : 'Réponse des participants requise avant signature.'}</p>}{agreementDraft.stage === 'final_proposal' && agreementDraft.unresolvedConditions.length > 0 && <div className="mt-2 space-y-2"><p className="text-amber-200">Points à régler avant signature :</p><div className="space-y-1">{agreementDraft.unresolvedConditions.map((condition) => <label key={condition} className="flex items-start gap-2 text-[11px]"><input type="checkbox" checked={resolvedConditions.includes(condition)} onChange={(event) => setResolvedConditions((current) => event.target.checked ? [...current, condition] : current.filter((item) => item !== condition))} /><span className={resolvedConditions.includes(condition) ? 'text-muted-foreground line-through' : ''}>{condition}</span></label>)}</div>{onReviseAgreement && <Button type="button" size="sm" variant="outline" disabled={resolvedConditions.length === 0} onClick={() => onReviseAgreement(agreementDraft.unresolvedConditions.filter((condition) => !resolvedConditions.includes(condition)))}>Enregistrer les points réglés</Button>}</div>}{agreementDraft.stage === 'rejected' && onReviseAgreement && <div className="mt-3 flex items-center justify-between gap-2 border-t border-red-300/30 pt-2"><span className="text-red-200">Le refus n’a créé aucun engagement. Vous pouvez reformuler le projet et reprogrammer une rencontre.</span><Button type="button" size="sm" variant="outline" onClick={() => onReviseAgreement(agreementDraft.unresolvedConditions)}>Rouvrir la négociation</Button></div>}{agreementDraft.stage === 'final_proposal' && agreementDraft.unresolvedConditions.length === 0 && agreementDraft.counterpartDecision === 'accepted' && onSignAgreement && <div className="mt-3 flex items-center justify-between gap-2 border-t border-emerald-400/30 pt-2"><span className="text-emerald-200">Tous les points sont réglés et acceptés. La signature activera l’accord.</span><Button type="button" size="sm" onClick={onSignAgreement}>Signer l’accord</Button></div>}</div>}
-            </section>}
+
 
             {activeEvent && activeEvent.countryId === selectedId && !activeEvent.resolved && (
               <div className={`diplomatic-event-callout ${activeEvent.requirement}`}>
@@ -365,31 +332,42 @@ export function DiplomacySheet({
               ))}
               {structuredResponse && (
                 <article className="message foreign border border-primary/40 bg-primary/5">
-                  <p className="mb-2 font-mono text-[9px] tracking-[0.08em] text-primary">POSITION STRUCTURÉE · {structuredResponse.kind === 'accept' ? 'ACCORD' : structuredResponse.kind === 'counter' ? 'CONTRE-PROPOSITION' : structuredResponse.kind === 'refuse' ? 'REFUS' : structuredResponse.kind === 'request_clarification' ? 'PRÉCISIONS' : 'MESSAGE'} · {agreementTypeLabels[structuredResponse.agreementType]}</p>
+                  <p className="mb-2 font-mono text-[9px] tracking-[0.08em] text-primary">
+                    RÉPONSE DE L’INTERLOCUTEUR
+                  </p>
                   <p className="text-sm leading-6">{structuredResponse.position}</p>
-                  {(structuredResponse.acceptedTerms?.length || structuredResponse.rejectedTerms?.length || structuredResponse.conditionalTerms?.length) ? <div className="mt-3 grid gap-3 border-y border-border/70 py-3 text-xs sm:grid-cols-3">
-                    {structuredResponse.acceptedTerms && structuredResponse.acceptedTerms.length > 0 && <div><strong className="text-emerald-200">Termes acceptés</strong><ul>{structuredResponse.acceptedTerms.map((item) => <li key={item}>+ {item}</li>)}</ul></div>}
-                    {structuredResponse.conditionalTerms && structuredResponse.conditionalTerms.length > 0 && <div><strong className="text-amber-200">Termes conditionnels</strong><ul>{structuredResponse.conditionalTerms.map((item) => <li key={item}>? {item}</li>)}</ul></div>}
-                    {structuredResponse.rejectedTerms && structuredResponse.rejectedTerms.length > 0 && <div><strong className="text-red-300">Termes refusés</strong><ul>{structuredResponse.rejectedTerms.map((item) => <li key={item}>× {item}</li>)}</ul></div>}
-                  </div> : null}
-                  {structuredResponse.feasibilityIssues && structuredResponse.feasibilityIssues.length > 0 && <div className="mt-3 border border-amber-300/40 bg-amber-300/5 p-2 text-xs"><p className="font-mono text-[9px] tracking-[0.1em] text-amber-200">GARDE-FOU DU MOTEUR · ACCEPTATION RAMENÉE À UNE CONTRE-PROPOSITION</p><ul className="mt-1 space-y-1">{structuredResponse.feasibilityIssues.map((item) => <li key={item.id}><strong>{item.severity === 'hard' ? 'Bloquant' : 'À encadrer'} · {item.label} :</strong> {item.explanation} <span className="text-muted-foreground">{item.requiredResponse}</span></li>)}</ul></div>}
-                  {structuredResponse.decisionScope && <p className="mt-2 text-[10px] text-muted-foreground">Portée : {structuredResponse.decisionScope === 'substance' ? 'accord de fond' : structuredResponse.decisionScope === 'principle' ? 'accord de principe, à formaliser' : 'échange sans engagement'}</p>}
-                  {structuredResponse.participantPositions && structuredResponse.participantPositions.length > 0 && <div className="mt-3 border-t border-border/70 pt-3 text-xs"><strong>Positions individuelles</strong><ul className="mt-1 space-y-1">{structuredResponse.participantPositions.map((item) => <li key={item.participantId}><strong>{countries.find((country) => country.id === item.participantId)?.name ?? item.participantId} · {item.kind === 'accept' ? 'accord' : item.kind === 'refuse' ? 'refus' : item.kind === 'counter' ? 'contre-proposition' : 'en attente'}</strong> — {item.position}</li>)}</ul></div>}
-                  <div className="mt-3 grid gap-3 text-xs sm:grid-cols-2">
-                    {structuredResponse.concessions.length > 0 && <div><strong>Concessions possibles</strong><ul>{structuredResponse.concessions.map((item) => <li key={item}>— {item}</li>)}</ul></div>}
-                    {structuredResponse.guaranteesRequested.length > 0 && <div><strong>Garanties demandées</strong><ul>{structuredResponse.guaranteesRequested.map((item) => <li key={item}>— {item}</li>)}</ul></div>}
-                    {structuredResponse.conditions.length > 0 && <div><strong>Conditions</strong><ul>{structuredResponse.conditions.map((item) => <li key={item}>— {item}</li>)}</ul></div>}
-                    {structuredResponse.redLines.length > 0 && <div><strong>Lignes rouges</strong><ul>{structuredResponse.redLines.map((item) => <li key={item}>— {item}</li>)}</ul></div>}
-                  </div>
-                  <p className="mt-3 text-xs text-muted-foreground"><strong>Calendrier :</strong> {structuredResponse.timeline}</p>
-                  {responseResolution ? <p className="mt-3 border-t border-border pt-2 text-xs text-primary">{responseResolution.summary}</p> : onResolveResponse && <div className="mt-3 space-y-2 border-t border-border pt-3"><p className="text-[11px] text-muted-foreground">{responseHasOpenTerms ? 'Accepter enregistre une base de travail : les conditions, garanties ou lignes rouges restantes devront être formalisées avant tout engagement actif.' : 'Cette proposition ne comporte plus de condition ouverte : son acceptation créera un engagement diplomatique actif.'}</p><div className="flex flex-wrap gap-2">{(structuredResponse.kind === 'accept' || structuredResponse.kind === 'counter') ? <Button type="button" size="sm" onClick={() => onResolveResponse('accept')}>{responseHasOpenTerms ? 'Accepter sous conditions' : 'Signer l’engagement'}</Button> : <Button type="button" size="sm" onClick={() => onResolveResponse('acknowledge')}>Prendre acte</Button>}<Button type="button" size="sm" variant="outline" onClick={() => onResolveResponse('request_revision')}>{structuredResponse.kind === 'refuse' ? 'Demander une réouverture' : 'Demander une révision'}</Button>{(structuredResponse.kind === 'accept' || structuredResponse.kind === 'counter') && <Button type="button" size="sm" variant="ghost" onClick={() => onResolveResponse('refuse')}>Refuser</Button>}</div></div>}
+                  {structuredResponse.participantPositions && structuredResponse.participantPositions.length > 0 && (
+                    <div className="mt-3 border-t border-border/70 pt-3 text-xs">
+                      <strong>Positions des participants</strong>
+                      <ul className="mt-1 space-y-1">
+                        {structuredResponse.participantPositions.map((item) => (
+                          <li key={item.participantId}>
+                            <strong>{countries.find((country) => country.id === item.participantId)?.name ?? item.participantId}</strong>
+                            {' — '}{item.position}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {responseResolution ? (
+                    <p className="mt-3 border-t border-border pt-2 text-xs text-primary">{responseResolution.summary}</p>
+                  ) : onResolveResponse ? (
+                    <div className="mt-3 flex flex-wrap gap-2 border-t border-border pt-3">
+                      <Button type="button" size="sm" onClick={() => onResolveResponse('acknowledge')}>
+                        Prendre acte
+                      </Button>
+                      <Button type="button" size="sm" variant="ghost" onClick={() => onResolveResponse('refuse')}>
+                        Clore le canal
+                      </Button>
+                    </div>
+                  ) : null}
                 </article>
               )}
               {isThinking && <div className="message foreign"><p className="font-mono text-[9px] text-muted-foreground">ANALYSE DES INTÉRÊTS EN COURS…</p></div>}
             </div>
 
             <div className="diplomacy-composer">
-              <label htmlFor="diplomacy-sheet-message">DIRECTIVE LIBRE — ÉCRIVEZ VOTRE POSITION OU VOTRE PROPOSITION</label>
+              <label htmlFor="diplomacy-sheet-message">VOTRE MESSAGE</label>
               {canRequestAI && onRequestAI && <Button type="button" variant="outline" onClick={onRequestAI} disabled={isThinking} className="mb-2 h-auto w-full justify-start rounded-none py-2 text-left"><Bot className="size-4" />{aiRequestLabel}</Button>}
               {quickReplies.length > 0 && onQuickReply && <div className="mb-2 flex flex-wrap gap-2">{quickReplies.map((reply) => <Button key={reply.label} type="button" size="sm" variant="outline" onClick={() => onQuickReply(reply.value)} disabled={isThinking}>{reply.label}</Button>)}</div>}
               <div className="flex items-end gap-2">
@@ -398,7 +376,7 @@ export function DiplomacySheet({
                   value={draft}
                   onChange={(event) => onDraftChange(event.target.value)}
                   onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); onSend(); } }}
-                  placeholder="Formuler une proposition, demander des garanties ou exposer une ligne rouge…"
+                  placeholder="Écrivez votre position, une question ou une proposition…"
                   className="min-h-20 resize-none rounded-none bg-background"
                 />
                 <Button type="button" onClick={onSend} disabled={!draft.trim() || isThinking} className="h-20 rounded-none px-4"><MessageSquareText /></Button>
@@ -416,8 +394,8 @@ export function DiplomacySheet({
               <p className="ai-rationale">Classification fondée sur les accords, les échanges et l’activité diplomatique. Elle décrit la relation sans la modifier.</p>
             </section>
 
+            {selectedCountry.initialPosition && <section><p className="recap-label"><MessageSquareText /> POSITION INITIALE</p><p className="ai-rationale">{selectedCountry.initialPosition}</p>{selectedCountry.negotiationStyle && <p className="ai-rationale">Style de négociation : {selectedCountry.negotiationStyle}</p>}</section>}
             <section><p className="recap-label"><ShieldCheck /> INTÉRÊTS CONNUS</p><ul>{selectedCountry.interests.map((interest) => <li key={interest}>{interest}</li>)}</ul></section>
-            <section><p className="recap-label"><Route /> LIGNES ROUGES</p><ul>{selectedCountry.redLines.map((line) => <li key={line}>{line}</li>)}</ul></section>
             <section><p className="recap-label"><UserRoundCog /> MÉMOIRE DE LA RELATION</p>{memories.length ? <ul>{memories.map((memory) => <li key={memory}>{memory}</li>)}</ul> : <p className="ai-rationale">Aucun engagement majeur mémorisé.</p>}</section>
             <section><p className="recap-label"><ShieldCheck /> ENGAGEMENTS ACTIFS</p>{agreements.length ? <ul>{agreements.map((agreement) => <li key={agreement}>{agreement}</li>)}</ul> : <p className="ai-rationale">Aucun accord formel actif avec ce pays.</p>}</section>
             {activeEvent?.resolved && activeEvent.countryId === selectedId && <p className="resolved-event"><Check /> Événement traité : {activeEvent.resolvedBy === 'explicit_silence' ? 'silence assumé' : 'position enregistrée'}</p>}

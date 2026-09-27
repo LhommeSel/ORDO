@@ -18,7 +18,7 @@ export const historicalAnchors2000: Record<string, HistoricalAnchor> = {
   'russia-recentralization': anchor({
     id: 'russia-recentralization', title: 'Recentrage du pouvoir russe',
     trendTitle: 'Retour de l’autorité centrale russe',
-    trendSummary: 'Le pouvoir exécutif russe cherche à reprendre le contrôle de l’appareil d’État, des régions et des grands intérêts économiques.',
+    trendSummary: 'Vladimir Poutine, devenu président au début de l’année, s’emploie à reprendre la main sur l’appareil fédéral, les gouverneurs et les grands intérêts économiques. La reprise en main reste progressive, mais elle déplace déjà le centre de gravité politique russe.',
     kind: 'power_struggle', importance: 'major', probableWindow: { start: '2000-01-01', end: '2004-12-31' },
     proposalThreshold: 48, activationThreshold: 74, basePressure: 66, historicalWeight: 92,
     affectedActors: ['RUS', 'USA', 'FRA', 'DEU', 'POL'], regionTags: ['Europe', 'Eurasie'],
@@ -29,13 +29,16 @@ export const historicalAnchors2000: Record<string, HistoricalAnchor> = {
   'china-wto-integration': anchor({
     id: 'china-wto-integration', title: 'Entrée de la Chine dans l’OMC',
     trendTitle: 'Intégration industrielle et commerciale de la Chine',
-    trendSummary: 'La Chine devient progressivement un centre industriel mondial et augmente sa dépendance aux marchés, technologies et capitaux étrangers.',
+    trendSummary: 'L’ouverture commerciale chinoise attire capitaux et capacités industrielles, accélère les exportations et les investissements portuaires, tout en créant une dépendance durable aux marchés, technologies, hydrocarbures et intrants étrangers.',
     kind: 'economic', importance: 'major', trendId: 'china-industrial-rise', probableWindow: { start: '2000-01-01', end: '2003-12-31' },
-    proposalThreshold: 52, activationThreshold: 78, basePressure: 72, historicalWeight: 96,
+    // L'accord est déjà politiquement mûr en 2000 : il peut prendre des
+    // formes légèrement différentes, mais ne doit pas disparaître sur un jet
+    // aléatoire ou une unique initiative étrangère.
+    proposalThreshold: 44, activationThreshold: 70, basePressure: 84, historicalWeight: 98,
     affectedActors: ['CHN', 'USA', 'DEU', 'FRA', 'JPN', 'IND'], regionTags: ['Asie de l’Est', 'Amérique du Nord', 'Europe'],
-    invariants: ['Ouverture accrue des échanges chinois', 'Accélération de la concurrence industrielle mondiale'],
-    possibleManifestations: ['Accession commerciale formelle', 'Afflux d’investissements', 'Premières tensions protectionnistes'],
-    playerVisibility: 'known', playerInfluence: 'low',
+    invariants: ['Ouverture accrue des échanges chinois', 'Accélération de la concurrence industrielle mondiale', 'Afflux de capitaux et transfert d’activités productives'],
+    possibleManifestations: ['Accession commerciale formelle', 'Afflux d’investissements et extension portuaire', 'Premières tensions protectionnistes', 'Hausse des besoins chinois en hydrocarbures et matières premières'],
+    playerVisibility: 'known', playerInfluence: 'medium',
   }),
   'mass-casualty-terrorism': anchor({
     id: 'mass-casualty-terrorism', title: 'Attentat terroriste de grande ampleur',

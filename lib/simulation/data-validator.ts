@@ -29,7 +29,7 @@ export function validateCountryRegistry(
     const id = country.id;
     if (!id || id !== id.toUpperCase() || id.length !== 3) issues.push({ severity: 'error', countryId: id, field: 'id', message: 'Identifiant pays non conforme à un code ISO alpha-3.' });
     if (!country.name.trim()) issues.push({ severity: 'error', countryId: id, field: 'name', message: 'Nom de pays vide.' });
-    for (const [field, value] of Object.entries({ weight: country.weight, reliability: country.statisticalReliability, budget: country.metrics.budget, industry: country.metrics.industry, stability: country.metrics.stability, security: country.metrics.security })) {
+    for (const [field, value] of Object.entries({ weight: country.weight, reliability: country.statisticalReliability, industry: country.metrics.industry, stability: country.metrics.stability, security: country.metrics.security, annualRevenue: country.fiscal.annualRevenuePctGDP, annualSpending: country.fiscal.annualSpendingPctGDP, debt: country.fiscal.publicDebtPctGDP, annualAllocation: country.fiscal.annualDiscretionaryAllocation, discretionaryMargin: country.fiscal.discretionaryMargin, emergencyReserve: country.fiscal.emergencyReserve })) {
       if (!finite(value)) issues.push({ severity: 'error', countryId: id, field, message: 'Valeur non numérique ou non finie.' });
     }
     if (country.statisticalReliability < 0 || country.statisticalReliability > 100) issues.push({ severity: 'error', countryId: id, field: 'statisticalReliability', message: 'Fiabilité hors de l’intervalle 0–100.' });

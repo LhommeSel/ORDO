@@ -157,7 +157,6 @@ function meetingDossierData(
       followed: true,
       pendingDecisions,
       decisionRecords,
-      sleepingAt: undefined,
     } : dossier,
     entries,
     decisions,
@@ -601,8 +600,7 @@ export function applyDiplomaticMeetingAIAnswer(state: WorldState, jobId: string,
         followed: true,
         pendingDecisions: dossierData.dossier.pendingDecisions,
         decisionRecords: dossierData.dossier.decisionRecords,
-        sleepingAt: undefined,
-      }, reason: 'La réponse de la rencontre actualise le dossier diplomatique déjà suivi.', visibility: 'player' });
+      }, clear: ['sleepingAt'], reason: 'La réponse de la rencontre actualise le dossier diplomatique déjà suivi.', visibility: 'player' });
     }
     effects.push(...dossierData.entries.map((entry) => ({ kind: 'dossier_entry_add' as const, dossierId, entry, reason: 'La position de chaque participant est conservée séparément dans le dossier.', visibility: 'player' as const })));
   } else if (dialogue.linkedDossierId && state.strategicDossiers[dialogue.linkedDossierId]) {
@@ -634,7 +632,10 @@ export function signDiplomaticAgreementDraft(state: WorldState, draftId: string)
   if (!response || (response.kind !== 'accept' && response.kind !== 'counter')) return { ok: false as const, state, error: 'La dernière position diplomatique ne peut pas être formalisée.' };
 
   const treatyId = `dialogue-commitment-${dialogue.id}-${state.sequence + 1}`;
-  const dossierId = `diplomatic-dialogue-${dialogue.id}`;
+  // Une rencontre issue d'un contact déjà suivi doit enrichir ce même
+  // dossier. Recréer l'identifiant générique ici cassait la continuité entre
+  // la réponse initiale, la rencontre et les effets de l'accord signé.
+  const dossierId = dialogue.linkedDossierId ?? `diplomatic-dialogue-${dialogue.id}`;
   const treatyEffects = diplomaticCommitmentEffects(state, dialogue, response, treatyId, dossierId);
   const names = dialogue.participantIds.filter((id) => id !== state.playerCountryId).map((id) => state.countries[id]?.name ?? id).join(', ');
   const signedDialogue: DiplomaticDialogue = {

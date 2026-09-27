@@ -152,7 +152,7 @@ const doctrineSignals = (country: CountryState) => {
 export function createLeadership2000(countries: Record<CountryId, CountryState>): Record<CountryId, CountryLeadership> {
   return Object.fromEntries(Object.values(countries).map((country) => {
     const override = leadershipOverrides[country.id];
-    if (override) return [country.id, { countryId: country.id, ...override, sourceBasis: 'Interprétation de gameplay ORDO de la direction politique au 1er janvier 2000 ; valeurs non présentées comme mesures scientifiques.' } satisfies CountryLeadership];
+    if (override) return [country.id, { countryId: country.id, ...override, sourceBasis: 'Interprétation de gameplay de État-Nation pour la direction politique au 1er janvier 2000 ; valeurs non présentées comme mesures scientifiques.' } satisfies CountryLeadership];
     return [country.id, {
       countryId: country.id,
       figures: [{

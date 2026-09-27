@@ -1,5 +1,5 @@
 /**
- * Schéma logique D1 d'ORDO.
+ * Schéma logique D1 d’État-Nation.
  *
  * Le quota ne conserve que des compteurs agrégés par fenêtre UTC et des clés
  * déjà hachées. Les sauvegardes, conversations et contenus de partie restent

@@ -258,7 +258,7 @@ const normalize = (value: string) => value
 
 const aliases: Record<string, string[]> = {
   USA: ['usa', 'us', 'etats unis', 'amerique'], GBR: ['royaume uni', 'grande bretagne', 'angleterre'],
-  SAU: ['arabie saoudite', 'saoudiens'], DZA: ['algerie'], DEU: ['allemagne'], RUS: ['russie', 'moscou'],
+  SAU: ['arabie saoudite', 'saoudiens'], DZA: ['algerie', 'alger'], DEU: ['allemagne'], RUS: ['russie', 'moscou'],
   CHN: ['chine'], JPN: ['japon'], TUR: ['turquie'], ZAF: ['afrique du sud'], AUS: ['australie'], IND: ['inde'], BRA: ['bresil'], VNM: ['vietnam'],
   CAN: ['canada'], MEX: ['mexique', 'mexico'],
 };

@@ -131,7 +131,8 @@ function strugglePressure(group: StakeholderGroup, reaction: StakeholderReaction
     reaction.defiance * 0.36
     + reaction.mobilization * 0.24
     + group.influence * 0.24
-    + group.cohesion * 0.16,
+    + group.cohesion * 0.16
+    + (group.escalationDisposition ?? group.cohesion) * 0.04,
   ));
 }
 
@@ -157,6 +158,7 @@ function compactContext(
     defiance: reaction.defiance,
     mobilization: reaction.mobilization,
     influence: group.influence,
+    escalationDisposition: group.escalationDisposition ?? group.cohesion,
     cohesion: group.cohesion,
     causes: reaction.causes,
     plausibleResponses: group.possibleResponses,
@@ -199,7 +201,7 @@ export function detectPowerStruggleOpportunities(state: WorldState) {
   const emergenceSlots = Math.max(0, 3 - pendingEmergences);
   const candidates = Object.values(state.stakeholderReactions ?? {})
     .filter((reaction) => {
-      if (reaction.status === 'resolved' || !['important', 'critical'].includes(reaction.level)) return false;
+      if (reaction.status === 'resolved' || reaction.stance === 'support' || !['important', 'critical'].includes(reaction.level)) return false;
       const group = state.stakeholderGroups[reaction.groupId];
       return Boolean(group && !activeCampaignForReaction(state, reaction.id) && !pendingRequestFor(state, reaction.id));
     })
@@ -644,7 +646,7 @@ export function resolvePowerStrugglePlayerDecision(
       reason: 'L’arbitrage du gouvernement modifie directement la base de mobilisation de la contestation.', visibility: 'player',
     },
     { kind: 'metric_delta', countryId: campaign.countryId, metric: 'stability', delta: effect.stability * strength, reason: summaries[decision], visibility: 'player' },
-    ...(effect.budget ? [{ kind: 'metric_delta' as const, countryId: campaign.countryId, metric: 'budget' as const, delta: effect.budget * strength, reason: 'La réponse politique mobilise ou économise une marge budgétaire limitée.', visibility: 'player' as const }] : []),
+    ...(effect.budget ? [{ kind: 'fiscal_delta' as const, countryId: campaign.countryId, bucket: 'discretionary' as const, delta: effect.budget * strength, reason: 'La réponse politique mobilise ou économise une marge budgétaire limitée.', visibility: 'player' as const }] : []),
     {
       kind: 'politics_patch', countryId: campaign.countryId,
       patch: { publicApproval: round(clamp(state.countries[campaign.countryId].politics.publicApproval + effect.approval * strength)), administrativeCompliance: round(clamp(state.countries[campaign.countryId].politics.administrativeCompliance + effect.compliance * strength)) },

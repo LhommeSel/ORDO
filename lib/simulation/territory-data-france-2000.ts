@@ -43,7 +43,7 @@ const territories: TerritorySeed[] = rows.map(([code, name, pop, gdp, lon, lat])
   id: `FRA-r${code}`, name, kind: 'region', referencePopulation: pop, referenceYear: 1999,
   economicWeight: pop * gdp, inNationalAccounts: true, mapGroup: 'metropole', anchor: [lon, lat],
   sourceIds: ['insee-rp1999', 'insee-gdp2000'],
-  note: 'Répartition calibrée sur le total national ORDO : population RP1999 × PIB/habitant 2000. Ce n’est pas un PIB régional observé.',
+  note: 'Répartition calibrée sur le total national de État-Nation : population RP1999 × PIB/habitant 2000. Ce n’est pas un PIB régional observé.',
 }));
 
 const dom: [string, string, number, number, number][] = [

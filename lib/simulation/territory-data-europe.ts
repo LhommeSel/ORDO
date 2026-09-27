@@ -109,7 +109,7 @@ const europeMacroDatasetsWithAssets: Record<string, TerritoryDataset> = Object.f
   } satisfies TerritoryDataset]),
 );
 
-/** NUTS détaillé quand il existe, sinon la maille macro-régionale ORDO. */
+/** NUTS détaillé quand il existe, sinon la maille macro-régionale ÉTAT-NATION. */
 export const europeTerritoryDatasets: Record<string, TerritoryDataset> = {
   ...europeMacroDatasetsWithAssets,
   ...europeNutsTerritoryDatasets,

@@ -1,13 +1,9 @@
-import { commitWorldAction } from './ledger';
 import type {
   BankingSystemState,
   CountryId,
-  DebtCrisisResponse,
-  DossierEntry,
   MacroeconomicState,
   SovereignDebtState,
   SovereignDebtStatus,
-  StrategicDossier,
   WorldEffect,
   WorldState,
 } from './types';
@@ -183,12 +179,13 @@ export function projectDebtAndBanking(
   };
 }
 
-const statusLabels: Record<SovereignDebtStatus, string> = {
-  stable: 'Financement normal', watch: 'Dette sous surveillance', stressed: 'Tension souveraine',
-  refinancing_crisis: 'Crise de refinancement', default: 'Défaut souverain', restructuring: 'Restructuration en cours',
-};
-
-export function debtCrisisEffects(
+/**
+ * La dette reste un paramètre macro qui explique la transmission d'une crise
+ * au crédit et à l'économie. Elle ne produit plus de dossier, de relance IA
+ * ni de réponse tactique à choisir. Seul le franchissement d'une crise aiguë
+ * devient un fait public dans le fil des événements.
+ */
+export function sovereignDebtEventEffects(
   state: WorldState,
   countryId: CountryId,
   previous: SovereignDebtStatus,
@@ -198,112 +195,36 @@ export function debtCrisisEffects(
   if (previous === current) return [];
   const country = state.countries[countryId];
   if (!country) return [];
-  const dossierId = `sovereign-debt-${countryId}`;
-  const existing = state.strategicDossiers[dossierId];
-  if (statusRank[current] < 2) {
-    if (!existing || statusRank[previous] < 2) return [];
-    const recoveryEntry: DossierEntry = {
-      id: `${dossierId}-${state.currentDate}-stabilisation`, date: state.currentDate,
-      title: 'Accès au financement stabilisé',
-      summary: `${country.name} retrouve un accès praticable au refinancement ; les séquelles bancaires et budgétaires restent toutefois actives.`,
-      importance: 'moderate', actorIds: [countryId], requiresDecision: false, visibility: 'public',
-    };
-    return [
-      { kind: 'dossier_patch', dossierId, patch: {
-        status: 'deescalating', importance: 'moderate', phase: statusLabels[current], trend: 'deescalating',
-        publicSummary: recoveryEntry.summary, pendingDecisions: [],
-      }, reason: 'L’amélioration du refinancement fait entrer le dossier en décrue.' },
-      { kind: 'dossier_entry_add', dossierId, entry: recoveryEntry, reason: 'La stabilisation est ajoutée à la chronologie de la crise.' },
-    ];
-  }
-  const entry: DossierEntry = {
-    id: `${dossierId}-${state.currentDate}-${current}`, date: state.currentDate,
-    title: statusLabels[current],
-    summary: `${country.name} entre dans la phase « ${statusLabels[current]} » : le coût et la disponibilité du refinancement deviennent un enjeu macroéconomique direct.`,
-    // Une première tension reste un signal modéré. Le dossier ne devient
-    // majeur qu'après persistance, perte d'accès ou arriérés constatés.
-    importance: current === 'default' ? 'critical'
-      : current === 'refinancing_crisis' && (
-        (currentDebt?.monthsUnderStress ?? 0) >= 6
-        || (currentDebt?.marketAccess ?? 100) < 20
-        || (currentDebt?.missedPaymentsPctGdp ?? 0) > 0
-      ) ? 'major' : 'moderate',
-    actorIds: [countryId], requiresDecision: countryId === state.playerCountryId,
-    visibility: 'public',
-  };
-  if (existing) return [
-    { kind: 'dossier_patch', dossierId, patch: {
-      status: 'active', importance: entry.importance, phase: statusLabels[current], trend: 'escalating',
-      publicSummary: entry.summary,
-      pendingDecisions: countryId === state.playerCountryId ? ['Choisir une réponse à la crise de refinancement.'] : existing.pendingDecisions,
-    }, reason: 'La détérioration du financement souverain actualise le dossier permanent.' },
-    { kind: 'dossier_entry_add', dossierId, entry, reason: 'Le changement de phase est ajouté à la chronologie de la crise.' },
-  ];
-  const dossier: StrategicDossier = {
-    id: dossierId, title: `Dette souveraine — ${country.name}`, kind: 'economic', status: 'active',
-    importance: entry.importance, actorIds: [countryId], regionTags: [], startedAt: state.currentDate, updatedAt: state.currentDate,
-    phase: statusLabels[current], trend: 'escalating', publicSummary: entry.summary,
-    followed: countryId === state.playerCountryId, autoTracked: current === 'refinancing_crisis' || current === 'default',
-    commitments: [], pendingDecisions: countryId === state.playerCountryId ? ['Choisir une réponse à la crise de refinancement.'] : [],
-    relatedCurrentIds: [], relatedActionIds: [], entries: [entry],
-  };
-  return [{ kind: 'dossier_add', dossier, reason: 'Une crise souveraine persistante devient un dossier stratégique.' }];
-}
+  if (!['refinancing_crisis', 'default', 'restructuring'].includes(current)) return [];
+  if (current === 'refinancing_crisis' && (currentDebt?.monthsUnderStress ?? 0) < 12) return [];
 
-export function applyDebtCrisisResponse(state: WorldState, countryId: CountryId, response: DebtCrisisResponse) {
-  const economy = state.macroEconomies[countryId];
-  if (!economy) return { ok: false as const, state, error: 'Économie nationale inconnue.' };
-  const debt = economy.sovereignDebt;
-  const bank = economy.bankingSystem;
-  if (statusRank[debt.status] < 2) return { ok: false as const, state, error: 'Le pays ne traverse pas de crise souveraine ouverte.' };
-  if (response === 'central_bank_backstop' && state.structuralProfiles[countryId]?.monetaryRegime === 'currency_union') {
-    return { ok: false as const, state, error: 'Le soutien monétaire doit être négocié au niveau de l’union monétaire.' };
-  }
-  const effects: WorldEffect[] = [];
-  if (response === 'emergency_austerity') effects.push({
-    kind: 'macro_patch', countryId,
-    patch: { policy: { ...economy.policy, fiscalStance: Math.min(-55, economy.policy.fiscalStance) }, sovereignDebt: { ...debt, marketAccess: clamp(debt.marketAccess + 5, 0, 100) } },
-    reason: 'Le gouvernement comprime immédiatement la dépense pour rassurer les prêteurs, au prix d’un choc de demande.',
-  });
-  if (response === 'central_bank_backstop') effects.push({
-    kind: 'macro_patch', countryId,
-    patch: { sovereignDebt: { ...debt, centralBankBackstop: clamp(debt.centralBankBackstop + 18, 0, 100), marketAccess: clamp(debt.marketAccess + 8, 0, 100) } },
-    reason: 'La banque centrale sécurise le marché secondaire et réduit le risque immédiat de liquidité.',
-  });
-  if (response === 'international_assistance') effects.push({
-    kind: 'macro_patch', countryId,
-    patch: {
-      foreignReserveMonthsImports: clamp(economy.foreignReserveMonthsImports + 4, 0.1, 48),
-      policy: { ...economy.policy, fiscalStance: Math.min(-25, economy.policy.fiscalStance) },
-      sovereignDebt: { ...debt, marketAccess: clamp(debt.marketAccess + 12, 0, 100), fundingGapPctGdp: Math.max(0, debt.fundingGapPctGdp - 5) },
-    }, reason: 'Une assistance extérieure fournit des devises contre un programme de stabilisation.',
-  });
-  if (response === 'capital_controls') effects.push({
-    kind: 'macro_patch', countryId,
-    patch: {
-      policy: { ...economy.policy, capitalControls: clamp(economy.policy.capitalControls + 28, 0, 100) },
-      sovereignDebt: { ...debt, marketAccess: clamp(debt.marketAccess + 3, 0, 100) },
-    }, reason: 'Les contrôles ralentissent la fuite des capitaux sans restaurer à eux seuls la solvabilité.',
-  });
-  if (response === 'restructure') effects.push({
-    kind: 'macro_patch', countryId,
-    patch: {
-      publicDebtPctGdp: round(economy.publicDebtPctGdp * 0.72), confidenceIndex: clamp(economy.confidenceIndex - 8, 0, 110),
-      sovereignDebt: { ...debt, status: 'restructuring', marketAccess: Math.min(28, debt.marketAccess), missedPaymentsPctGdp: 0, monthsUnderStress: 0, sovereignSpreadBps: Math.max(900, debt.sovereignSpreadBps) },
-      bankingSystem: { ...bank, liquidityStress: clamp(bank.liquidityStress + 20, 0, 100), capitalAdequacyPct: clamp(bank.capitalAdequacyPct - 1.5, 2, 25) },
-    }, reason: 'La décote réduit la dette mais impose des pertes aux créanciers et aux banques nationales.',
-  });
-  if (!effects.length) return { ok: false as const, state, error: 'Réponse à la crise inconnue.' };
-  const dossierId = `sovereign-debt-${countryId}`;
-  if (state.strategicDossiers[dossierId]) effects.push({
-    kind: 'dossier_entry_add', dossierId,
-    entry: {
-      id: `${dossierId}-response-${response}-${state.currentDate}`, date: state.currentDate,
-      title: 'Réponse gouvernementale', summary: `Le gouvernement applique la réponse « ${response} » à la crise souveraine.`,
-      importance: response === 'restructure' ? 'major' : 'moderate', actorIds: [countryId], requiresDecision: false, visibility: 'public',
-    }, reason: 'La réponse choisie est conservée dans le dossier de crise.',
-  });
-  return { ok: true as const, state: commitWorldAction(state, {
-    kind: 'economic', actorId: countryId, origin: 'player', intent: `Répondre à la crise de la dette : ${response}`, effects,
-  }) };
+  const event = current === 'default'
+    ? {
+      title: `Défaut de paiement de l’État · ${country.name}`,
+      summary: `${country.name} ne parvient plus à honorer normalement ses engagements publics. Le choc se transmet au système bancaire, à l’activité et aux partenaires exposés.`,
+    }
+    : current === 'restructuring'
+      ? {
+        title: `Reprofilage financier imposé · ${country.name}`,
+        summary: `${country.name} entre dans une restructuration encadrée. La crise cesse d’être un risque immédiat, mais les effets sur le crédit et l’économie persistent.`,
+      }
+      : {
+        title: `Crise de financement de l’État · ${country.name}`,
+        summary: `${country.name} perd durablement l’accès normal au financement. Le pays subit une crise financière majeure, avec des répercussions bancaires et économiques.`,
+      };
+  return [{
+    kind: 'world_event_add',
+    event: {
+      id: `financial-crisis-${countryId}-${current}-${state.currentDate}`,
+      date: state.currentDate,
+      title: event.title,
+      summary: event.summary,
+      importance: 'major',
+      scope: countryId === state.playerCountryId ? 'national' : 'world',
+      actorIds: [countryId],
+      source: 'system',
+    },
+    reason: 'Un basculement financier majeur est enregistré comme événement, sans créer de dossier à suivre.',
+    visibility: 'public',
+  }];
 }

@@ -182,7 +182,7 @@ export function queueAutonomousProgram(state: WorldState, input: AutonomousProgr
       intent: `Mettre en file : ${program.title}`,
       effects: [
         { kind: 'action_program_add', program, reason: 'Une intention autonome validée par le moteur devient un programme suivi.' },
-        { kind: 'metric_delta', countryId: input.actorId, metric: 'budget', delta: -budgetCost, reason: 'Le gouvernement réserve les crédits du programme autonome.' },
+        { kind: 'fiscal_delta', countryId: input.actorId, bucket: 'discretionary', delta: -budgetCost, reason: 'Le gouvernement réserve les crédits du programme autonome.' },
         ...requiredCapacities.map(({ domain, commitment }) => ({ kind: 'capacity_commitment' as const, countryId: input.actorId, domain, delta: commitment, reason: `Moyens mobilisés pour « ${program.title} ».` })),
         ...(program.policySignals?.length ? stakeholderReactionEffects(state, {
           id: `measure-${program.id}`, countryId: input.actorId, title: program.title,

@@ -10,6 +10,15 @@ import type {
 import { militaryBasesForCountry, militaryTheatersForCountry } from '../military-theaters';
 import { warZonesForCountry } from '../war-zones';
 import { deriveDiplomaticFeasibility, diplomaticPostureStatement } from '../diplomatic-feasibility';
+import { upcomingInternationalCalendar } from '../national-politics';
+import { effectivePortGoodsCapacity, americasPortsForCountry } from '../territory-data-americas-ports';
+import { europePortsForCountry } from '../territory-data-europe-ports';
+import { africaPortsForCountry } from '../territory-data-africa-ports';
+import { asiaPortsForCountry } from '../territory-data-asia-ports';
+import { oceaniaPortsForCountry } from '../territory-data-oceania-ports';
+import { governmentCapacitySnapshot } from '../government-capacity';
+import { activeStructuralModifiers } from '../structural-modifiers';
+import { goldReserveTotals } from '../gold-stocks-2000';
 
 export type AIContextDomain =
   | 'overview'
@@ -54,6 +63,9 @@ export type AIContextQuery = {
   concepts: string[];
   purpose: string;
   playerIntent: string;
+  /** Actifs explicitement cités (par exemple un port), sans les confondre
+   * avec les pays décisionnaires de la requête. */
+  focusEntityIds?: string[];
   approximateIntentTokens: number;
   tokenBudget: number;
 };
@@ -103,18 +115,20 @@ const conceptLexicon: Record<string, string> = {
   energie: 'energy.resource', energetique: 'energy.resource', production: 'production.capacity',
   reserves: 'energy.reserves', stocks: 'energy.stock', stockage: 'energy.stock',
   consommation: 'demand', demande: 'demand', route: 'logistics.route', transit: 'logistics.route', gazoduc: 'logistics.route', pipeline: 'logistics.route',
+  port: 'logistics.port', ports: 'logistics.port', portuaire: 'logistics.port', portuaires: 'logistics.port', terminal: 'logistics.port', douane: 'governance.corruption', corruption: 'governance.corruption', detournement: 'governance.corruption',
   contrat: 'trade.contract', commercial: 'trade.contract', commerce: 'trade.contract', exportation: 'trade.export', importation: 'trade.import',
   negocier: 'diplomacy.negotiation', negotiation: 'diplomacy.negotiation', diplomatie: 'diplomacy.negotiation',
   relation: 'diplomacy.relation', confiance: 'diplomacy.relation', alliance: 'diplomacy.alliance', reddition: 'diplomacy.surrender',
   strategie: 'politics.strategy', objectif: 'politics.strategy', objectifs: 'politics.strategy', vulnerabilites: 'politics.fear', crainte: 'politics.fear',
   doctrine: 'politics.doctrine', ideologie: 'politics.doctrine', gouvernement: 'politics.government', parlement: 'politics.institution',
   defiance: 'politics.stakeholder', groupe: 'politics.stakeholder', personnalite: 'politics.personality',
-  pib: 'economy.macro', croissance: 'economy.macro', inflation: 'economy.macro', chomage: 'economy.macro', dette: 'economy.debt', budget: 'economy.budget',
+  pib: 'economy.macro', croissance: 'economy.macro', inflation: 'economy.macro', chomage: 'economy.macro', dette: 'economy.debt', budget: 'economy.budget', relocalisation: 'economy.productive_system', delocalisation: 'economy.productive_system', attractivite: 'economy.productive_system', intrant: 'economy.productive_system', composants: 'economy.productive_system', minerais: 'economy.productive_system',
   industrie: 'industry.capacity', industriel: 'industry.capacity', semiconductors: 'industry.semiconductors', nuclear: 'industry.nuclear',
   armement: 'military.armament', defense: 'military.armament', militaire: 'military.armament', securite: 'military.security',
   histoire: 'history.current', tendance: 'history.current', processus: 'history.latent', latent: 'history.latent',
   dossier: 'dossier.current', conflit: 'dossier.conflict', crise: 'dossier.crisis',
-  administration: 'capacity.administration', intelligence: 'capacity.intelligence', government: 'capacity.government', diplomacy: 'capacity.diplomacy', economy: 'capacity.economy',
+  capacite: 'capacity.government', capacites: 'capacity.government', etatique: 'capacity.government',
+  administration: 'capacity.administration', administrative: 'capacity.administration', intelligence: 'capacity.intelligence', government: 'capacity.government', gouvernementale: 'capacity.government', diplomacy: 'capacity.diplomacy', economy: 'capacity.economy',
 };
 
 /** Petit graphe transversal : il décrit les relations entre concepts, jamais des cas pays par pays. */
@@ -122,13 +136,16 @@ const conceptEdges: Record<string, string[]> = {
   'energy.gas': ['energy.resource', 'production.capacity', 'demand', 'energy.stock', 'energy.reserves', 'logistics.route', 'trade.contract'],
   'energy.oil': ['energy.resource', 'production.capacity', 'demand', 'energy.stock', 'energy.reserves', 'logistics.route', 'trade.contract'],
   'energy.resource': ['energy.gas', 'energy.oil', 'trade.contract', 'economy.macro'],
+  'logistics.port': ['logistics.route', 'trade.import', 'trade.export', 'governance.corruption', 'production.capacity'],
+  'governance.corruption': ['politics.government', 'logistics.port', 'dossier.current'],
   'trade.contract': ['diplomacy.negotiation', 'diplomacy.relation', 'trade.export', 'trade.import', 'logistics.route'],
   'diplomacy.negotiation': ['diplomacy.relation', 'politics.strategy', 'politics.doctrine', 'capacity.diplomacy', 'trade.contract'],
   'diplomacy.alliance': ['diplomacy.negotiation', 'diplomacy.relation', 'military.security', 'politics.strategy'],
   'diplomacy.surrender': ['diplomacy.negotiation', 'military.security', 'politics.strategy'],
   'politics.strategy': ['politics.fear', 'politics.doctrine', 'diplomacy.relation'],
   'politics.stakeholder': ['politics.government', 'politics.personality', 'dossier.current'],
-  'economy.macro': ['economy.debt', 'economy.budget', 'industry.capacity', 'trade.contract'],
+  'economy.macro': ['economy.debt', 'economy.budget', 'industry.capacity', 'trade.contract', 'economy.productive_system'],
+  'economy.productive_system': ['economy.macro', 'industry.capacity', 'trade.contract', 'trade.import', 'trade.export', 'logistics.port'],
   'industry.capacity': ['production.capacity'],
   'military.armament': ['military.security', 'production.capacity'],
   'history.current': ['history.latent', 'dossier.current', 'dossier.crisis'],
@@ -203,6 +220,35 @@ export function collectFacts(state: WorldState): AIContextFact[] {
 
   add({ id: 'world:date', domain: 'overview', entityIds: [], topicTags: ['date', 'monde'], importance: 100, confidence: 100, visibility: 'public', sourcePath: 'currentDate', statement: `La date de simulation est le ${state.currentDate}.` });
   add({ id: 'world:economy', domain: 'economy', entityIds: [], topicTags: ['cycle', 'croissance', 'inflation'], importance: 86, confidence: 92, visibility: 'public', sourcePath: 'worldEconomy', statement: `Cycle mondial ${state.worldEconomy.cycle}; croissance ${state.worldEconomy.globalGrowthAnnualPct.toFixed(2)} %, inflation ${state.worldEconomy.globalInflationAnnualPct.toFixed(2)} %, stress financier ${state.worldEconomy.financialStress.toFixed(1)}/100.` });
+  const oilMarket = state.worldEconomy.oilMarket;
+  add({
+    id: 'world:oil-market', domain: 'energy', entityIds: [], topicTags: ['petrole', 'baril', 'offre', 'demande', 'stocks', 'prix'], importance: 91, confidence: 84, visibility: 'public', sourcePath: 'worldEconomy.oilMarket',
+    statement: `Marché pétrolier : ${oilMarket.benchmarkUsdPerBarrel.toFixed(1)} $/baril (${oilMarket.monthlyChangePct >= 0 ? '+' : ''}${oilMarket.monthlyChangePct.toFixed(1)} % ce mois) ; demande ${oilMarket.demandIndex.toFixed(0)}, offre ${oilMarket.supplyIndex.toFixed(0)}, stocks ${oilMarket.inventoryMonths.toFixed(1)} mois, marge de production ${oilMarket.spareCapacityPct.toFixed(0)} %, risque géopolitique ${oilMarket.disruptionRisk.toFixed(0)}/100. ${oilMarket.drivers.map((driver) => `${driver.label.toLowerCase()} : ${driver.detail}`).join(' ')}`,
+  });
+  const goldTotals = goldReserveTotals(state);
+  add({
+    id: 'world:gold-reserves', domain: 'economy', entityIds: [],
+    topicTags: ['or', 'mines', 'reserves', 'ressource'], importance: 84, confidence: 78,
+    visibility: 'public', sourcePath: 'goldStocks',
+    statement: `Stocks géologiques d’or recensés : ${goldTotals.identifiedReservesTonnes.toFixed(0)} tonnes identifiées, ${goldTotals.probableReservesTonnes.toFixed(0)} tonnes probables et ${goldTotals.frontierPotentialTonnes.toFixed(0)} tonnes de potentiel frontalier. Ces volumes ne sont pas encore une production ni un prix de marché.`,
+  });
+  const resourceState = state.resources;
+  if (resourceState) {
+    const sharedBasins = Object.values(resourceState.basins).filter((basin) => basin.sharedStatus !== 'national');
+    add({
+      id: 'world:resource-registry', domain: 'economy', entityIds: [],
+      topicTags: ['ressources', 'gisements', 'bassins', 'territoires', 'conflits'], importance: 89, confidence: 82,
+      visibility: 'public', sourcePath: 'resources',
+      statement: `Registre des ressources : ${Object.keys(resourceState.definitions).length} ressources définies, ${Object.keys(resourceState.deposits).length} gisements recensés et ${sharedBasins.length} bassins transfrontaliers ou partagés. Les stocks sont rattachés aux régions et non seulement aux États.`,
+    });
+    for (const basin of sharedBasins.filter((item) => item.countryIds.length > 1)) add({
+      id: `resource-basin:${basin.id}`, domain: 'economy', entityIds: basin.countryIds,
+      topicTags: ['ressource', basin.resourceId, 'bassin', 'frontiere', 'conflit'], importance: 84, confidence: 78,
+      visibility: 'public', sourcePath: `resources.basins.${basin.id}`,
+      statement: `Bassin ${basin.name} (${basin.resourceId}) : continuité géologique ${basin.geologicalContinuity}/100 ; pays concernés ${basin.countryIds.join(', ')} ; statut ${basin.sharedStatus}.`,
+    });
+  }
+  for (const event of upcomingInternationalCalendar(state.currentDate, 6).slice(0, 4)) add({ id: `world:calendar:${event.id}`, domain: 'diplomacy', entityIds: [], topicTags: ['calendrier', 'sommet', event.institution.toLocaleLowerCase('fr')], importance: 72, confidence: 100, visibility: 'public', sourcePath: `internationalCalendar.${event.id}`, statement: `Fenêtre internationale : ${event.title} (${event.institution}) à partir du ${event.date}. ${event.summary}` });
 
   for (const country of Object.values(state.countries)) {
     const macro = state.macroEconomies[country.id];
@@ -214,12 +260,36 @@ export function collectFacts(state: WorldState): AIContextFact[] {
     if (leadership) add({ id: `country:${country.id}:leadership`, domain: 'politics', entityIds: [country.id, ...leadership.figures.map((figure) => figure.id)], topicTags: ['dirigeant', 'personnalite', 'gouvernement'], importance: 91, confidence: 78, visibility: 'public', sourcePath: `leadership.${country.id}`, statement: `Direction effective de ${country.name}: ${leadership.figures.map((figure) => `${figure.name} (${figure.role}, autorité ${figure.authorityShare} %; ${figure.ideologyTags.join(', ')})`).join(' ; ')}. Coordination exécutive ${leadership.executiveCoordination}/100.` });
     const politicalCycle = state.politicalCycles?.[country.id];
     if (politicalCycle) add({ id: `country:${country.id}:political-cycle`, domain: 'politics', entityIds: [country.id], topicTags: ['election', 'mandat', 'succession', 'gouvernement'], importance: politicalCycle.status === 'campaign' ? 90 : 69, confidence: 100, visibility: 'public', sourcePath: `politicalCycles.${country.id}`, observedAt: state.currentDate, statement: `Cycle politique de ${country.name}: mode ${politicalCycle.mode}, prochaine échéance ${politicalCycle.nextReviewDate}, statut ${politicalCycle.status}${politicalCycle.lastOutcome ? `, dernier résultat ${politicalCycle.lastOutcome} avec un soutien ${politicalCycle.lastSupportScore ?? 'non chiffré'}/100` : ''}.` });
+    const nationalPolitics = state.nationalPolitics?.[country.id];
+    if (nationalPolitics) add({ id: `country:${country.id}:parliament`, domain: 'politics', entityIds: [country.id], topicTags: ['parlement', 'majorite', 'loi', 'budget'], importance: 93, confidence: 100, visibility: 'internal', ownerCountryId: country.id, sourcePath: `nationalPolitics.${country.id}`, statement: `${country.name}: ${nationalPolitics.legislatureLabel}, composition ${nationalPolitics.compositionDate}; blocs gouvernementaux ${nationalPolitics.governmentBlocIds.join(', ')}. Textes en procédure : ${Object.values(nationalPolitics.procedures).map((procedure) => `${procedure.title} (${procedure.stage}, vote ${procedure.voteAt})`).join(' ; ') || 'aucun'}.` });
     const apparatus = state.politicalApparatus?.[country.id];
     if (apparatus) add({ id: `country:${country.id}:apparatus`, domain: 'politics', entityIds: [country.id, ...apparatus.currents.map((current) => current.id)], topicTags: ['parlement', 'administration', 'elites', 'appareil politique'], importance: 87, confidence: 75, visibility: 'secret', ownerCountryId: country.id, sourcePath: `politicalApparatus.${country.id}`, statement: `Appareil politique de ${country.name}: ${apparatus.currents.map((current) => `${current.label} (poids ${current.weight}, implantation ${current.institutionalReach})`).join(' ; ')}. Inertie ${apparatus.inertia}/100, pluralisme ${apparatus.pluralism}/100.` });
     for (const [domain, capacity] of Object.entries(country.capacities)) add({ id: `country:${country.id}:capacity:${domain}`, domain: 'capacity', entityIds: [country.id], topicTags: ['capacite', domain], importance: 76, confidence: 100, visibility: 'internal', ownerCountryId: country.id, sourcePath: `countries.${country.id}.capacities.${domain}`, statement: `${country.name}: capacité ${domain} engagée à ${capacity.committed.toFixed(0)} sur ${capacity.maximum.toFixed(0)}.` });
-    if (macro) add({ id: `country:${country.id}:macro`, domain: 'economy', entityIds: [country.id], topicTags: ['pib', 'croissance', 'inflation', 'chomage', 'dette'], importance: 92, confidence: macro.source.confidence, visibility: 'public', sourcePath: `macroEconomies.${country.id}`, observedAt: macro.lastUpdatedAt, statement: `${country.name}: PIB réel ${macro.realGdpBillion2000Usd.toFixed(1)} Md$ 2000; croissance ${macro.realGrowthAnnualPct.toFixed(2)} %; inflation ${macro.inflationAnnualPct.toFixed(2)} %; chômage ${macro.unemploymentPct.toFixed(2)} %; dette publique ${macro.publicDebtPctGdp.toFixed(1)} % du PIB; solde budgétaire ${macro.fiscalBalancePctGdp.toFixed(1)} %.` });
+    if (macro) {
+      add({ id: `country:${country.id}:macro`, domain: 'economy', entityIds: [country.id], topicTags: ['pib', 'croissance', 'inflation', 'chomage', 'dette'], importance: 92, confidence: macro.source.confidence, visibility: 'public', sourcePath: `macroEconomies.${country.id}`, observedAt: macro.lastUpdatedAt, statement: `${country.name}: PIB réel ${macro.realGdpBillion2000Usd.toFixed(1)} Md$ 2000; croissance ${macro.realGrowthAnnualPct.toFixed(2)} %; inflation ${macro.inflationAnnualPct.toFixed(2)} %; chômage ${macro.unemploymentPct.toFixed(2)} %; dette publique ${macro.publicDebtPctGdp.toFixed(1)} % du PIB; solde budgétaire ${macro.fiscalBalancePctGdp.toFixed(1)} %.` });
+      const productive = macro.productiveSystem;
+      add({ id: `country:${country.id}:productive-system`, domain: 'economy', entityIds: [country.id], topicTags: ['industrie', 'attractivite', 'relocalisation', 'delocalisation', 'intrants', 'chaines de valeur'], importance: 85, confidence: 82, visibility: 'public', sourcePath: `macroEconomies.${country.id}.productiveSystem`, observedAt: macro.lastUpdatedAt, statement: `${country.name}: attractivité productive ${productive.productiveAttractiveness.toFixed(0)}/100; intégration aux chaînes mondiales ${productive.globalValueChainIntegration.toFixed(0)}/100; dépendance industrielle extérieure ${productive.foreignIndustrialDependency.toFixed(0)}/100; concentration des fournisseurs ${productive.supplyConcentration.toFixed(0)}/100; exposition aux intrants critiques ${productive.criticalInputExposure.toFixed(0)}/100; solde d’implantation productive ${productive.productiveRelocationBalanceAnnualPct >= 0 ? '+' : ''}${productive.productiveRelocationBalanceAnnualPct.toFixed(1)} %/an.` });
+    }
     const energy = state.countryEnergy[country.id];
     if (energy) add({ id: `country:${country.id}:energy`, domain: 'energy', entityIds: [country.id], topicTags: ['petrole', 'gaz', 'stocks', 'dependance'], importance: 84, confidence: country.statisticalReliability, visibility: 'public', sourcePath: `countryEnergy.${country.id}`, statement: `${country.name}: pétrole demande/production/stocks ${energy.annualDemand.oil}/${energy.domesticProduction.oil}/${energy.strategicStocks.oil}; gaz ${energy.annualDemand.gas}/${energy.domesticProduction.gas}/${energy.strategicStocks.gas}.` });
+    const gold = state.goldStocks?.[country.id];
+    if (gold) add({
+      id: `country:${country.id}:gold-stocks`, domain: 'economy', entityIds: [country.id],
+      topicTags: ['or', 'mines', 'reserves', 'ressource'], importance: 78,
+      confidence: gold.confidence === 'high' ? 92 : gold.confidence === 'medium' ? 78 : 58,
+      visibility: 'public', sourcePath: `goldStocks.${country.id}`, observedAt: gold.lastUpdatedAt,
+      statement: `${country.name}: ${gold.identifiedReservesTonnes.toFixed(0)} tonnes d’or identifiées, ${gold.probableReservesTonnes.toFixed(0)} tonnes probables, ${gold.frontierPotentialTonnes.toFixed(0)} tonnes de potentiel frontalier. Confiance ${gold.confidence}.`,
+    });
+    const resources = state.resources?.countryStocks[country.id];
+    if (resources) {
+      const significant = Object.values(resources).filter((stock) => stock.identifiedStock > 0 || stock.probableStock > 0);
+      if (significant.length) add({
+        id: `country:${country.id}:resource-stocks`, domain: 'economy', entityIds: [country.id],
+        topicTags: ['ressources', 'gisements', 'stocks', ...significant.map((stock) => stock.resourceId)], importance: 80,
+        confidence: 78, visibility: 'public', sourcePath: `resources.countryStocks.${country.id}`,
+        statement: `${country.name}: ${significant.map((stock) => `${stock.resourceId} ${stock.identifiedStock.toFixed(0)} identifiées, ${stock.probableStock.toFixed(0)} probables`).join(' ; ')}. Les volumes sont géologiques et ne constituent pas encore une production.`,
+      });
+    }
     const militaryTheaters = militaryTheatersForCountry(state, country.id);
     if (militaryTheaters.length) add({
       id: `country:${country.id}:military-theaters`, domain: 'military',
@@ -246,6 +316,19 @@ export function collectFacts(state: WorldState): AIContextFact[] {
       importance: 93, confidence: 100, visibility: 'public',
       sourcePath: `warZones.${country.id}`,
       statement: `${country.name}: ${warZones.map((zone) => `${zone.name}, intensité ${zone.intensity}, perturbation économique ${zone.economicDisruptionPct.toFixed(0)} %, ravitaillement ${Math.round(zone.supplyMultiplier * 100)} %, statut ${zone.status}`).join(' ; ')}.`,
+    });
+  }
+
+  for (const flow of Object.values(state.tradeFlows)) {
+    const exporter = state.countries[flow.exporterId];
+    const importer = state.countries[flow.importerId];
+    if (!exporter || !importer) continue;
+    const leading = Object.entries(flow.productMix).sort(([, left], [, right]) => right - left)[0]?.[0] ?? 'manufactured_goods';
+    add({
+      id: `trade:${flow.id}`, domain: 'economy', entityIds: [flow.exporterId, flow.importerId],
+      topicTags: ['commerce', 'exportation', 'importation', 'chaine de valeur', leading], importance: 72, confidence: 84, visibility: 'public',
+      sourcePath: `tradeFlows.${flow.id}`, observedAt: flow.lastUpdatedAt,
+      statement: `Flux ${exporter.name} → ${importer.name}: ${flow.annualValueBillion2000Usd.toFixed(1)} Md$ annuels ; famille dominante ${leading}; capacité de route ${(flow.routeCapacityIndex ?? 50).toFixed(0)}/100, fiabilité ${flow.reliability.toFixed(0)}/100, friction ${flow.friction.toFixed(0)}/100.`,
     });
   }
 
@@ -290,12 +373,44 @@ export function collectFacts(state: WorldState): AIContextFact[] {
     });
   }
   for (const node of Object.values(state.energyNodes)) add({ id: `energy-node:${node.id}`, domain: 'energy', entityIds: [node.countryId], topicTags: [node.resource, 'production', 'capacite', 'reserves'], importance: 72, confidence: 82, visibility: 'public', sourcePath: `energyNodes.${node.id}`, statement: `${node.label} (${node.countryId}, ${node.resource}): production ${node.annualProduction}, capacité ${node.annualCapacity}, réserves prouvées ${node.provenReserves}, coût d'extraction ${node.extractionCost}.` });
+  for (const countryId of Object.keys(state.countries)) {
+    const ports = [...americasPortsForCountry(state.territorial, countryId), ...europePortsForCountry(state.territorial, countryId), ...africaPortsForCountry(state.territorial, countryId), ...asiaPortsForCountry(state.territorial, countryId), ...oceaniaPortsForCountry(state.territorial, countryId)]
+      .filter((asset) => asset.portProfile)
+      .filter((asset, index, all) => all.findIndex((candidate) => candidate.id === asset.id) === index);
+    if (!ports.length) continue;
+    const available = ports.reduce((sum, asset) => sum + effectivePortGoodsCapacity(asset.portProfile!), 0);
+    const portStatement = `${state.countries[countryId].name}: ${ports.length} port(s) majeur(s), capacité de marchandises actuellement exploitable ${available.toFixed(2)}/10 cumulée. ${ports.map((asset) => `${asset.name} (${asset.portProfile!.classification}, ${asset.portProfile!.capabilities.join('/')}, état ${asset.portProfile!.operationalState})`).join('; ')}.`;
+    add({
+      id: `ports:${countryId}`, domain: 'economy', entityIds: [countryId], topicTags: ['ports', 'logistique', 'marchandises', 'desserte'],
+      importance: 74, confidence: 82, visibility: 'public', sourcePath: `territorial.assets.ports.${countryId}`,
+      statement: portStatement.slice(0, 1_100),
+    });
+    // Le registre peut contenir des centaines de ports. Le détail exploitable
+    // reste limité aux huit nœuds les plus capacitaires par pays ; l’agrégat
+    // conserve néanmoins la vision complète du pays.
+    const detailedPorts = ports.slice().sort((a, b) => effectivePortGoodsCapacity(b.portProfile!) - effectivePortGoodsCapacity(a.portProfile!)).slice(0, 8);
+    for (const asset of detailedPorts) {
+      const profile = asset.portProfile!;
+      add({
+        id: `port:${asset.id}`, domain: 'economy', entityIds: [countryId, asset.id, asset.territoryId],
+        topicTags: ['port', 'ports', 'logistique', 'marchandises', 'desserte', ...profile.capabilities],
+        importance: 80, confidence: 86, visibility: 'public', sourcePath: `territorial.assets.${asset.id}.portProfile`,
+        statement: `${asset.name} (${state.countries[countryId].name}) : classe ${profile.classification}; capacité marchandises ${profile.goodsCapacity}/10, plafond infrastructure ${profile.infrastructureCapacity}/10; desserte nationale ${profile.nationalReach}/10; risque gouvernance ${profile.governanceRisk}/10; friction sociale ${profile.laborFriction}/5; capacités ${profile.capabilities.join(', ')}; potentiel d’extension ${profile.developmentPotential}/5; état ${profile.operationalState}.`,
+      });
+    }
+  }
   for (const contract of Object.values(state.energyContracts)) add({ id: `energy-contract:${contract.id}`, domain: 'energy', entityIds: [contract.sellerId, contract.buyerId], topicTags: [contract.resource, 'contrat', 'importation', 'exportation'], importance: 78, confidence: 95, visibility: contract.status === 'active' ? 'public' : 'internal', ownerCountryId: contract.buyerId, sourcePath: `energyContracts.${contract.id}`, statement: `Contrat ${contract.resource} ${contract.sellerId} → ${contract.buyerId}: volume annuel ${contract.annualVolume}, statut ${contract.status}, échéance ${contract.endDate}.` });
-  for (const sector of Object.values(state.sectors)) add({ id: `sector:${sector.id}`, domain: 'industry', entityIds: [sector.countryId], topicTags: [sector.sector, 'industrie', 'capacite'], importance: 74, confidence: 88, visibility: 'public', sourcePath: `sectors.${sector.id}`, statement: `${sector.countryId}, secteur ${sector.sector}: capacité ${sector.capacity}, utilisation ${sector.utilization} %, charge ${sector.workloadMonths} mois, dépendance étrangère ${sector.foreignDependency}/100.` });
+  for (const sector of Object.values(state.sectors)) {
+    const tier = sector.technologyTier ?? Math.max(1, Math.ceil(sector.technology / 10));
+    const inputs = sector.inputRequirements
+      ? ` besoins matériels métaux industriels ${sector.inputRequirements.industrialMetals}/10, minerais critiques ${sector.inputRequirements.criticalMinerals}/10, composants avancés ${sector.inputRequirements.advancedComponents}/10;`
+      : '';
+    add({ id: `sector:${sector.id}`, domain: 'industry', entityIds: [sector.countryId], topicTags: [sector.sector, 'industrie', 'capacite'], importance: 74, confidence: 88, visibility: 'public', sourcePath: `sectors.${sector.id}`, statement: `${sector.countryId}, secteur ${sector.sector}: capacité ${sector.capacity}, utilisation ${sector.utilization} %, niveau technique ${tier}/10, charge ${sector.workloadMonths} mois, dépendance étrangère ${sector.foreignDependency}/100;${inputs}` });
+  }
   for (const product of Object.values(state.armamentProducts)) add({ id: `armament:${product.id}`, domain: 'military', entityIds: [product.countryId, ...product.clients.map((client) => client.countryId)], topicTags: ['armement', product.family, 'production', 'export'], importance: 75, confidence: product.evidenceConfidence, visibility: 'public', sourcePath: `armamentProducts.${product.id}`, statement: `${product.name} (${product.manufacturer}): statut ${product.status}, capacité annuelle ${product.annualCapacity}, carnet ${product.backlogMonths} mois, maturité ${product.maturity}, expérience ${product.operationalExperience}.` });
   for (const current of Object.values(state.historicalCurrents)) if (current.playerVisibility !== 'hidden') add({ id: `history:${current.id}`, domain: 'history', entityIds: current.affectedActors, topicTags: ['histoire', 'tendance', ...current.drivers.flatMap(words).slice(0, 8)], importance: 80, confidence: current.playerVisibility === 'known' ? 90 : 58, visibility: current.playerVisibility === 'known' ? 'public' : 'internal', ownerCountryId: state.playerCountryId, sourcePath: `historicalCurrents.${current.id}`, statement: `${current.name}: pression ${current.pressure.toFixed(0)}/100, inertie ${current.inertia.toFixed(0)}, statut ${current.status}; moteurs ${current.drivers.join(', ')}.` });
   for (const anchor of Object.values(state.historicalAnchors ?? {})) {
-    if (anchor.status === 'dormant' || anchor.status === 'expired') continue;
+    if (anchor.status === 'expired' || state.currentDate < anchor.probableWindow.start) continue;
     const visible = anchor.playerVisibility !== 'hidden';
     if (!visible) continue;
     const publicTitle = anchor.playerVisibility === 'known' ? anchor.title : anchor.trendTitle;
@@ -310,8 +425,31 @@ export function collectFacts(state: WorldState): AIContextFact[] {
     });
   }
   for (const process of Object.values(state.latentProcesses)) add({ id: `latent:${process.id}`, domain: 'history', entityIds: [process.actorId], topicTags: ['processus', 'latent', 'secret'], importance: 76, confidence: 75, visibility: 'secret', ownerCountryId: String(process.actorId), sourcePath: `latentProcesses.${process.id}`, statement: `Processus latent de ${process.actorId}: ${process.objective}; progrès ${process.progress}/100; statut ${process.status}.` });
+  for (const program of Object.values(state.actionPrograms ?? {})) add({
+    id: `program:${program.id}`, domain: 'dossier', entityIds: [program.actorId, ...program.targetIds, ...(program.territorialAssetId ? [program.territorialAssetId] : []), ...(program.linkedDossierId ? [program.linkedDossierId] : [])],
+    topicTags: ['decision', 'programme', 'execution', ...words(program.title)], importance: program.status === 'active' || program.status === 'pending_parliament' ? 85 : 65,
+    confidence: 100, visibility: 'internal', ownerCountryId: program.actorId, sourcePath: `actionPrograms.${program.id}`,
+    observedAt: program.execution?.lastAdvancedAt ?? program.startedAt,
+    statement: `${program.title}: ordre confirmé « ${program.intent} »; statut ${program.status}; échéance ${program.expectedCompletionAt}; budget ${program.budgetCost} (${program.budgetStatus ?? 'consumed'}); moyens ${program.resourceStatus ?? 'committed'}.${program.geopoliticalReaction ? ` Réactions extérieures ${program.geopoliticalReaction.status === 'scheduled' ? `attendues vers le ${program.geopoliticalReaction.dueAt}` : `enregistrées le ${program.geopoliticalReaction.resolvedAt ?? state.currentDate}`} : ${program.geopoliticalReaction.observers.map((observer) => `${observer.countryId} ${observer.posture}`).join(', ')}.` : ''} ${program.execution?.actorLabels.join('; ') ?? ''} ${program.execution?.events.at(-1)?.summary ?? ''} ${program.resolution ?? ''} ${(program.observedEffects ?? []).join(' ')}`,
+  });
+  for (const report of Object.values(state.reports ?? {})) add({
+    id: `report:${report.id}`,
+    domain: 'dossier',
+    entityIds: [report.actorId, ...report.targetIds, ...(report.linkedDossierId ? [report.linkedDossierId] : [])],
+    topicTags: ['rapport', report.kind, 'expertise', 'dossier'],
+    importance: report.status === 'delivered' ? 88 : 74,
+    confidence: report.confidence === 'high' ? 92 : report.confidence === 'low' ? 58 : 78,
+    visibility: 'internal',
+    ownerCountryId: report.actorId,
+    sourcePath: `reports.${report.id}`,
+    observedAt: report.deliveredAt ?? report.commissionedAt,
+    statement: `${report.title}: statut ${report.status}; sujet ${report.subject}; ${report.executiveSummary} ${report.findings.join(' ')} ${report.recommendations.join(' ')}`,
+  });
   for (const dossier of Object.values(state.strategicDossiers ?? {})) {
-    add({ id: `dossier:${dossier.id}`, domain: 'dossier', entityIds: dossier.actorIds, topicTags: [dossier.kind, ...dossier.regionTags], importance: { minor: 45, moderate: 65, major: 85, critical: 100 }[dossier.importance], confidence: 90, visibility: 'public', sourcePath: `strategicDossiers.${dossier.id}`, observedAt: dossier.updatedAt, statement: `${dossier.title}: ${dossier.publicSummary} Phase ${dossier.phase}; tendance ${dossier.trend}; ${dossier.pendingDecisions.length} décision(s) en attente; ${dossier.escalationCount ?? 0} relance(s) du moteur${dossier.sleepingAt ? `; dossier en sommeil depuis ${dossier.sleepingAt}` : ''}.` });
+    // Un dossier en sommeil représente une trajectoire encore latente : le
+    // pouls IA ne doit pas le révéler avant sa manifestation observable.
+    if (dossier.sleepingAt && !dossier.followed && !dossier.reactivatedAt) continue;
+    add({ id: `dossier:${dossier.id}`, domain: 'dossier', entityIds: dossier.actorIds, topicTags: [dossier.kind, ...dossier.regionTags], importance: { minor: 45, moderate: 65, major: 85, critical: 100 }[dossier.importance], confidence: 90, visibility: 'public', sourcePath: `strategicDossiers.${dossier.id}`, observedAt: dossier.updatedAt, statement: `${dossier.title}: ${dossier.publicSummary} Phase ${dossier.phase}; tendance ${dossier.trend}; ${dossier.pendingDecisions.length} décision(s) en attente; ${dossier.escalationCount ?? 0} relance(s) du moteur${dossier.sleepingAt ? `; dossier en sommeil depuis ${dossier.sleepingAt}` : ''}${dossier.worldCrisisState ? ` Indicateurs de crise : pression ${dossier.worldCrisisState.pressure}/100, coopération ${dossier.worldCrisisState.cooperation}/100, contrainte matérielle ${dossier.worldCrisisState.materialStress}/100. Postures : ${dossier.worldCrisisState.actorPostures.map((posture) => `${posture.countryId} ${posture.stance}`).join('; ')}.` : ''}${dossier.conflictState?.externalReactions?.length ? ` Réactions extérieures : ${dossier.conflictState.externalReactions.map((reaction) => `${reaction.actorLabel} (${reaction.posture})`).join('; ')}.` : ''}.` });
     for (const entry of dossier.entries.slice(-4)) add({ id: `dossier-entry:${entry.id}`, domain: 'dossier', entityIds: entry.actorIds, topicTags: [dossier.kind, entry.importance], importance: { minor: 40, moderate: 60, major: 82, critical: 98 }[entry.importance], confidence: 90, visibility: entry.visibility === 'public' ? 'public' : entry.visibility === 'secret' ? 'secret' : 'internal', ownerCountryId: state.playerCountryId, sourcePath: `strategicDossiers.${dossier.id}.entries.${entry.id}`, observedAt: entry.date, statement: `${entry.title}: ${entry.summary}` });
   }
   for (const zone of Object.values(state.warZones ?? {})) add({
@@ -342,7 +480,7 @@ function monthsBetween(from: ISODate, to: ISODate) {
 }
 
 function scoreFact(state: WorldState, query: AIContextQuery, item: AIContextFact) {
-  const entities = new Set([query.actorId, query.requestingCountryId, query.decisionCountryId, ...query.targetIds]);
+  const entities = new Set([query.actorId, query.requestingCountryId, query.decisionCountryId, ...query.targetIds, ...(query.focusEntityIds ?? [])]);
   const directEntities = item.entityIds.filter((id) => entities.has(id)).length;
   const distance = conceptDistance(query.concepts, item.concepts);
   const age = monthsBetween(item.observedAt, state.currentDate);
@@ -404,6 +542,18 @@ export function queryForAIJob(state: WorldState, job: AIJob): AIContextQuery {
     .filter((country) => country.id !== requestingCountryId
       && (contextText.includes(country.id) || normalizedContext.includes(words(country.name).join(' '))))
     .map((country) => country.id);
+  const focusEntityIds = Object.values(state.territorial.assets)
+    .filter((asset) => asset.kind === 'port')
+    .filter((asset) => {
+      const assetWords = words(asset.name);
+      const shortId = asset.id.split(':').at(-1) ?? asset.id;
+      return (assetWords.length > 0 && assetWords.every((word) => normalizedContext.split(' ').includes(word)))
+        || normalizedContext.includes(shortId.toLocaleLowerCase('fr'));
+    })
+    .map((asset) => asset.id)
+    .slice(0, 8);
+  const contextDossier = job.context as Record<string, unknown>;
+  const contextDossierId = typeof contextDossier.dossierId === 'string' ? `dossier:${contextDossier.dossierId}` : undefined;
   const decisionCountryId = decisionCountryForJob(state, job, targetIds);
   const approximateIntentTokens = approximateTokens(playerIntent);
   return {
@@ -417,6 +567,7 @@ export function queryForAIJob(state: WorldState, job: AIJob): AIContextQuery {
     concepts: [...new Set([...defaultConceptsByKind[job.kind], ...conceptsFromText(`${purpose} ${job.reasons.join(' ')} ${contextText}`)])],
     purpose,
     playerIntent,
+    focusEntityIds: contextDossierId ? [...focusEntityIds, contextDossierId] : focusEntityIds,
     approximateIntentTokens,
     tokenBudget: dynamicBudget(job.budgetTier, approximateIntentTokens, targetIds.length, job.kind),
   };
@@ -425,8 +576,24 @@ export function queryForAIJob(state: WorldState, job: AIJob): AIContextQuery {
 /** Compile la vérité utile du moteur avant tout appel réseau. */
 export function compileAIContext(state: WorldState, query: AIContextQuery): AIContextPacket {
   const baseFacts = collectFacts(state);
+  // Ce diagnostic est plus coûteux qu'une lecture de champ : on ne le calcule
+  // que pour les pays effectivement concernés par l'appel, jamais 196 fois.
+  const governmentCapacityFacts = [...new Set([query.requestingCountryId, query.decisionCountryId, ...query.targetIds])]
+    .filter((countryId) => Boolean(state.countries[countryId]))
+    .map((countryId) => {
+      const country = state.countries[countryId];
+      const governmentCapacity = governmentCapacitySnapshot(state, countryId);
+      const structuralModifiers = activeStructuralModifiers(state, countryId);
+      return fact(state, {
+        id: `country:${countryId}:government-capacity`, domain: 'capacity', entityIds: [countryId],
+        topicTags: ['capacite', 'gouvernement', 'administration', 'execution', 'etat'], importance: 90, confidence: 100,
+        visibility: 'internal', ownerCountryId: countryId, sourcePath: `derived.governmentCapacity.${countryId}`,
+        statement: `${country.name}: capacité gouvernementale ${governmentCapacity.score}/100 (${governmentCapacity.band}); ${Object.values(governmentCapacity.dimensions).map((item) => `${item.label} ${item.score}/100`).join('; ')}. Tensions nationales actives : ${structuralModifiers.map((modifier) => modifier.label).join('; ') || 'aucune'}. Il s'agit de la qualité d'exécution, distincte des moyens opérationnels disponibles.`,
+      });
+    });
+  const contextualFacts = [...baseFacts, ...governmentCapacityFacts];
   const allFacts = query.jobKind === 'diplomacy'
-    ? [...baseFacts, (() => {
+    ? [...contextualFacts, (() => {
       const feasibility = deriveDiplomaticFeasibility(state, query.decisionCountryId, query.targetIds, query.playerIntent);
       return fact(state, {
         id: `diplomacy:guardrails:${query.decisionCountryId}:${state.currentDate}`,
@@ -441,12 +608,13 @@ export function compileAIContext(state: WorldState, query: AIContextQuery): AICo
         statement: feasibility.instruction,
       });
     })()]
-    : baseFacts;
+    : contextualFacts;
   const scoped = allFacts.flatMap((item): AIContextReserveFact[] => {
     if (canCountrySeeFact(state, query.requestingCountryId, item)) return [{ ...item, accessScope: 'known' }];
     if (item.ownerCountryId === query.decisionCountryId && item.visibility !== 'public') return [{ ...item, accessScope: 'private' }];
     return [];
   });
+  const energyRelevant = query.concepts.some((concept) => concept.startsWith('energy.'));
   const anchorIds = new Set([
     'world:date',
     `country:${query.requestingCountryId}:identity`,
@@ -458,7 +626,23 @@ export function compileAIContext(state: WorldState, query: AIContextQuery): AICo
     `country:${query.decisionCountryId}:apparatus`,
     ...(query.jobKind === 'diplomacy' ? [`diplomacy:guardrails:${query.decisionCountryId}:${state.currentDate}`] : []),
     ...query.targetIds.map((id) => `country:${id}:identity`),
+    ...(energyRelevant ? query.targetIds.map((id) => `country:${id}:energy`) : []),
+    ...(query.focusEntityIds ?? []).filter((id) => id.startsWith('dossier:')),
   ]);
+  // L'enrichissement du pack pays augmente le nombre de faits économiques et
+  // diplomatiques. Un dossier actif qui concerne les interlocuteurs doit
+  // rester dans le paquet initial : l'IA ne doit pas perdre la continuité
+  // politique simplement parce que le monde est mieux documenté.
+  const relevantActorIds = new Set([query.requestingCountryId, query.decisionCountryId, ...query.targetIds]);
+  const dossierAnchorIds = new Set<string>();
+  for (const dossier of Object.values(state.strategicDossiers ?? {})
+    .filter((item) => item.status === 'active' && item.actorIds.some((id) => relevantActorIds.has(id)))
+    .sort((a, b) => ({ minor: 1, moderate: 2, major: 3, critical: 4 }[b.importance] - { minor: 1, moderate: 2, major: 3, critical: 4 }[a.importance] || b.updatedAt.localeCompare(a.updatedAt)))
+    .slice(0, 6)) {
+    const factId = `dossier:${dossier.id}`;
+    anchorIds.add(factId);
+    dossierAnchorIds.add(factId);
+  }
   const ranked = scoped
     .map((item) => ({ item, score: scoreFact(state, query, item), distance: conceptDistance(query.concepts, item.concepts) }))
     .filter(({ item, distance }) => anchorIds.has(item.id) || (domainCanParticipate(query, item) && Number.isFinite(distance)))
@@ -467,8 +651,8 @@ export function compileAIContext(state: WorldState, query: AIContextQuery): AICo
   let used = approximateTokens({ query: { ...query, playerIntent: undefined }, overview: state.currentDate });
   const guardrailId = `diplomacy:guardrails:${query.decisionCountryId}:${state.currentDate}`;
   const orderedAnchors = ranked.filter(({ item }) => anchorIds.has(item.id)).sort((a, b) => {
-    if (a.item.id === guardrailId) return -1;
-    if (b.item.id === guardrailId) return 1;
+    const anchorRank = (id: string) => id === guardrailId ? 0 : dossierAnchorIds.has(id) ? 1 : 2;
+    if (anchorRank(a.item.id) !== anchorRank(b.item.id)) return anchorRank(a.item.id) - anchorRank(b.item.id);
     return b.score - a.score || a.item.id.localeCompare(b.item.id);
   });
   const ordered = [

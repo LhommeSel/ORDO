@@ -241,17 +241,27 @@ function historicalDossierDecision(
   });
 }
 
-function anchorDossier(state: WorldState, anchor: HistoricalAnchor, date: ISODate, pressure: number): StrategicDossier {
+function anchorDossier(
+  state: WorldState,
+  anchor: HistoricalAnchor,
+  date: ISODate,
+  pressure: number,
+  openingDecisionStage: 'signal' | 'activation' | false = 'signal',
+  followed = false,
+): StrategicDossier {
   const dossierId = `historical-${anchor.id}`;
   const early = pressure < anchor.activationThreshold;
   const dossierImportance: DossierImportance = early && anchor.importance !== 'minor' ? 'moderate' : anchor.importance;
-  const openingDecision = historicalDossierDecision(state, anchor, date, dossierImportance, 'signal');
+  const openingDecision = openingDecisionStage
+    ? historicalDossierDecision(state, anchor, date, dossierImportance, openingDecisionStage)
+    : undefined;
   return {
     id: dossierId,
     title: anchor.trendTitle,
     kind: anchor.kind,
     status: early ? 'emerging' : 'active',
     importance: dossierImportance,
+    scope: anchor.affectedActors.includes(state.playerCountryId) ? 'player_involved' : 'world',
     actorIds: anchor.affectedActors,
     regionTags: anchor.regionTags,
     startedAt: date,
@@ -259,10 +269,8 @@ function anchorDossier(state: WorldState, anchor: HistoricalAnchor, date: ISODat
     phase: early ? 'Signaux précurseurs' : 'Seuil d’activation atteint',
     trend: early ? 'stable' : 'escalating',
     publicSummary: anchor.trendSummary,
-    followed: false,
-    // Une proposition historique doit être visible une fois, même si elle
-    // n’est pas encore un dossier majeur suivi en continu.
-    autoTracked: true,
+    followed,
+    autoTracked: !followed,
     commitments: [],
     pendingDecisions: openingDecision ? [openingDecision.prompt] : [],
     ...(openingDecision ? { decisionRecords: [openingDecision] } : {}),
@@ -279,6 +287,49 @@ function anchorDossier(state: WorldState, anchor: HistoricalAnchor, date: ISODat
       visibility: anchor.playerVisibility === 'known' ? 'public' : 'player',
     }],
   };
+}
+
+/**
+ * Transforme une tendance observée en dossier personnel de suivi. Cette action
+ * ne force aucun arbitrage : elle permet seulement de conserver la chronologie
+ * et de rattacher ensuite les initiatives du joueur à cette trajectoire.
+ */
+export function followHistoricalAnchor(state: WorldState, anchorId: string): WorldState {
+  const anchor = state.historicalAnchors[anchorId];
+  if (!anchor || anchor.playerVisibility === 'hidden') return state;
+  const dossierId = anchor.dossierId ?? `historical-${anchor.id}`;
+  const existing = state.strategicDossiers[dossierId];
+  if (existing?.followed) return state;
+
+  if (existing) {
+    return commitWorldAction(state, {
+      kind: 'historical', actorId: state.playerCountryId, origin: 'player', visibility: 'player',
+      intent: `Suivre la tendance « ${anchor.trendTitle} »`,
+      metadata: { historicalAnchor: true, historicalAnchorId: anchor.id, dossierFollow: true },
+      effects: [{
+        kind: 'dossier_patch', dossierId,
+        patch: { followed: true, autoTracked: false, reactivatedAt: state.currentDate }, clear: ['sleepingAt'],
+        reason: 'Le joueur choisit de suivre cette tendance dans ses dossiers.', visibility: 'player',
+      }],
+    });
+  }
+
+  const dossier = anchorDossier(state, anchor, state.currentDate, anchor.pressure, false, true);
+  return commitWorldAction(state, {
+    kind: 'historical', actorId: state.playerCountryId, origin: 'player', visibility: 'player',
+    intent: `Suivre la tendance « ${anchor.trendTitle} »`,
+    metadata: { historicalAnchor: true, historicalAnchorId: anchor.id, dossierFollow: true },
+    effects: [
+      {
+        kind: 'historical_anchor_patch', anchorId: anchor.id, patch: { dossierId: dossier.id },
+        reason: 'La tendance est épinglée comme dossier de suivi par le joueur.', visibility: 'player',
+      },
+      {
+        kind: 'dossier_add', dossier,
+        reason: 'Le joueur ouvre un dossier de suivi sans déclencher de décision automatique.', visibility: 'player',
+      },
+    ],
+  });
 }
 
 function anchorPressure(state: WorldState, anchor: HistoricalAnchor, reachedDate: ISODate, elapsedMonths: number) {
@@ -322,18 +373,43 @@ function updateHistoricalAnchors(
       ...(crossedActivation ? { activatedAt: reachedDate } : {}),
     };
     const dossierId = anchor.dossierId ?? `historical-${anchor.id}`;
-    const shouldCreateDossier = crossedProposal && anchor.playerVisibility !== 'hidden';
     const existing = next.strategicDossiers[dossierId];
+    // Un signal appartient à la vue Monde. Un dossier automatique ne naît que
+    // lorsqu'un seuil concret est franchi et réclame une gestion. Certains
+    // ancrages du scénario sont toutefois déjà actifs au 1er janvier 2000 :
+    // ils doivent créer leur dossier au premier passage du moteur, sans
+    // recevoir artificiellement une seconde activation ni un arbitrage.
+    const alreadyActiveWithoutDossier = previousStatus === 'active' && !existing;
+    const shouldCreateDossier = (crossedActivation || alreadyActiveWithoutDossier)
+      && anchor.playerVisibility !== 'hidden';
     if (shouldCreateDossier && !existing) {
-      const dossier = anchorDossier(next, { ...anchor, pressure, status: nextStatus, dossierId }, reachedDate, pressure);
+      const dossier = anchorDossier(
+        next,
+        { ...anchor, pressure, status: nextStatus, dossierId },
+        reachedDate,
+        pressure,
+        crossedActivation ? 'activation' : false,
+      );
       patch.dossierId = dossier.id;
       next = commitWorldAction(next, {
         kind: 'historical', actorId: next.playerCountryId, origin: 'historical', visibility: 'player',
-        intent: `Proposer le dossier historique « ${anchor.trendTitle} »`,
-        metadata: { historicalAnchor: true, historicalAnchorId: anchor.id, dossierProposal: true },
+        intent: `Ouvrir le dossier historique « ${anchor.trendTitle} »`,
+        metadata: { historicalAnchor: true, historicalAnchorId: anchor.id, dossierActivation: true },
         effects: [
-          { kind: 'historical_anchor_patch', anchorId: anchor.id, patch, reason: 'La pression historique franchit le seuil de proposition.', visibility: 'player' },
-          { kind: 'dossier_add', dossier, reason: 'Une tendance historique plausible devient un dossier consultable.', visibility: 'player' },
+          {
+            kind: 'historical_anchor_patch', anchorId: anchor.id, patch,
+            reason: crossedActivation
+              ? 'La pression historique franchit le seuil d’activation.'
+              : 'Un ancrage déjà actif reçoit son dossier de suivi initial.',
+            visibility: 'player',
+          },
+          {
+            kind: 'dossier_add', dossier,
+            reason: crossedActivation
+              ? 'Une tendance historique devient une situation concrète à gérer.'
+              : 'Une tendance déjà active au démarrage reçoit une chronologie de suivi.',
+            visibility: 'player',
+          },
         ],
       });
     } else if (Object.keys(patch).length > 0 && (
@@ -463,8 +539,14 @@ export function advanceHistoricalCurrents(
       effects.push(
         {
           kind: 'dossier_patch', dossierId,
-          patch: { phase: outcome, trend: 'escalating', publicSummary: `${current.name} se manifeste désormais sous la forme : ${outcome}.` },
-          reason: 'La manifestation historique modifie la phase du dossier suivi.', visibility: 'public',
+          patch: {
+            phase: outcome,
+            trend: 'escalating',
+            publicSummary: `${current.name} se manifeste désormais sous la forme : ${outcome}.`,
+            reactivatedAt: state.currentDate,
+            autoTracked: true,
+          }, clear: ['sleepingAt'],
+          reason: 'La manifestation historique rend le dossier suivi visible et actif.', visibility: 'public',
         },
         {
           kind: 'dossier_entry_add', dossierId,

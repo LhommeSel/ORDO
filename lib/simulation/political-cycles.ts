@@ -235,7 +235,7 @@ function transitionedLeadership(state: WorldState, countryId: CountryId, doctrin
       },
     }],
     executiveCoordination: succession ? 52 : 66,
-    sourceBasis: 'Direction alternative produite par le cycle politique ORDO. Le moteur fixe sa ligne ; une couche narrative pourra ensuite matérialiser des personnalités sans réécrire le résultat.',
+    sourceBasis: 'Direction alternative produite par le cycle politique de État-Nation. Le moteur fixe sa ligne ; une couche narrative pourra ensuite matérialiser des personnalités sans réécrire le résultat.',
   };
 }
 
@@ -288,6 +288,7 @@ function cycleDossier(state: WorldState, countryId: CountryId, cycle: PoliticalC
     status: 'emerging',
     importance,
     actorIds: [countryId],
+    scope: countryId === state.playerCountryId ? 'national' : 'world',
     regionTags: ['politique intérieure', countryId],
     startedAt: state.currentDate,
     updatedAt: state.currentDate,
@@ -367,7 +368,7 @@ export function choosePoliticalCampaignStrategy(
   });
   if (strategy === 'majority_mobilization') {
     effects.push(
-      { kind: 'metric_delta', countryId, metric: 'budget', delta: -1.5, reason: 'Coordination territoriale et gouvernementale de la campagne.', visibility: 'player' },
+      { kind: 'fiscal_delta', countryId, bucket: 'discretionary', delta: -1.5, reason: 'Coordination territoriale et gouvernementale de la campagne.', visibility: 'player' },
       { kind: 'metric_delta', countryId, metric: 'stability', delta: overloaded ? -2 : -0.8, reason: overloaded ? 'La mobilisation surcharge un appareil déjà tendu et accroît la désorganisation.' : 'La mobilisation de la majorité polarise modérément la vie politique.', visibility: 'player' },
     );
   }
@@ -492,6 +493,49 @@ function resolveCycle(state: WorldState, cycle: PoliticalCycle) {
 }
 
 /**
+ * La présidentielle et les législatives françaises ne sont pas confondues :
+ * le rapport de forces politique est d'abord tranché, puis l'Assemblée est
+ * recomposée à la fenêtre législative. Les sièges sont simulés, jamais copiés
+ * des résultats réels : le monde divergent garde sa cohérence.
+ */
+function recomposeFrenchAssembly(state: WorldState) {
+  const national = state.nationalPolitics?.FRA;
+  const cycle = state.politicalCycles?.FRA;
+  const country = state.countries.FRA;
+  if (!national || !cycle || !country || national.compositionVersion > 1 || !cycle.lastOutcome || state.currentDate < '2002-06-01') return state;
+  const alternation = cycle.lastOutcome === 'alternation';
+  const governmentSeats = Math.round(country.politics.legislatureSeats * (alternation ? 0.54 : 0.52));
+  const rightSeats = alternation ? governmentSeats : country.politics.legislatureSeats - governmentSeats - 7;
+  const leftSeats = alternation ? country.politics.legislatureSeats - governmentSeats - 7 : governmentSeats;
+  const seatPlan = alternation
+    ? { 'fra-rpr': Math.round(rightSeats * 0.6), 'fra-udf': Math.round(rightSeats * 0.26), 'fra-dl': rightSeats - Math.round(rightSeats * 0.6) - Math.round(rightSeats * 0.26), 'fra-ps': Math.round(leftSeats * 0.6), 'fra-pcf': Math.round(leftSeats * 0.18), 'fra-rcv': leftSeats - Math.round(leftSeats * 0.6) - Math.round(leftSeats * 0.18), 'fra-ni': 7, 'fra-vacant': 0 }
+    : { 'fra-ps': Math.round(leftSeats * 0.66), 'fra-pcf': Math.round(leftSeats * 0.18), 'fra-rcv': leftSeats - Math.round(leftSeats * 0.66) - Math.round(leftSeats * 0.18), 'fra-rpr': Math.round(rightSeats * 0.6), 'fra-udf': Math.round(rightSeats * 0.26), 'fra-dl': rightSeats - Math.round(rightSeats * 0.6) - Math.round(rightSeats * 0.26), 'fra-ni': 7, 'fra-vacant': 0 };
+  const governmentIds = alternation ? ['fra-rpr', 'fra-udf', 'fra-dl'] : ['fra-ps', 'fra-pcf', 'fra-rcv'];
+  const blocs = national.blocs.map((bloc) => ({
+    ...bloc,
+    seats: seatPlan[bloc.id as keyof typeof seatPlan] ?? bloc.seats,
+    role: bloc.role === 'vacant' ? 'vacant' as const : governmentIds.includes(bloc.id) ? (bloc.id === governmentIds[0] ? 'government' as const : 'support' as const) : bloc.id === 'fra-ni' ? 'non_aligned' as const : 'opposition' as const,
+  }));
+  const effects: WorldEffect[] = [{
+    kind: 'national_politics_patch', countryId: 'FRA',
+    patch: { blocs, governmentBlocIds: governmentIds, compositionVersion: national.compositionVersion + 1, compositionDate: state.currentDate, politicalMomentum: alternation ? 8 : 4, lastElectionOutcome: alternation ? 'alternation' : 'renewal' },
+    reason: alternation ? 'Les législatives recomposent l’Assemblée autour de la coalition issue de l’alternance.' : 'Les législatives recomposent l’Assemblée autour d’une majorité reconduite.', visibility: 'public',
+  }];
+  for (const procedure of Object.values(national.procedures)) {
+    const program = state.actionPrograms[procedure.programId];
+    if (!program || program.status !== 'pending_parliament') continue;
+    effects.push(
+      { kind: 'parliamentary_procedure_patch', countryId: 'FRA', procedureId: procedure.id, patch: { stage: 'withdrawn', resolution: 'La législature est renouvelée avant le vote : le texte doit être redéposé.' }, reason: 'Le renouvellement de l’Assemblée interrompt les textes non votés.', visibility: 'player' },
+      { kind: 'action_program_patch', programId: program.id, patch: { status: 'cancelled', resolution: 'Programme retiré : la législature a été renouvelée avant son vote.' }, reason: 'Le programme attendait un vote qui n’a pas eu lieu avant les législatives.', visibility: 'player' },
+    );
+  }
+  return commitWorldAction(state, {
+    kind: 'political', actorId: 'FRA', origin: 'local_rule', visibility: 'public',
+    intent: 'Recomposer l’Assemblée nationale après les législatives', effects,
+  });
+}
+
+/**
  * Une seule passe mensuelle suffit : les résultats restent locaux et
  * déterministes ; l’IA enrichira ensuite les acteurs et discours, sans pouvoir
  * modifier clandestinement le vainqueur déjà inscrit au registre causal.
@@ -509,5 +553,5 @@ export function advancePoliticalCycles(state: WorldState) {
     }
     if (next.currentDate >= cycle.nextReviewDate) next = resolveCycle(next, cycle);
   }
-  return next;
+  return recomposeFrenchAssembly(next);
 }

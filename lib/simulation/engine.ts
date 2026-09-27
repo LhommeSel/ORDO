@@ -5,18 +5,26 @@ import { advanceEnergySystem } from './energy';
 import { advanceHistoricalAnchors, advanceHistoricalCurrents, type HistoricalManifestation } from './history';
 import { advanceIndustrySystem } from './industry';
 import { commitWorldAction } from './ledger';
+import { advanceStructuralModifiers } from './structural-modifiers';
 import { advanceMacroeconomy } from './macro-economy';
+import { fiscalSettlementEffects } from './fiscal';
+import { advanceTradeFlows } from './trade-engine';
 import { advancePowerStruggles, detectPowerStruggleOpportunities } from './power-struggles';
 import { advanceStakeholderReactions } from './stakeholders';
 import { runMinorEventCycle } from './minor-events';
 import { advanceDossierEscalation, advanceDossierLifecycle, advanceDossierReviewQueue } from './dossiers';
 import { reactivateDossiersOnWorldSignals } from './dossiers';
 import { advanceDossierEffects } from './dossier-effects';
+import { advanceWorldDossierArcs } from './world-dossier-arcs';
+import { advanceWorldCrises } from './world-crisis-engine';
 import { compactWorldForSave } from './persistence';
 import { advancePoliticalCycles } from './political-cycles';
+import { advanceParliamentaryProcedures } from './national-politics';
 import { advanceMilitaryTheaterAccess } from './military-theaters';
 import { advanceWarZones } from './war-zones';
+import { advanceConflictResolution } from './conflict-resolution';
 import { advanceOperationalCapacities } from './capacity-system';
+import { advanceInternationalOrganizations } from './international-organizations';
 import { summarizeTurnResolution, type TurnResolutionSummary } from './core/turn-orchestrator';
 import type { ISODate, SimulationStop, WorldEffect, WorldState } from './types';
 
@@ -173,7 +181,7 @@ function advanceInstitutions(state: WorldState, elapsedMonths: number) {
     const progress = Math.min(institution.durationMonths, previous + elapsedMonths);
     const effects: WorldEffect[] = [
       { kind: 'institution_patch', institutionId: institution.id, patch: { progressMonths: progress }, reason: 'La mise en place institutionnelle progresse avec le temps.' },
-      { kind: 'metric_delta', countryId: institution.countryId, metric: 'budget', delta: -0.02 * elapsedMonths, reason: 'Coût de fonctionnement pendant la montée en puissance.' },
+      { kind: 'fiscal_delta', countryId: institution.countryId, bucket: 'discretionary', delta: -0.02 * elapsedMonths, reason: 'Coût de fonctionnement pendant la montée en puissance.' },
     ];
     if (institution.id === 'prosperity-ministry' && previous < 3 && progress >= 3) {
       effects.push(
@@ -202,10 +210,18 @@ function simulationPhases(
   manifestations: HistoricalManifestation[],
   reviewedCountryIds: string[],
 ): SimulationPhase[] {
+  const advancePublicFinances = (state: WorldState) => {
+    const effects = fiscalSettlementEffects(state);
+    return effects.length ? commitWorldAction(state, {
+      kind: 'economic', actorId: state.playerCountryId, origin: 'time',
+      intent: `Arrêter les comptes publics pour ${state.currentDate.slice(0, 4)}`, effects,
+    }) : state;
+  };
   return [
     { id: 'treaties', advance: (state, context) => advanceTreaties(state, context.elapsedMonths) },
     { id: 'military-access', advance: (state, context) => context.reachedMonthBoundary ? advanceMilitaryTheaterAccess(state) : state },
     { id: 'institutions', advance: (state, context) => advanceInstitutions(state, context.elapsedMonths) },
+    { id: 'parliamentary-procedures', advance: (state, context) => context.reachedMonthBoundary ? advanceParliamentaryProcedures(state) : state },
     { id: 'common-actions', advance: (state, context) => advanceCommonActionPrograms(state, context.elapsedMonths) },
     // La charge institutionnelle est recalculée après les programmes : elle
     // prend en compte les engagements du mois avant la mise à jour macro.
@@ -236,13 +252,24 @@ function simulationPhases(
         return historical.state;
       },
     },
-    // Les dossiers actifs alimentent d'abord les canaux de transmission ; le
-    // macro-modèle les absorbe ensuite pendant la même frontière mensuelle.
+    // Les dossiers mondiaux ont leurs propres jalons : ils font avancer le
+    // contexte géopolitique sans transformer chaque évolution en ordre au joueur.
+    { id: 'world-dossier-arcs', advance: (state, context) => context.reachedMonthBoundary ? advanceWorldDossierArcs(state) : state },
+    // Après leur ouverture historique, les crises évoluent selon les données
+    // du monde et les postures autonomes des États, jamais selon une issue écrite.
+    { id: 'world-crises', advance: (state, context) => context.reachedMonthBoundary ? advanceWorldCrises(state) : state },
+    // Les dossiers actifs alimentent les canaux de transmission après leurs
+    // évolutions du mois, afin que les conséquences soient lisibles tout de suite.
     { id: 'dossier-effects', advance: (state, context) => context.reachedMonthBoundary ? advanceDossierEffects(state) : state },
     // Les conflits actifs disposent d'une maille dédiée : ils ne sont pas
     // relégués derrière la rotation des événements secondaires.
+    { id: 'conflict-objectives', advance: (state, context) => context.reachedMonthBoundary ? advanceConflictResolution(state) : state },
     { id: 'war-zones', advance: (state, context) => context.reachedMonthBoundary ? advanceWarZones(state) : state },
     { id: 'macroeconomy', advance: (state, context) => advanceMacroeconomy(state, context.elapsedMonths) },
+    { id: 'public-finances', advance: (state, context) => context.reachedMonthBoundary ? advancePublicFinances(state) : state },
+    // Les flux suivent la mise à jour macro : ils lisent les nouvelles
+    // capacités, l'attractivité productive et l'état réel des ports.
+    { id: 'trade-flows', advance: (state, context) => advanceTradeFlows(state, context.elapsedMonths) },
     {
       id: 'country-autonomy',
       advance: (state, context) => {
@@ -263,6 +290,13 @@ function simulationPhases(
       id: 'dossier-signals',
       advance: (state, context) => reactivateDossiersOnWorldSignals(state, context.actionStartIndex ?? state.actions.length),
     },
+    // Les votes internationaux arrivent après la résolution du tour : ils ne
+    // doivent pas modifier en amont les tirages des systèmes nationaux.
+    { id: 'international-organizations', advance: (state, context) => context.reachedMonthBoundary ? advanceInternationalOrganizations(state) : state },
+    // Les seuils structurels sont recalculés après les indicateurs du mois :
+    // ils influencent les décisions suivantes, sans annuler une action déjà
+    // confirmée par le joueur.
+    { id: 'structural-modifiers', advance: (state, context) => context.reachedMonthBoundary ? advanceStructuralModifiers(state) : state },
   ];
 }
 
@@ -339,6 +373,9 @@ export function advanceWorld(
   if (next.ledger.some((change, index) => next.ledger.findIndex((candidate) => candidate.id === change.id) !== index)) issues.push('Le registre causal contient un identifiant dupliqué.');
   if (next.actions.some((action) => action.status !== 'applied')) issues.push('Une action de la simulation n’est pas dans l’état appliqué.');
   if (Object.values(next.actionPrograms).some((program) => program.progressMonths < 0 || program.progressMonths > program.durationMonths)) issues.push('Un programme sort de ses bornes de progression.');
+  if (Object.values(next.actionPrograms).some((program) => !program.linkedDossierId || !next.strategicDossiers[program.linkedDossierId])) issues.push('Un programme ne possède pas de dossier de suivi valide.');
+  if (Object.values(next.strategicDossiers).some((dossier) => new Set(dossier.entries.map((entry) => entry.id)).size !== dossier.entries.length)) issues.push('Un dossier contient des entrées de chronologie dupliquées.');
+  if (new Set(next.worldEvents.map((event) => event.id)).size !== next.worldEvents.length) issues.push('Le fil des événements contient un identifiant dupliqué.');
   const audit: SimulationAudit = { from: state.currentDate, to: reachedDate, chunks: phaseAudit.length ? new Set(phaseAudit.map((item) => `${item.chunkStart}:${item.chunkEnd}`)).size : 0, phases: phaseAudit, issues, ok: issues.length === 0 };
   return {
     state: next, requestedDate, reachedDate, elapsedDays, elapsedMonths, stop,

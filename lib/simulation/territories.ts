@@ -4,6 +4,11 @@ import { franceTerritoryDataset } from './territory-data-france-2000';
 import { europeTerritoryDatasets } from './territory-data-europe';
 import { americasMacroTerritoryDatasets } from './territory-data-americas-macro';
 import { extendedAmericasTerritoryDatasets } from './territory-data-americas-extended';
+import { addAmericasMajorPorts } from './territory-data-americas-ports';
+import { addEuropeMajorPorts } from './territory-data-europe-ports';
+import { addAfricaMajorPorts } from './territory-data-africa-ports';
+import { addAsiaMajorPorts } from './territory-data-asia-ports';
+import { addOceaniaMajorPorts } from './territory-data-oceania-ports';
 
 // Add country data here, not country-specific branches in the simulation or map.
 const datasets: Record<string, TerritoryDataset> = {
@@ -54,6 +59,16 @@ export function indexTerritorialState(state: TerritorialState): TerritorialState
   }
   for (const asset of Object.values(state.assets)) {
     if (!state.territories[asset.territoryId]) throw new Error(`Actif sans territoire : ${asset.id}`);
+    if (asset.portProfile) {
+      const profile = asset.portProfile;
+      if (asset.kind !== 'port') throw new Error(`Profil portuaire sur un actif non portuaire : ${asset.id}`);
+      if (profile.goodsCapacity < 0 || profile.goodsCapacity > 10 || profile.infrastructureCapacity < profile.goodsCapacity || profile.infrastructureCapacity > 10) {
+        throw new Error(`Capacité portuaire incohérente : ${asset.id}`);
+      }
+      if (profile.nationalReach < 0 || profile.nationalReach > 10 || profile.governanceRisk < 0 || profile.governanceRisk > 10 || profile.laborFriction < 0 || profile.laborFriction > 5) {
+        throw new Error(`Indicateurs portuaires hors bornes : ${asset.id}`);
+      }
+    }
   }
   return { ...state, accountingTerritoryIds };
 }
@@ -80,9 +95,6 @@ export function synchronizeTerritorialEconomy(
 export function regionalizeCountry(state: TerritorialState, dataset: TerritoryDataset, basis: MacroBasis): TerritorialState {
   const existing = Object.values(state.territories).filter((t) => t.sovereignCountryId === dataset.countryId);
   if (existing.some((t) => t.kind !== 'aggregate')) throw new Error('Pays déjà régionalisé : migration explicite nécessaire.');
-  if (Object.values(state.assets).some((asset) => existing.some((t) => t.id === asset.territoryId))) {
-    throw new Error('Réaffecter les actifs de l’agrégat avant de le remplacer.');
-  }
   const economy = basis.macroEconomies[dataset.countryId];
   if (!basis.countries[dataset.countryId] || !economy) throw new Error('Pays sans base macroéconomique.');
   const territories = { ...state.territories };
@@ -102,6 +114,28 @@ export function regionalizeCountry(state: TerritorialState, dataset: TerritoryDa
     };
   }
   const assets = { ...state.assets };
+  const replacementTerritories = dataset.territories
+    .map((seed) => territories[seed.id])
+    .filter((territory): territory is Territory => Boolean(territory));
+  // Les catalogues d’actifs sont chargés avant certains découpages régionaux.
+  // Ne jamais perdre un port ou une infrastructure déjà recensée : on la
+  // rattache à la maille la plus proche quand des ancres existent, sinon à la
+  // première maille comptable. Cela conserve l’actif et permet de détailler le
+  // pays plus tard sans exiger une migration manuelle préalable.
+  const aggregateIds = new Set(existing.map((territory) => territory.id));
+  for (const [assetId, asset] of Object.entries(assets)) {
+    if (!aggregateIds.has(asset.territoryId) || replacementTerritories.length === 0) continue;
+    const anchored = replacementTerritories.filter((territory) => territory.anchor);
+    const candidates = anchored.length > 0 ? anchored : replacementTerritories;
+    const target = asset.anchor && anchored.length > 0
+      ? candidates.reduce((best, territory) => {
+        const bestDistance = Math.hypot((best.anchor![0] - asset.anchor[0]) * Math.cos(asset.anchor[1] * Math.PI / 180), best.anchor![1] - asset.anchor[1]);
+        const distance = Math.hypot((territory.anchor![0] - asset.anchor[0]) * Math.cos(asset.anchor[1] * Math.PI / 180), territory.anchor![1] - asset.anchor[1]);
+        return distance < bestDistance ? territory : best;
+      })
+      : candidates[0];
+    assets[assetId] = { ...asset, territoryId: target.id };
+  }
   for (const asset of dataset.assets) {
     if (assets[asset.id]) throw new Error(`Actif dupliqué : ${asset.id}`);
     assets[asset.id] = structuredClone(asset);
@@ -132,7 +166,9 @@ export function createTerritorialState(basis: MacroBasis): TerritorialState {
   for (const dataset of Object.values(datasets)) {
     if (basis.countries[dataset.countryId] && basis.macroEconomies[dataset.countryId]) state = regionalizeCountry(state, dataset, basis);
   }
-  return state;
+  // Les ports couvrent aussi les pays restés à l’agrégat national ; leur
+  // inventaire n’ajoute ni PIB, ni capacité énergétique, ni nouveau registre.
+  return indexTerritorialState(addOceaniaMajorPorts(addAsiaMajorPorts(addAfricaMajorPorts(addEuropeMajorPorts(addAmericasMajorPorts(state))))));
 }
 
 export function territorySummary(state: TerritorialState, countryId: string) {

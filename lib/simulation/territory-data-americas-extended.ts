@@ -75,7 +75,7 @@ const regionSeeds = (countryId: string): TerritorySeed[] => {
     mapGroup: 'national',
     anchor: region.anchor,
     sourceIds: [worldBankWdi2000Source.id],
-    note: 'Maille macro-régionale ORDO : répartition normalisée sur les totaux nationaux 2000. Les frontières administratives détaillées ne sont pas encore chargées.',
+    note: 'Maille macro-régionale de État-Nation : répartition normalisée sur les totaux nationaux 2000. Les frontières administratives détaillées ne sont pas encore chargées.',
   }));
 };
 

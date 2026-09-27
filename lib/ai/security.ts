@@ -1,4 +1,5 @@
-import { ORDO_AI_MODEL, type AdvisorAIResponse } from './contracts';
+import { ETAT_NATION_AI_MODEL, type AdvisorAIResponse } from './contracts';
+import { GAME_BRAND } from '../brand';
 
 type WindowCounter = { count: number; resetAt: number };
 type DailyBudget = { estimatedUsd: number; resetAt: number };
@@ -26,10 +27,14 @@ const numberSetting = (name: string, fallback: number, minimum: number, maximum:
 export const aiRuntimePolicy = () => ({
   enabled: process.env.AI_ENABLED === 'true',
   apiKey: process.env.OPENAI_API_KEY ?? '',
-  model: process.env.AI_MODEL?.trim() || ORDO_AI_MODEL,
+  model: process.env.AI_MODEL?.trim() || ETAT_NATION_AI_MODEL,
   perIpPerMinute: integerSetting('AI_PER_IP_PER_MINUTE', 4, 1, 30),
-  perIpPerDay: integerSetting('AI_PER_IP_PER_DAY', 60, 1, 500),
-  perSessionPerDay: integerSetting('AI_PER_SESSION_PER_DAY', 20, 1, 200),
+  // Le quota d'une partie est volontairement généreux pour permettre une
+  // partie riche en conseils, tout en gardant un coupe-circuit par connexion.
+  // Le plafond IP doit rester supérieur au plafond d'une partie : sinon la
+  // limite effective serait 60 appels et non les 100 annoncés au joueur.
+  perIpPerDay: integerSetting('AI_PER_IP_PER_DAY', 300, 1, 1_000),
+  perSessionPerDay: integerSetting('AI_PER_SESSION_PER_DAY', 100, 1, 500),
   maximumInflight: integerSetting('AI_MAX_INFLIGHT', 4, 1, 20),
   dailyBudgetUsd: numberSetting('AI_DAILY_BUDGET_USD', 0.5, 0.05, 100),
   maxOutputTokens: integerSetting('AI_MAX_OUTPUT_TOKENS', 1_400, 400, 4_000),
@@ -54,7 +59,7 @@ export type AIAdmission =
   | { ok: false; response: Extract<AdvisorAIResponse, { ok: false }> };
 
 export async function hashRateLimitKey(value: string) {
-  const bytes = new TextEncoder().encode(`${process.env.AI_RATE_LIMIT_SALT ?? 'ordo-ephemeral'}:${value}`);
+  const bytes = new TextEncoder().encode(`${process.env.AI_RATE_LIMIT_SALT ?? 'etat-nation-ephemeral'}:${value}`);
   const digest = await crypto.subtle.digest('SHA-256', bytes);
   return Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, '0')).join('').slice(0, 32);
 }
@@ -69,7 +74,7 @@ export function admitAIRequest(ipKey: string, sessionKey: string): AIAdmission {
   nextMidnight.setUTCHours(24, 0, 0, 0);
   if (dailyBudget.resetAt <= now) dailyBudget = { estimatedUsd: 0, resetAt: nextMidnight.getTime() };
   if (dailyBudget.estimatedUsd >= policy.dailyBudgetUsd) {
-    return { ok: false, response: { ok: false, code: 'budget_exhausted', message: 'Le budget IA quotidien d’ORDO est épuisé.', retryAfterSeconds: secondsUntil(dailyBudget.resetAt, now) } };
+    return { ok: false, response: { ok: false, code: 'budget_exhausted', message: `Le budget IA quotidien de ${GAME_BRAND.name} est épuisé.`, retryAfterSeconds: secondsUntil(dailyBudget.resetAt, now) } };
   }
   if (inflight >= policy.maximumInflight) {
     return { ok: false, response: { ok: false, code: 'rate_limited', message: 'Le conseiller traite déjà plusieurs demandes. Réessayez dans quelques instants.', retryAfterSeconds: 10 } };

@@ -1,4 +1,4 @@
-import { energyBalance, nodeAvailableExport, activateEnergyContract, proposeEnergyContract } from './energy';
+import { energyBalance, nodeAvailableExport, portAvailableImportCapacity, portEnergyImportCapacity, activateEnergyContract, proposeEnergyContract } from './energy';
 import { createDossier, recordDossierUpdate } from './dossiers';
 import { evaluateStrategicAction } from './decision-making';
 import { commitWorldAction, relationBetween } from './ledger';
@@ -25,6 +25,8 @@ export type EnergyAdministrativeOffer = {
   pricePosture: 'market' | 'buyer_favorable' | 'seller_premium';
   priceSummary: string;
   route: string;
+  /** Terminal d'arrivée facultatif ; son absence laisse la route abstraite. */
+  portAssetId?: string;
   politicalClauses: string[];
   diplomaticEffort: 'faible' | 'modérée' | 'forte';
   adjustments: EnergyOfferAdjustment[];
@@ -51,7 +53,7 @@ const diplomaticTerms = (offer: EnergyAdministrativeOffer): DiplomaticEnergyTerm
   resource: offer.resource, nodeId: offer.nodeId, annualVolume: offer.annualVolume,
   coverageShare: offer.coverageShare, durationYears: offer.durationYears,
   startDate: offer.startDate, endDate: offer.endDate, priceSummary: offer.priceSummary,
-  route: offer.route, politicalClauses: offer.politicalClauses,
+  route: offer.route, ...(offer.portAssetId ? { portAssetId: offer.portAssetId } : {}), politicalClauses: offer.politicalClauses,
 });
 
 const clauseLabels: Record<AIEnergyDiplomaticMove['clauses'][number], string> = {
@@ -242,6 +244,7 @@ export function createAdministrativeEnergyOffer(
   state: WorldState,
   supplierId: CountryId,
   resource: EnergyResource,
+  portAssetId?: string,
 ) {
   const buyerId = state.playerCountryId;
   const energy = state.countryEnergy[buyerId];
@@ -253,10 +256,22 @@ export function createAdministrativeEnergyOffer(
   if (!node) return { ok: false as const, error: 'Ce pays ne dispose pas d’une filière exportatrice adaptée.' };
   const available = nodeAvailableExport(state, node.id);
   if (available <= 0) return { ok: false as const, error: 'La capacité exportable de ce fournisseur est déjà attribuée.' };
+  let routeAvailable = available;
+  let selectedPortName: string | undefined;
+  if (portAssetId) {
+    const port = state.territorial?.assets?.[portAssetId];
+    const territory = port ? state.territorial.territories[port.territoryId] : undefined;
+    if (!port?.portProfile || port.kind !== 'port') return { ok: false as const, error: 'Le terminal portuaire choisi est introuvable.' };
+    if (!territory || territory.sovereignCountryId !== buyerId) return { ok: false as const, error: 'Le terminal d’arrivée doit appartenir au pays acheteur.' };
+    if (portEnergyImportCapacity(state, portAssetId, resource) === 0) return { ok: false as const, error: `Le port ${port.name} n’est pas équipé pour recevoir ${resource === 'gas' ? 'du GNL' : 'des hydrocarbures liquides'}.` };
+    routeAvailable = Math.min(routeAvailable, portAvailableImportCapacity(state, portAssetId, resource) ?? 0);
+    if (routeAvailable <= 0) return { ok: false as const, error: `Le port ${port.name} ne dispose plus de capacité d’importation disponible.` };
+    selectedPortName = port.name;
+  }
 
   const demand = energy.annualDemand[resource];
   const targetShare = balance.deficit > demand * 0.35 ? 0.16 : 0.1;
-  const annualVolume = round(Math.min(balance.deficit || demand * 0.08, demand * targetShare, available * 0.18));
+  const annualVolume = round(Math.min(balance.deficit || demand * 0.08, demand * targetShare, routeAvailable * 0.18));
   if (annualVolume <= 0) return { ok: false as const, error: 'Aucun volume cohérent ne peut être demandé actuellement.' };
   const durationYears = resource === 'gas' ? 12 : 8;
   const offer: EnergyAdministrativeOffer = {
@@ -266,7 +281,8 @@ export function createAdministrativeEnergyOffer(
     startDate: state.currentDate, endDate: addYears(state.currentDate, durationYears),
     pricePosture: 'market',
     priceSummary: 'Prix de marché indexé, révision tous les trois ans',
-    route: node.infrastructure[0] ?? 'Acheminement à convenir',
+    route: selectedPortName ? `${selectedPortName} · ${node.infrastructure[0] ?? 'Acheminement à convenir'}` : node.infrastructure[0] ?? 'Acheminement à convenir',
+    ...(portAssetId ? { portAssetId } : {}),
     politicalClauses: [], diplomaticEffort: 'faible', adjustments: [], revision: 0,
   };
   return { ok: true as const, offer };
@@ -279,7 +295,9 @@ export function adjustEnergyOffer(
 ) {
   if (offer.adjustments.includes(adjustment)) return offer;
   const demand = state.countryEnergy[offer.buyerId]?.annualDemand[offer.resource] ?? offer.annualVolume;
-  const available = nodeAvailableExport(state, offer.nodeId);
+  const sourceAvailable = nodeAvailableExport(state, offer.nodeId);
+  const portAvailable = offer.portAssetId ? (portAvailableImportCapacity(state, offer.portAssetId, offer.resource) ?? 0) : Number.POSITIVE_INFINITY;
+  const available = Math.min(sourceAvailable, portAvailable);
   let next = { ...offer, adjustments: [...offer.adjustments, adjustment], revision: offer.revision + 1 };
   if (adjustment === 'more_volume') {
     const annualVolume = round(Math.min(offer.annualVolume * 1.35, demand * 0.24, available * 0.32));
@@ -303,7 +321,10 @@ export function adjustEnergyOffer(
 export function sendEnergyOffer(state: WorldState, offer: EnergyAdministrativeOffer) {
   const supplier = state.countries[offer.supplierId];
   if (!supplier) return { ok: false as const, state, error: 'Interlocuteur inconnu.' };
-  const available = nodeAvailableExport(state, offer.nodeId);
+  const available = Math.min(
+    nodeAvailableExport(state, offer.nodeId),
+    offer.portAssetId ? (portAvailableImportCapacity(state, offer.portAssetId, offer.resource) ?? 0) : Number.POSITIVE_INFINITY,
+  );
   const demand = state.countryEnergy[offer.buyerId]?.annualDemand[offer.resource] ?? offer.annualVolume;
   const relation = relationBetween(state, offer.buyerId, offer.supplierId);
   const fairVolume = Math.min(available * 0.22, demand * 0.2);
@@ -444,7 +465,7 @@ export function acceptEnergyOffer(state: WorldState, offer: EnergyAdministrative
   const proposed = proposeEnergyContract(state, {
     id: contractId, nodeId: offer.nodeId, buyerId: offer.buyerId,
     annualVolume: offer.annualVolume, startDate: offer.startDate, endDate: offer.endDate,
-    priceFormula: offer.priceSummary, route: offer.route, politicalClauses: offer.politicalClauses,
+    priceFormula: offer.priceSummary, route: offer.route, ...(offer.portAssetId ? { portAssetId: offer.portAssetId } : {}), politicalClauses: offer.politicalClauses,
     breachPenalty: round(offer.annualVolume * 1.5), origin: 'player',
   });
   if (!proposed.ok) return proposed;

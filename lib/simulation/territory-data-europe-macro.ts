@@ -98,7 +98,7 @@ const regionSeeds = (countryId: string): TerritorySeed[] => {
     referencePopulation: economy.populationMillions * 1e6 * region.populationShare / populationTotal,
     referenceYear: 2000, economicWeight: region.populationShare * region.productivity,
     inNationalAccounts: true, mapGroup: 'national', anchor: region.anchor, sourceIds: [],
-    note: 'Maille macro-régionale ORDO : allocation de scénario 2000 normalisée sur la population et le PIB nationaux. Ce découpage n’est pas un compte régional observé ni une frontière administrative.',
+    note: 'Maille macro-régionale de État-Nation : allocation de scénario 2000 normalisée sur la population et le PIB nationaux. Ce découpage n’est pas un compte régional observé ni une frontière administrative.',
   }));
 };
 
@@ -107,4 +107,3 @@ export const europeMacroTerritoryDatasets: Record<string, TerritoryDataset> = Ob
     countryId, territories: regionSeeds(countryId), assets: [], entities: [],
   } satisfies TerritoryDataset]),
 );
-

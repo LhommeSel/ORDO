@@ -1,9 +1,14 @@
 import type { AdvisorAnswer } from '../simulation/advisor';
-import type { WorldState } from '../simulation/types';
+import { nationalReformProfiles, reformPositionLabel, reformStateKey } from '../simulation/reforms';
+import type { NationalReformDomain, WorldState } from '../simulation/types';
 
 export type AdvisorQuestionKind = 'fact' | 'strategy' | 'diplomacy' | 'free';
 export type AdvisorQuestionDimension = 'situation' | 'strategy' | 'diplomacy' | 'forecast';
 export type AdvisorResponseMode = 'facts' | 'options' | 'facts_and_options';
+export type AdvisorAIExecutionMode = 'consultative' | 'operational';
+export type AdvisorAIOperationalScope = 'general' | 'intelligence' | 'reform' | 'dossier';
+export type AdvisorProgramCategory = 'economic' | 'diplomacy' | 'institutional' | 'defense' | 'intelligence';
+type IntelligenceMissionKind = 'surveillance' | 'réseau' | 'liaison' | 'terrain' | 'analyse';
 
 export type AdvisorActorContext = {
   id: string;
@@ -12,18 +17,22 @@ export type AdvisorActorContext = {
   factIds: string[];
 };
 
-export const ORDO_AI_MODEL = 'gpt-5.6-luna' as const;
-export const ORDO_AI_SCHEMA_VERSION = 1 as const;
-export const ORDO_ADVISOR_QUESTION_MAX_CHARS = 30_000;
+export const ETAT_NATION_AI_MODEL = 'gpt-5.6-luna' as const;
+export const ETAT_NATION_AI_SCHEMA_VERSION = 1 as const;
+export const ETAT_NATION_ADVISOR_QUESTION_MAX_CHARS = 30_000;
 
 export type AdvisorAIRequest = {
-  schemaVersion: typeof ORDO_AI_SCHEMA_VERSION;
+  schemaVersion: typeof ETAT_NATION_AI_SCHEMA_VERSION;
   requestId: string;
   sessionId: string;
   question: string;
   context: {
     currentDate: string;
     questionKind: AdvisorQuestionKind;
+    /** Le mode opérationnel produit des brouillons préparables, jamais des effets directs. */
+    executionMode?: AdvisorAIExecutionMode;
+    /** Détermine la forme d’intention structurée exigée du modèle. */
+    operationalScope?: AdvisorAIOperationalScope;
     dimensions: AdvisorQuestionDimension[];
     responseMode: AdvisorResponseMode;
     questionConfidence: number;
@@ -40,6 +49,20 @@ export type AdvisorAIRequest = {
       risks: string[];
       likelyReactions: string[];
     }>;
+    /** Contexte autoritatif fourni lorsqu'une demande vient du module Réformes. */
+    reformContext?: {
+      domain: NationalReformDomain;
+      label: string;
+      currentOrientation: string;
+      currentPosition: number;
+      annualFiscalImpact: number;
+      evidenceLevel: number;
+      polarization: number;
+      institutionalAnchor: number;
+      implementationCapacity: number;
+      activeProgramTitle: string | null;
+      indicators: Array<{ id: string; label: string; value: number }>;
+    };
   };
 };
 
@@ -57,6 +80,42 @@ export type AdvisorAIOption = {
     targetCountryId: string;
     resource: 'oil' | 'gas';
     objective: string;
+    /** Terminal d'arrivée souhaité ; absent/null signifie que la route reste libre. */
+    portAssetId?: string | null;
+  } | {
+    kind: 'intelligence_mission';
+    targetCountryId: string;
+    missionKind: IntelligenceMissionKind;
+    objective: string;
+    agencyId: string;
+    authority: string;
+  } | {
+    kind: 'port_action';
+    targetCountryId: string;
+    assetId: string;
+    action: 'audit' | 'invest' | 'equip_lng' | 'decongest' | 'maintain' | 'repair';
+    objective: string;
+  } | {
+    kind: 'reform_proposal';
+    domain: NationalReformDomain;
+    title: string;
+    objective: string;
+    measures: string[];
+    direction: 'lower' | 'balanced' | 'higher';
+    pace: 'rapid' | 'gradual';
+    acceptedCompromises: string[];
+  } | {
+    kind: 'policy_audit';
+    domain: NationalReformDomain;
+    title: string;
+    objective: string;
+    deliverables: string[];
+  } | {
+    kind: 'government_program';
+    category: AdvisorProgramCategory;
+    title: string;
+    objective: string;
+    targetCountryId?: string | null;
   };
 };
 
@@ -99,7 +158,6 @@ export type AdvisorAIResponse =
       ok: true;
       answer: AdvisorAIAnswer;
       usage: AdvisorAIUsage;
-      source?: 'llm' | 'local_fallback';
       /** Éléments écartés par le contrôle de provenance sans invalider toute la réponse. */
       diagnostics?: { removedFactIds: string[]; removedClaims: number[] };
     }
@@ -121,10 +179,16 @@ function dialogueFactsForQuestion(world: WorldState, question: string) {
   const normalizedQuestion = comparable(question);
   return Object.values(world.diplomaticDialogues ?? {})
     .filter((dialogue) => {
-      const participantMentioned = dialogue.participantIds.some((id) => {
+      // Le pays joué participe à presque tous les canaux : le considérer
+      // comme une mention suffisait donc à injecter les échanges de tous les
+      // interlocuteurs dans chaque dossier. Seuls les pays étrangers cités,
+      // ou le dossier explicitement visé, rendent un canal pertinent.
+      const participantMentioned = dialogue.participantIds
+        .filter((id) => id !== world.playerCountryId)
+        .some((id) => {
         const country = world.countries[id];
-        return id === world.playerCountryId || Boolean(country && normalizedQuestion.includes(comparable(country.name)));
-      });
+          return Boolean(country && normalizedQuestion.includes(comparable(country.name)));
+        });
       const dossier = dialogue.linkedDossierId ? world.strategicDossiers[dialogue.linkedDossierId] : undefined;
       const dossierMentioned = Boolean(dossier && normalizedQuestion.includes(comparable(dossier.title)));
       return participantMentioned || dossierMentioned;
@@ -145,19 +209,30 @@ export function createAdvisorAIRequest(
   localAnswer: AdvisorAnswer,
   sessionId: string,
   conversationHistory: Array<{ question: string; summary: string }> = [],
+  executionMode: AdvisorAIExecutionMode = 'consultative',
+  reformDomain?: NationalReformDomain,
+  operationalScope: AdvisorAIOperationalScope = reformDomain ? 'reform' : 'general',
 ): AdvisorAIRequest {
-  if (question.length > ORDO_ADVISOR_QUESTION_MAX_CHARS) throw new RangeError('advisor_question_too_large');
+  if (question.length > ETAT_NATION_ADVISOR_QUESTION_MAX_CHARS) throw new RangeError('advisor_question_too_large');
   const player = world.countries[world.playerCountryId];
-  const maxFacts = localAnswer.responseMode === 'facts_and_options' ? 64 : 48;
+  // Les questions multi-acteurs perdaient trop vite les indicateurs de pays
+  // pourtant explicitement cités. On élargit le contexte qualifié, sans
+  // injecter l'historique complet de la partie.
+  const maxFacts = localAnswer.responseMode === 'facts_and_options' ? 84 : localAnswer.questionKind === 'diplomacy' || localAnswer.questionKind === 'strategy' ? 72 : 48;
   const dialogueFacts = dialogueFactsForQuestion(world, question);
+  const reform = reformDomain ? world.nationalReforms?.[reformStateKey(world.playerCountryId, reformDomain)] : undefined;
+  const reformProfile = reformDomain ? nationalReformProfiles[reformDomain] : undefined;
+  const activeReformProgram = reform?.activeProgramId ? world.actionPrograms?.[reform.activeProgramId] : undefined;
   return {
-    schemaVersion: ORDO_AI_SCHEMA_VERSION,
+    schemaVersion: ETAT_NATION_AI_SCHEMA_VERSION,
     requestId: crypto.randomUUID(),
     sessionId: compactText(sessionId, 80),
     question: question.trim(),
     context: {
-      currentDate: world.currentDate,
-      questionKind: localAnswer.questionKind,
+        currentDate: world.currentDate,
+        questionKind: localAnswer.questionKind,
+        executionMode,
+        operationalScope,
       dimensions: localAnswer.dimensions,
       responseMode: localAnswer.responseMode,
       questionConfidence: localAnswer.questionConfidence,
@@ -193,6 +268,23 @@ export function createAdvisorAIRequest(
         risks: plan.risks.slice(0, 4).map((item) => compactText(item, 300)),
         likelyReactions: plan.likelyReactions.slice(0, 4).map((item) => compactText(item, 300)),
       })),
+      ...(reform && reformProfile ? { reformContext: {
+        domain: reform.domain,
+        label: reformProfile.label,
+        currentOrientation: reformPositionLabel(reform.domain, reform.position),
+        currentPosition: reform.position,
+        annualFiscalImpact: reform.annualFiscalImpact,
+        evidenceLevel: reform.evidenceLevel,
+        polarization: reform.polarization,
+        institutionalAnchor: reform.institutionalAnchor,
+        implementationCapacity: reform.implementationCapacity,
+        activeProgramTitle: activeReformProgram?.title ?? null,
+        indicators: reformProfile.indicators.map((indicator) => ({
+          id: indicator.id,
+          label: indicator.label,
+          value: reform.indicators[indicator.id] ?? 50,
+        })),
+      } } : {}),
     },
   };
 }
@@ -216,15 +308,23 @@ const isAdvisorQuestionDimension = (value: unknown): value is AdvisorQuestionDim
   typeof value === 'string' && (dimensions as readonly string[]).includes(value);
 const isAdvisorResponseMode = (value: unknown): value is AdvisorResponseMode =>
   value === 'facts' || value === 'options' || value === 'facts_and_options';
+const isAdvisorAIExecutionMode = (value: unknown): value is AdvisorAIExecutionMode =>
+  value === 'consultative' || value === 'operational';
+const isAdvisorAIOperationalScope = (value: unknown): value is AdvisorAIOperationalScope =>
+  value === 'general' || value === 'intelligence' || value === 'reform' || value === 'dossier';
+const isNationalReformDomain = (value: unknown): value is NationalReformDomain =>
+  typeof value === 'string' && Object.prototype.hasOwnProperty.call(nationalReformProfiles, value);
 
 /** Validation défensive : le serveur ne fait jamais confiance au JSON du navigateur. */
 export function parseAdvisorAIRequest(value: unknown): AdvisorAIRequest | null {
-  if (!isRecord(value) || value.schemaVersion !== ORDO_AI_SCHEMA_VERSION) return null;
+  if (!isRecord(value) || value.schemaVersion !== ETAT_NATION_AI_SCHEMA_VERSION) return null;
   if (!isShortString(value.requestId, 80, 8) || !isShortString(value.sessionId, 80, 8)) return null;
-  if (!isShortString(value.question, ORDO_ADVISOR_QUESTION_MAX_CHARS, 3) || !isRecord(value.context)) return null;
+  if (!isShortString(value.question, ETAT_NATION_ADVISOR_QUESTION_MAX_CHARS, 3) || !isRecord(value.context)) return null;
   const context = value.context;
   if (!isShortString(context.currentDate, 10, 10)
     || !isAdvisorQuestionKind(context.questionKind)
+    || (context.executionMode !== undefined && !isAdvisorAIExecutionMode(context.executionMode))
+    || (context.operationalScope !== undefined && !isAdvisorAIOperationalScope(context.operationalScope))
     || !Array.isArray(context.dimensions) || context.dimensions.length < 1 || context.dimensions.length > 4
     || !context.dimensions.every(isAdvisorQuestionDimension)
     || !isAdvisorResponseMode(context.responseMode)
@@ -243,8 +343,8 @@ export function parseAdvisorAIRequest(value: unknown): AdvisorAIRequest | null {
       && isShortString(actor.id, 80, 1)
       && isShortString(actor.name, 100, 1)
       && (actor.role === 'player' || actor.role === 'mentioned' || actor.role === 'focus')
-      && isStringArray(actor.factIds, 24, 100))) return null;
-  if (!isRecord(context.interpretation) || !Array.isArray(context.facts) || context.facts.length > 64) return null;
+      && isStringArray(actor.factIds, 32, 100))) return null;
+  if (!isRecord(context.interpretation) || !Array.isArray(context.facts) || context.facts.length > 84) return null;
   if (!context.facts.every((fact) => isRecord(fact)
     && isShortString(fact.id, 80, 1)
     && isShortString(fact.label, 120, 1)
@@ -261,23 +361,46 @@ export function parseAdvisorAIRequest(value: unknown): AdvisorAIRequest | null {
     && isShortString(plan.horizon, 100, 1)
     && isStringArray(plan.risks, 4, 300)
     && isStringArray(plan.likelyReactions, 4, 300))) return null;
+  if (context.reformContext !== undefined) {
+    const reform = context.reformContext;
+    if (!isRecord(reform)
+      || !isNationalReformDomain(reform.domain)
+      || !isShortString(reform.label, 120, 1)
+      || !isShortString(reform.currentOrientation, 160, 1)
+      || typeof reform.currentPosition !== 'number'
+      || typeof reform.annualFiscalImpact !== 'number'
+      || typeof reform.evidenceLevel !== 'number'
+      || typeof reform.polarization !== 'number'
+      || typeof reform.institutionalAnchor !== 'number'
+      || typeof reform.implementationCapacity !== 'number'
+      || !(reform.activeProgramTitle === null || isShortString(reform.activeProgramTitle, 180, 1))
+      || !Array.isArray(reform.indicators)
+      || reform.indicators.length > 4
+      || !reform.indicators.every((indicator) => isRecord(indicator)
+        && isShortString(indicator.id, 60, 1)
+        && isShortString(indicator.label, 120, 1)
+        && typeof indicator.value === 'number')) return null;
+  }
   return value as AdvisorAIRequest;
 }
 
 const responseModeForKind = (kind: AdvisorQuestionKind): AdvisorResponseMode => kind === 'fact' ? 'facts' : 'options';
 
-export function isAdvisorAIAnswer(value: unknown, expectedKind: AdvisorQuestionKind = 'strategy', expectedMode?: AdvisorResponseMode): value is AdvisorAIAnswer {
+export function isAdvisorAIAnswer(value: unknown, expectedKind: AdvisorQuestionKind = 'strategy', expectedMode?: AdvisorResponseMode, requireOperationalIntents = false): value is AdvisorAIAnswer {
   const responseMode = expectedMode ?? responseModeForKind(expectedKind);
   if (!isRecord(value)
     || !isShortString(value.headline, 180, 1)
     || !isShortString(value.synthesis, 1_200, 1)
     || !isShortString(value.keyJudgment, 600, 1)
     || !Array.isArray(value.options)
-    || (responseMode === 'facts' ? value.options.length !== 0 : value.options.length !== 3)
+    // Quatre pistes ne sont utiles que lorsqu'elles sont réellement distinctes.
+    // Le contrat accepte donc deux à quatre voies, plutôt que d'imposer trois
+    // reformulations artificielles d'une même décision.
+    || (responseMode === 'facts' ? value.options.length !== 0 : value.options.length < 2 || value.options.length > 4)
     || !isStringArray(value.blindSpots, 3, 300)
     || !Array.isArray(value.claims) || value.claims.length < 1 || value.claims.length > 8
     || !value.claims.every(isAdvisorAIClaim)) return false;
-  return value.options.every((option) => isRecord(option)
+  const optionsValid = value.options.every((option) => isRecord(option)
     && isShortString(option.title, 160, 1)
     && isShortString(option.proposal, 800, 1)
     && isShortString(option.whyPlausible, 600, 1)
@@ -285,11 +408,61 @@ export function isAdvisorAIAnswer(value: unknown, expectedKind: AdvisorQuestionK
     && isStringArray(option.estimatedConsequences, 4, 400)
     && isStringArray(option.risks, 3, 300)
     && isStringArray(option.factIds, 4, 80)
-    && (option.actionIntent === undefined || option.actionIntent === null || (isRecord(option.actionIntent)
-      && option.actionIntent.kind === 'energy_contract'
-      && isShortString(option.actionIntent.targetCountryId, 80, 1)
-      && (option.actionIntent.resource === 'oil' || option.actionIntent.resource === 'gas')
-      && isShortString(option.actionIntent.objective, 300, 1))));
+    && (option.actionIntent === undefined || option.actionIntent === null || isAdvisorAIActionIntent(option.actionIntent)));
+  return optionsValid && (!requireOperationalIntents || value.options.every((option) => isRecord(option) && isAdvisorAIActionIntent(option.actionIntent)));
+}
+
+function isAdvisorAIActionIntent(value: unknown): value is NonNullable<AdvisorAIOption['actionIntent']> {
+  if (!isRecord(value)) return false;
+  if (value.kind === 'energy_contract') {
+    return isShortString(value.targetCountryId, 80, 1)
+      && (value.resource === 'oil' || value.resource === 'gas')
+      && isShortString(value.objective, 300, 1)
+      && (value.portAssetId === undefined || value.portAssetId === null || isShortString(value.portAssetId, 140, 1));
+  }
+  if (value.kind === 'intelligence_mission') {
+    return isShortString(value.targetCountryId, 80, 1)
+      && (value.missionKind === 'surveillance' || value.missionKind === 'réseau' || value.missionKind === 'liaison' || value.missionKind === 'terrain' || value.missionKind === 'analyse')
+      && isShortString(value.objective, 300, 1)
+      && isShortString(value.agencyId, 100, 1)
+      && isShortString(value.authority, 180, 1);
+  }
+  if (value.kind === 'port_action') {
+    return isShortString(value.targetCountryId, 80, 1)
+      && isShortString(value.assetId, 140, 1)
+      && (value.action === 'audit' || value.action === 'invest' || value.action === 'equip_lng'
+        || value.action === 'decongest' || value.action === 'maintain' || value.action === 'repair')
+      && isShortString(value.objective, 300, 1);
+  }
+  if (value.kind === 'reform_proposal') {
+    return isNationalReformDomain(value.domain)
+      && isShortString(value.title, 160, 1)
+      && isShortString(value.objective, 500, 1)
+      && Array.isArray(value.measures)
+      && value.measures.length > 0
+      && isStringArray(value.measures, 5, 240)
+      && (value.direction === 'lower' || value.direction === 'balanced' || value.direction === 'higher')
+      && (value.pace === 'rapid' || value.pace === 'gradual')
+      && isStringArray(value.acceptedCompromises, 4, 240);
+  }
+  if (value.kind === 'policy_audit') {
+    return isNationalReformDomain(value.domain)
+      && isShortString(value.title, 160, 1)
+      && isShortString(value.objective, 500, 1)
+      && Array.isArray(value.deliverables)
+      && value.deliverables.length > 0
+      && isStringArray(value.deliverables, 5, 240);
+  }
+  if (value.kind === 'government_program') {
+    return (value.category === 'economic' || value.category === 'diplomacy'
+        || value.category === 'institutional' || value.category === 'defense'
+        || value.category === 'intelligence')
+      && isShortString(value.title, 160, 1)
+      && isShortString(value.objective, 500, 1)
+      && (value.targetCountryId === undefined || value.targetCountryId === null
+        || isShortString(value.targetCountryId, 80, 1));
+  }
+  return false;
 }
 
 function isAdvisorAIClaim(value: unknown): value is AdvisorAIClaim {
@@ -300,7 +473,7 @@ function isAdvisorAIClaim(value: unknown): value is AdvisorAIClaim {
 }
 
 /** Diagnostic non exposé au joueur : utile quand un modèle respecte presque le contrat. */
-export function advisorAnswerValidationIssues(value: unknown, expectedKind: AdvisorQuestionKind = 'strategy', expectedMode?: AdvisorResponseMode): string[] {
+export function advisorAnswerValidationIssues(value: unknown, expectedKind: AdvisorQuestionKind = 'strategy', expectedMode?: AdvisorResponseMode, requireOperationalIntents = false): string[] {
   const responseMode = expectedMode ?? responseModeForKind(expectedKind);
   if (!isRecord(value)) return ['racine non objet'];
   const issues: string[] = [];
@@ -309,8 +482,8 @@ export function advisorAnswerValidationIssues(value: unknown, expectedKind: Advi
   if (!isShortString(value.keyJudgment, 600, 1)) issues.push('keyJudgment');
   if (!Array.isArray(value.options)) issues.push('options absent');
   else {
-    const expectedOptions = responseMode === 'facts' ? 0 : 3;
-    if (value.options.length !== expectedOptions) issues.push(`options=${value.options.length}, attendu=${expectedOptions}`);
+    if (responseMode === 'facts' && value.options.length !== 0) issues.push(`options=${value.options.length}, attendu=0`);
+    if (responseMode !== 'facts' && (value.options.length < 2 || value.options.length > 4)) issues.push(`options=${value.options.length}, attendu=2..4`);
     value.options.forEach((option, index) => {
       if (!isRecord(option)) { issues.push(`option${index} non objet`); return; }
       if (!isShortString(option.title, 160, 1)) issues.push(`option${index}.title`);
@@ -320,11 +493,8 @@ export function advisorAnswerValidationIssues(value: unknown, expectedKind: Advi
       if (!isStringArray(option.estimatedConsequences, 4, 400)) issues.push(`option${index}.estimatedConsequences`);
       if (!isStringArray(option.risks, 3, 300)) issues.push(`option${index}.risks`);
       if (!isStringArray(option.factIds, 4, 80)) issues.push(`option${index}.factIds`);
-      if (option.actionIntent !== undefined && option.actionIntent !== null && (!isRecord(option.actionIntent)
-        || option.actionIntent.kind !== 'energy_contract'
-        || !isShortString(option.actionIntent.targetCountryId, 80, 1)
-        || (option.actionIntent.resource !== 'oil' && option.actionIntent.resource !== 'gas')
-        || !isShortString(option.actionIntent.objective, 300, 1))) issues.push(`option${index}.actionIntent`);
+      if (option.actionIntent !== undefined && option.actionIntent !== null && !isAdvisorAIActionIntent(option.actionIntent)) issues.push(`option${index}.actionIntent`);
+      if (requireOperationalIntents && !isAdvisorAIActionIntent(option.actionIntent)) issues.push(`option${index}.actionIntent requis en mode opérationnel`);
     });
   }
   if (!isStringArray(value.blindSpots, 3, 300)) issues.push('blindSpots');
@@ -364,6 +534,41 @@ const normalizeFactId = (value: string) => value
   .replace(/[\u200B-\u200D\uFEFF]/g, '')
   .normalize('NFC')
   .trim();
+
+const stripInternalCitations = (value: unknown) => typeof value === 'string'
+  ? value.replace(/【[^】]*】/g, '').replace(/[ \t]{2,}/g, ' ').replace(/\s+([,.;:!?])/g, '$1').trim()
+  : value;
+
+/** Retire les identifiants de faits bruts que le modèle peut recopier dans sa prose. */
+export function sanitizeAdvisorAnswerText(value: unknown) {
+  if (!isRecord(value)) return value;
+  const cleanList = (items: unknown) => Array.isArray(items) ? items.map(stripInternalCitations) : items;
+  const options = Array.isArray(value.options) ? value.options.map((option) => {
+    if (!isRecord(option)) return option;
+    return {
+      ...option,
+      title: stripInternalCitations(option.title),
+      proposal: stripInternalCitations(option.proposal),
+      whyPlausible: stripInternalCitations(option.whyPlausible),
+      whyRefused: stripInternalCitations(option.whyRefused),
+      estimatedConsequences: cleanList(option.estimatedConsequences),
+      risks: cleanList(option.risks),
+    };
+  }) : value.options;
+  const claims = Array.isArray(value.claims) ? value.claims.map((claim) => {
+    if (!isRecord(claim)) return claim;
+    return { ...claim, text: stripInternalCitations(claim.text) };
+  }) : value.claims;
+  return {
+    ...value,
+    headline: stripInternalCitations(value.headline),
+    synthesis: stripInternalCitations(value.synthesis),
+    keyJudgment: stripInternalCitations(value.keyJudgment),
+    blindSpots: cleanList(value.blindSpots),
+    options,
+    claims,
+  };
+}
 
 /** Nettoie les citations avant validation sans toucher au texte généré par le modèle. */
 export function sanitizeAdvisorAnswerFactIds(value: unknown, factIds: ReadonlySet<string>) {
@@ -408,15 +613,40 @@ export function sanitizeAdvisorAnswerFactIds(value: unknown, factIds: ReadonlySe
  * plutôt que de jeter toute la réponse consultative (le texte reste lisible,
  * mais aucune action ne pourra être préparée à partir de cette intention).
  */
-export function sanitizeAdvisorAnswerActionIntents(value: unknown, actorIds: ReadonlySet<string>) {
+export function sanitizeAdvisorAnswerActionIntents(
+  value: unknown,
+  actorIds: ReadonlySet<string>,
+  portAssetIds: ReadonlySet<string> = new Set(),
+) {
   if (!isRecord(value) || !Array.isArray(value.options)) return { answer: value, removed: [] as string[] };
   const removed: string[] = [];
   const options = value.options.map((option) => {
     if (!isRecord(option) || !isRecord(option.actionIntent)) return option;
+    const targetBearingKinds = new Set([
+      'energy_contract',
+      'intelligence_mission',
+      'port_action',
+    ]);
+    const optionalTargetKind = option.actionIntent.kind === 'government_program';
     const target = option.actionIntent.targetCountryId;
-    if (typeof target !== 'string' || actorIds.has(target)) return option;
-    removed.push(target);
-    return { ...option, actionIntent: null };
+    if ((targetBearingKinds.has(String(option.actionIntent.kind))
+        && (typeof target !== 'string' || !actorIds.has(target)))
+      || (optionalTargetKind && target !== undefined && target !== null
+        && (typeof target !== 'string' || !actorIds.has(target)))) {
+      removed.push(typeof target === 'string' ? target : 'acteur absent');
+      return { ...option, actionIntent: null };
+    }
+    if (
+      option.actionIntent.kind === 'port_action' &&
+      (typeof option.actionIntent.assetId !== 'string' ||
+        !portAssetIds.has(option.actionIntent.assetId))
+    ) {
+      // Les identifiants de faits sont lisibles mais ne sont pas des identifiants
+      // d'actifs. Ne jamais laisser l'IA transformer l'un en opération réelle.
+      removed.push(`port:${String(option.actionIntent.assetId)}`);
+      return { ...option, actionIntent: null };
+    }
+    return option;
   });
   return { answer: { ...value, options }, removed };
 }
@@ -430,7 +660,7 @@ export const advisorAIJsonSchema = {
     synthesis: { type: 'string', maxLength: 1200 },
     keyJudgment: { type: 'string', maxLength: 600 },
       options: {
-      type: 'array', minItems: 0, maxItems: 3,
+      type: 'array', minItems: 0, maxItems: 4,
       items: {
         type: 'object', additionalProperties: false,
         // Le mode strict de l’API exige que chaque propriété soit requise.
@@ -444,20 +674,80 @@ export const advisorAIJsonSchema = {
           estimatedConsequences: { type: 'array', minItems: 1, maxItems: 4, items: { type: 'string', maxLength: 400 } },
           risks: { type: 'array', minItems: 1, maxItems: 3, items: { type: 'string', maxLength: 300 } },
           factIds: { type: 'array', minItems: 1, maxItems: 4, items: { type: 'string', maxLength: 80 } },
-          actionIntent: {
-            anyOf: [
+           actionIntent: {
+             anyOf: [
               { type: 'null' },
               {
                 type: 'object', additionalProperties: false,
-                required: ['kind', 'targetCountryId', 'resource', 'objective'],
+                required: ['kind', 'targetCountryId', 'resource', 'objective', 'portAssetId'],
                 properties: {
                   kind: { type: 'string', enum: ['energy_contract'] },
                   targetCountryId: { type: 'string', maxLength: 80 },
                   resource: { type: 'string', enum: ['oil', 'gas'] },
-                  objective: { type: 'string', maxLength: 300 },
+                   objective: { type: 'string', maxLength: 300 },
+                   portAssetId: { anyOf: [{ type: 'string', maxLength: 140 }, { type: 'null' }] },
+                 },
+               },
+               {
+                 type: 'object', additionalProperties: false,
+                 required: ['kind', 'targetCountryId', 'missionKind', 'objective', 'agencyId', 'authority'],
+                 properties: {
+                   kind: { type: 'string', enum: ['intelligence_mission'] },
+                   targetCountryId: { type: 'string', maxLength: 80 },
+                   missionKind: { type: 'string', enum: ['surveillance', 'réseau', 'liaison', 'terrain', 'analyse'] },
+                   objective: { type: 'string', maxLength: 300 },
+                   agencyId: { type: 'string', maxLength: 100 },
+                   authority: { type: 'string', maxLength: 180 },
+                 },
+               },
+                {
+                  type: 'object', additionalProperties: false,
+                  required: ['kind', 'targetCountryId', 'assetId', 'action', 'objective'],
+                 properties: {
+                   kind: { type: 'string', enum: ['port_action'] },
+                   targetCountryId: { type: 'string', maxLength: 80 },
+                   assetId: { type: 'string', maxLength: 140 },
+                   action: { type: 'string', enum: ['audit', 'invest', 'equip_lng', 'decongest', 'maintain', 'repair'] },
+                    objective: { type: 'string', maxLength: 300 },
+                  },
                 },
-              },
-            ],
+                {
+                  type: 'object', additionalProperties: false,
+                  required: ['kind', 'domain', 'title', 'objective', 'measures', 'direction', 'pace', 'acceptedCompromises'],
+                  properties: {
+                    kind: { type: 'string', enum: ['reform_proposal'] },
+                    domain: { type: 'string', enum: Object.keys(nationalReformProfiles) },
+                    title: { type: 'string', maxLength: 160 },
+                    objective: { type: 'string', maxLength: 500 },
+                    measures: { type: 'array', minItems: 1, maxItems: 5, items: { type: 'string', maxLength: 240 } },
+                    direction: { type: 'string', enum: ['lower', 'balanced', 'higher'] },
+                    pace: { type: 'string', enum: ['rapid', 'gradual'] },
+                    acceptedCompromises: { type: 'array', maxItems: 4, items: { type: 'string', maxLength: 240 } },
+                  },
+                },
+                 {
+                   type: 'object', additionalProperties: false,
+                   required: ['kind', 'domain', 'title', 'objective', 'deliverables'],
+                  properties: {
+                    kind: { type: 'string', enum: ['policy_audit'] },
+                    domain: { type: 'string', enum: Object.keys(nationalReformProfiles) },
+                    title: { type: 'string', maxLength: 160 },
+                    objective: { type: 'string', maxLength: 500 },
+                     deliverables: { type: 'array', minItems: 1, maxItems: 5, items: { type: 'string', maxLength: 240 } },
+                   },
+                 },
+                 {
+                   type: 'object', additionalProperties: false,
+                   required: ['kind', 'category', 'title', 'objective', 'targetCountryId'],
+                   properties: {
+                     kind: { type: 'string', enum: ['government_program'] },
+                     category: { type: 'string', enum: ['economic', 'diplomacy', 'institutional', 'defense', 'intelligence'] },
+                     title: { type: 'string', maxLength: 160 },
+                     objective: { type: 'string', maxLength: 500 },
+                     targetCountryId: { anyOf: [{ type: 'string', maxLength: 80 }, { type: 'null' }] },
+                   },
+                 },
+              ],
           },
         },
       },

@@ -125,7 +125,8 @@ export function advanceMilitaryTheaterAccess(state: WorldState): WorldState {
     if (access === base.access) continue;
     const previousAccess = base.access;
     next = commitAccessPatch(next, 'base', base.id, access, base.ownerCountryId, base.hostCountryId, base.location);
-    if (['contested', 'denied'].includes(access) && !['contested', 'denied'].includes(previousAccess)) {
+    if (['contested', 'denied'].includes(access) && !['contested', 'denied'].includes(previousAccess)
+      && (base.ownerCountryId === next.playerCountryId || base.hostCountryId === next.playerCountryId)) {
       next = appendAccessDossier(next, base.ownerCountryId, [base.hostCountryId], `Accès à la base · ${base.location}`, base.location, access, base.id);
     }
   }
@@ -145,8 +146,9 @@ export function advanceMilitaryTheaterAccess(state: WorldState): WorldState {
     if (access === theater.access) continue;
     const previousAccess = theater.access;
     next = commitAccessPatch(next, 'theater', theater.id, access, theater.countryId, theater.hostCountryIds, theater.location);
-    if (['contested', 'denied'].includes(access) && !['contested', 'denied'].includes(previousAccess)) {
-      next = appendAccessDossier(next, theater.countryId, theater.hostCountryIds, `Accès au théâtre · ${theater.location}`, theater.location, access, theater.id);
+    if (['contested', 'denied'].includes(access) && !['contested', 'denied'].includes(previousAccess)
+      && (theater.countryId === next.playerCountryId || theater.hostCountryIds.includes(next.playerCountryId))) {
+      next = appendAccessDossier(next, theater.countryId, theater.hostCountryIds, `Droits d’accès militaires · ${theater.location}`, theater.location, access, theater.id);
     }
   }
   return next;
@@ -156,6 +158,9 @@ function appendAccessDossier(state: WorldState, ownerCountryId: CountryId, hostC
   const dossierId = `military-access-${subjectId}`;
   if (state.strategicDossiers?.[dossierId]) return state;
   const actorIds = [ownerCountryId, ...hostCountryIds].filter((id, index, all) => id && all.indexOf(id) === index);
+  const ownerName = state.countries[ownerCountryId]?.name ?? ownerCountryId;
+  const hostName = hostCountryIds.map((id) => state.countries[id]?.name ?? id).join(', ');
+  const accessVerb = access === 'denied' ? 'refuse' : 'contestent';
   return commitWorldAction(state, {
     kind: 'diplomatic', actorId: ownerCountryId, targetIds: hostCountryIds, origin: 'time',
     intent: `Ouvrir un dossier sur l’accès militaire · ${location}`,
@@ -165,7 +170,7 @@ function appendAccessDossier(state: WorldState, ownerCountryId: CountryId, hostC
         id: dossierId, title, kind: 'security', status: 'active', importance: access === 'denied' ? 'major' : 'moderate',
         actorIds, regionTags: [location], startedAt: state.currentDate, updatedAt: state.currentDate,
         phase: access === 'denied' ? 'Accès refusé' : 'Accès contesté', trend: 'escalating',
-        publicSummary: `Le pays hôte ${access === 'denied' ? 'refuse' : 'conteste'} l’accès à ${location}.`, followed: true, autoTracked: false,
+        publicSummary: `${hostName || 'Le pays hôte'} ${accessVerb} l’accès de ${ownerName} à ${location}. La France est directement concernée et doit choisir si elle négocie, réduit sa présence ou maintient sa posture.`, followed: false, autoTracked: false,
         commitments: [], pendingDecisions: [`Décider s’il faut négocier, réduire la présence ou maintenir la posture autour de ${location}.`],
         relatedCurrentIds: [], relatedActionIds: [],
         entries: [{ id: `${dossierId}-opening`, date: state.currentDate, title: access === 'denied' ? 'Accès refusé' : 'Accès contesté', summary: `Le statut d’accès militaire devient « ${access} » pour ${location}.`, importance: access === 'denied' ? 'major' : 'moderate', actorIds, requiresDecision: true, visibility: 'player' }],
@@ -225,6 +230,26 @@ export function militaryTheaterResolutionEffects(state: WorldState, operation: M
     { kind: 'military_theater_patch', theaterId: target.id, patch: { personnelThousands: Number((target.personnelThousands + amount).toFixed(2)), availablePersonnelThousands: Number((target.availablePersonnelThousands + amount).toFixed(2)), inTransitPersonnelThousands: Number(Math.max(0, target.inTransitPersonnelThousands - amount).toFixed(2)), currentOperation: undefined, readiness: Number(clamp(target.readiness + readinessGain).toFixed(2)), supplyCoverageMonths: Number(Math.max(0.2, target.supplyCoverageMonths - (amount / 25)).toFixed(2)) }, reason: outcome === 'succeeded' ? 'Le renforcement atteint le théâtre et devient disponible.' : 'Le renforcement atteint le théâtre avec une préparation incomplète.', visibility: 'player' },
   );
   return effects;
+}
+
+/**
+ * Annulation avant l'échéance : les personnels en transit reviennent au
+ * théâtre de départ, sans transformer une interruption volontaire en succès
+ * militaire. La fonction est volontairement idempotente pour les anciennes
+ * sauvegardes où le mouvement n'est plus présent sur les théâtres.
+ */
+export function militaryTheaterCancellationEffects(state: WorldState, operation: MilitaryTheaterOperation): WorldEffect[] {
+  const source = state.militaryTheaters?.[operation.sourceTheaterId];
+  const target = state.militaryTheaters?.[operation.targetTheaterId];
+  if (!source || !target) return [];
+  const amount = operation.amountThousands;
+  const sourceHasReservation = source.currentOperation?.id === operation.id;
+  const targetHasTransit = target.currentOperation?.id === operation.id;
+  if (!sourceHasReservation && !targetHasTransit) return [];
+  return [
+    { kind: 'military_theater_patch', theaterId: source.id, patch: { availablePersonnelThousands: Number((source.availablePersonnelThousands + (sourceHasReservation ? amount : 0)).toFixed(2)), currentOperation: undefined }, reason: 'L’opération est annulée ; les personnels réservés redeviennent disponibles dans leur théâtre de départ.', visibility: 'player' },
+    { kind: 'military_theater_patch', theaterId: target.id, patch: { inTransitPersonnelThousands: Number(Math.max(0, target.inTransitPersonnelThousands - (targetHasTransit ? amount : 0)).toFixed(2)), currentOperation: undefined, readiness: Number(clamp(target.readiness - 1).toFixed(2)) }, reason: 'L’annulation interrompt le transit et laisse une friction logistique temporaire.', visibility: 'player' },
+  ];
 }
 
 function destinationForWithdrawal(state: WorldState, source: MilitaryTheater) {

@@ -29,6 +29,13 @@ export function advanceOperationalCapacities(state: WorldState, elapsedMonths: n
   let next = state;
   for (const country of Object.values(state.countries)) {
     const effects: WorldState['actions'][number]['effects'] = [];
+    const maintenance = Object.values(next.countries[country.id]?.capacityMaintenance ?? {});
+    const maintenanceCost = maintenance.reduce((sum, item) => sum + item.annualBudgetCost, 0) * elapsedMonths / 12;
+    if (maintenanceCost > 0) effects.push({
+      kind: 'fiscal_delta', countryId: country.id, bucket: 'discretionary', delta: -round(maintenanceCost),
+      reason: `Entretien des capacités renforcées : ${maintenance.map((item) => item.label).join(' · ')}.`,
+      visibility: country.id === state.playerCountryId ? 'player' : 'debug',
+    });
     for (const domain of domains) {
       const current = next.countries[country.id]?.capacities[domain];
       if (!current) continue;
@@ -54,7 +61,7 @@ export function advanceOperationalCapacities(state: WorldState, elapsedMonths: n
       const weight = domainWeights[domain];
       effects.push(
         { kind: 'metric_delta', countryId: country.id, metric: 'stability', delta: -round(0.08 * pressure * weight * elapsedMonths), reason: `La surcharge de ${domain} augmente la désorganisation interne.` , visibility: country.id === state.playerCountryId ? 'player' : 'debug' },
-        { kind: 'metric_delta', countryId: country.id, metric: 'budget', delta: -round(0.05 * pressure * weight * elapsedMonths), reason: `La surcharge de ${domain} provoque des coûts de coordination et de rattrapage.`, visibility: country.id === state.playerCountryId ? 'player' : 'debug' },
+        { kind: 'fiscal_delta', countryId: country.id, bucket: 'discretionary', delta: -round(0.05 * pressure * weight * elapsedMonths), reason: `La surcharge de ${domain} provoque des coûts de coordination et de rattrapage.`, visibility: country.id === state.playerCountryId ? 'player' : 'debug' },
       );
     }
     if (effects.length) next = commitWorldAction(next, {

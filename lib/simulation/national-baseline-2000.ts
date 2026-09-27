@@ -1,4 +1,5 @@
 import type { CapacityState, CountryState } from './types';
+import { fiscalStateForCredits } from './fiscal';
 
 /**
  * Compact national fiches for the first global prototype.
@@ -165,7 +166,8 @@ export function createNationalBaselineCountries2000(): Record<string, CountrySta
     const governingSeats = descriptor.orientation === 'transition' || descriptor.orientation === 'liberal' ? Math.round(seats * 0.53) : Math.round(seats * 0.72);
     return [descriptor.id, {
       id: descriptor.id, name: descriptor.name, flag: descriptor.flag, weight: descriptor.scale, statisticalReliability: descriptor.confidence,
-      metrics: { budget: Math.max(18, Math.round(descriptor.gdp * 0.17)), industry: descriptor.industry, stability: descriptor.stability, security: descriptor.security },
+      metrics: { industry: descriptor.industry, stability: descriptor.stability, security: descriptor.security },
+      fiscal: fiscalStateForCredits(Math.max(18, Math.round(descriptor.gdp * 0.17))),
       capacities: capacities(descriptor),
       politics: {
         regime: descriptor.regime, executive: descriptor.leader, headOfGovernment: descriptor.leader, governmentLabel: descriptor.government,

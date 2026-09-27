@@ -6,6 +6,7 @@ import type {
   EconomicPolicyState,
   EconomicProductFamily,
   MacroeconomicState,
+  ProductiveSystemState,
   ProductFamilyState,
   SovereignDebtState,
   WorldEconomyState,
@@ -112,7 +113,7 @@ const debtCalibration: Record<CountryId, {
 
 // Spain is a first-class country for the territorial slice. These values use
 // the same WDI 2000 indicators as the other explicitly calibrated countries;
-// the remaining stocks are rounded ORDO scenario inputs. The regional
+// the remaining stocks are rounded ÉTAT-NATION scenario inputs. The regional
 // allocation is supplied by Eurostat's retrospective 2000 series below.
 Object.assign(baseline, { ESP: { gdp: 598.103, growth: 5.201, population: 40.568, populationGrowth: 0.447, inflation: 3.434, unemployment: 13.785, investment: 26.672, exports: 28.589, imports: 31.533, industry: 28.021, confidence: 88 } satisfies Baseline });
 Object.assign(calibration, { ESP: { workingAge: 68.6, participation: 52.9, migration: 4.3, debt: 56.5, revenue: 38, spending: 39, rate: 4.8, privateDebt: 88, reserves: 2.8, agriculture: 4.2, extractive: 0.8, publicServices: 17 } satisfies Calibration });
@@ -167,7 +168,7 @@ for (const item of [...nationalBaseline2000, ...globalNationalBaseline2000]) {
  * Les lots WDI couvrent les quatre économies américaines, le noyau européen,
  * l'Afrique et le Moyen-Orient, puis le noyau Asie–Pacifique ; les stocks de
  * simulation (dette, réserves, capacité bancaire) restent volontairement
- * séparés et calibrés dans ORDO.
+ * séparés et calibrés dans ÉTAT-NATION.
  */
 for (const [countryId, observation] of Object.entries({ ...americasWdi2000, ...europeWdi2000, ...africaMiddleEastWdi2000, ...asiaPacificWdi2000, ...remainingCoreWdi2000 }) as [CountryId, typeof americasWdi2000[keyof typeof americasWdi2000]][]) {
   const existing = baseline[countryId];
@@ -276,6 +277,61 @@ function createProducts(countryId: CountryId, item: Baseline): Record<EconomicPr
   })) as Record<EconomicProductFamily, ProductFamilyState>;
 }
 
+/**
+ * Calibrages de départ sur les grands pôles. Les autres pays partent d'une
+ * formule commune fondée sur leur industrie, investissement et commerce : on
+ * évite ainsi que l'indicateur devienne une liste manuelle de 196 exceptions.
+ */
+const productiveSystemOverrides: Partial<Record<CountryId, Partial<ProductiveSystemState>>> = {
+  USA: { productiveAttractiveness: 84, globalValueChainIntegration: 71, foreignIndustrialDependency: 38, supplyConcentration: 34, commercialInfluence: 96, criticalInputExposure: 43, productiveRelocationBalanceAnnualPct: -0.4 },
+  CHN: { productiveAttractiveness: 70, globalValueChainIntegration: 56, foreignIndustrialDependency: 66, supplyConcentration: 57, commercialInfluence: 45, criticalInputExposure: 65, productiveRelocationBalanceAnnualPct: 3.2 },
+  JPN: { productiveAttractiveness: 76, globalValueChainIntegration: 68, foreignIndustrialDependency: 58, supplyConcentration: 48, commercialInfluence: 76, criticalInputExposure: 54, productiveRelocationBalanceAnnualPct: -0.3 },
+  DEU: { productiveAttractiveness: 78, globalValueChainIntegration: 73, foreignIndustrialDependency: 42, supplyConcentration: 39, commercialInfluence: 74, criticalInputExposure: 45, productiveRelocationBalanceAnnualPct: 0.5 },
+  FRA: { productiveAttractiveness: 71, globalValueChainIntegration: 63, foreignIndustrialDependency: 46, supplyConcentration: 43, commercialInfluence: 66, criticalInputExposure: 47, productiveRelocationBalanceAnnualPct: -0.2 },
+  GBR: { productiveAttractiveness: 77, globalValueChainIntegration: 70, foreignIndustrialDependency: 49, supplyConcentration: 42, commercialInfluence: 68, criticalInputExposure: 46, productiveRelocationBalanceAnnualPct: 0.1 },
+  ITA: { productiveAttractiveness: 66, globalValueChainIntegration: 67, foreignIndustrialDependency: 51, supplyConcentration: 44, commercialInfluence: 58, criticalInputExposure: 49, productiveRelocationBalanceAnnualPct: -0.3 },
+  KOR: { productiveAttractiveness: 69, globalValueChainIntegration: 69, foreignIndustrialDependency: 61, supplyConcentration: 52, commercialInfluence: 56, criticalInputExposure: 62, productiveRelocationBalanceAnnualPct: 0.8 },
+  IND: { productiveAttractiveness: 52, globalValueChainIntegration: 38, foreignIndustrialDependency: 55, supplyConcentration: 55, commercialInfluence: 37, criticalInputExposure: 52, productiveRelocationBalanceAnnualPct: 1.5 },
+  VNM: { productiveAttractiveness: 48, globalValueChainIntegration: 43, foreignIndustrialDependency: 69, supplyConcentration: 64, commercialInfluence: 22, criticalInputExposure: 63, productiveRelocationBalanceAnnualPct: 2.1 },
+  MEX: { productiveAttractiveness: 58, globalValueChainIntegration: 58, foreignIndustrialDependency: 63, supplyConcentration: 66, commercialInfluence: 38, criticalInputExposure: 58, productiveRelocationBalanceAnnualPct: 1.1 },
+  BRA: { productiveAttractiveness: 57, globalValueChainIntegration: 47, foreignIndustrialDependency: 43, supplyConcentration: 45, commercialInfluence: 48, criticalInputExposure: 44, productiveRelocationBalanceAnnualPct: 0.2 },
+  RUS: { productiveAttractiveness: 39, globalValueChainIntegration: 43, foreignIndustrialDependency: 45, supplyConcentration: 68, commercialInfluence: 46, criticalInputExposure: 48, productiveRelocationBalanceAnnualPct: -0.7 },
+  TUR: { productiveAttractiveness: 49, globalValueChainIntegration: 48, foreignIndustrialDependency: 58, supplyConcentration: 55, commercialInfluence: 37, criticalInputExposure: 55, productiveRelocationBalanceAnnualPct: 0.5 },
+  CAN: { productiveAttractiveness: 74, globalValueChainIntegration: 72, foreignIndustrialDependency: 54, supplyConcentration: 61, commercialInfluence: 55, criticalInputExposure: 47, productiveRelocationBalanceAnnualPct: 0.2 },
+  AUS: { productiveAttractiveness: 72, globalValueChainIntegration: 58, foreignIndustrialDependency: 52, supplyConcentration: 59, commercialInfluence: 48, criticalInputExposure: 45, productiveRelocationBalanceAnnualPct: -0.1 },
+  SAU: { productiveAttractiveness: 53, globalValueChainIntegration: 44, foreignIndustrialDependency: 62, supplyConcentration: 72, commercialInfluence: 53, criticalInputExposure: 50, productiveRelocationBalanceAnnualPct: -0.1 },
+  DZA: { productiveAttractiveness: 31, globalValueChainIntegration: 36, foreignIndustrialDependency: 69, supplyConcentration: 79, commercialInfluence: 30, criticalInputExposure: 57, productiveRelocationBalanceAnnualPct: -0.6 },
+  ZAF: { productiveAttractiveness: 50, globalValueChainIntegration: 49, foreignIndustrialDependency: 52, supplyConcentration: 56, commercialInfluence: 35, criticalInputExposure: 47, productiveRelocationBalanceAnnualPct: 0.1 },
+};
+
+function createProductiveSystem(countryId: CountryId, item: Baseline, products: Record<EconomicProductFamily, ProductFamilyState>): ProductiveSystemState {
+  const policy = createPolicy(countryId, item);
+  const trade = item.exports + item.imports;
+  const foreignIndustrialDependency = clamp((products.industrial_inputs.importDependencyPct * 0.42 + products.manufactured_goods.importDependencyPct * 0.23 + products.strategic_technology.importDependencyPct * 0.35), 5, 95);
+  const productiveAttractiveness = clamp(
+    13 + item.investment * 0.75 + item.industry * 0.4 + trade * 0.24 + item.confidence * 0.24
+      + policy.laborFlexibility * 0.05 - Math.max(0, item.inflation - 4) * 0.22 - Math.max(0, item.unemployment - 8) * 0.3,
+    10, 92,
+  );
+  const globalValueChainIntegration = clamp(trade * 0.52 + item.industry * 0.44 + policy.tradeOpenness * 0.12, 8, 94);
+  const supplyConcentration = clamp(foreignIndustrialDependency * 0.7 + Math.max(0, 55 - policy.tradeOpenness) * 0.34, 8, 94);
+  const commercialInfluence = clamp(Math.sqrt(Math.max(1, item.gdp) / 10_250) * 72 + trade * 0.33 + products.strategic_technology.exportOrientationPct * 0.18, 5, 96);
+  const criticalInputExposure = clamp(
+    foreignIndustrialDependency * 0.62 + products.strategic_technology.importDependencyPct * 0.22 + products.industrial_inputs.importDependencyPct * 0.16,
+    5, 95,
+  );
+  const generic: ProductiveSystemState = {
+    productiveAttractiveness: round(productiveAttractiveness),
+    globalValueChainIntegration: round(globalValueChainIntegration),
+    foreignIndustrialDependency: round(foreignIndustrialDependency),
+    supplyConcentration: round(supplyConcentration),
+    commercialInfluence: round(commercialInfluence),
+    criticalInputExposure: round(criticalInputExposure),
+    productiveRelocationBalanceAnnualPct: round(clamp((productiveAttractiveness - 62) * 0.07 + (item.industry - 25) * 0.025, -3, 4)),
+  };
+  return { ...generic, ...productiveSystemOverrides[countryId] };
+}
+
 function createDebtState(countryId: CountryId, debtPctGdp: number, revenuePctGdp: number): SovereignDebtState {
   const item = debtCalibration[countryId];
   const localCurrencySharePct = clamp(item.localCurrency ?? (100 - item.foreignCurrency), 0, 100);
@@ -317,6 +373,7 @@ export function createMacroEconomies2000(): Record<CountryId, MacroeconomicState
     const governmentConsumption = Math.max(8, c.spending - (['FRA', 'DEU', 'ITA'].includes(countryId) ? 27 : 20));
     const householdConsumption = Math.max(28, 100 - item.investment - governmentConsumption - item.exports + item.imports);
     const dependencyRatio = (100 - c.workingAge) / c.workingAge * 100;
+    const products = createProducts(countryId, item);
     return [countryId, {
       countryId, realGdpBillion2000Usd: item.gdp,
       potentialGdpBillion2000Usd: round(item.gdp / (1 + outputGap / 100)),
@@ -342,18 +399,19 @@ export function createMacroEconomies2000(): Record<CountryId, MacroeconomicState
       confidenceIndex: item.confidence,
       sovereignDebt: createDebtState(countryId, c.debt, c.revenue), bankingSystem: createBankingSystem(countryId),
       policy: createPolicy(countryId, item),
-      sectors: createSectors(countryId, item), products: createProducts(countryId, item),
+      sectors: createSectors(countryId, item), products,
+      productiveSystem: createProductiveSystem(countryId, item, products),
       source: {
         provider: hasWdiObservation
           ? worldBankWdi2000Source.provider
           : globalNationalBaseline2000.some((entry) => entry.id === countryId)
-            ? 'Catalogue mondial ORDO — archétype de scénario 2000 ; à enrichir par séries nationales'
-            : 'Banque mondiale — WDI pour le socle ; calibration ORDO pour les stocks non directement observés', observationYear: 2000,
+            ? 'Catalogue mondial de État-Nation — archétype de scénario 2000 ; à enrichir par séries nationales'
+            : 'Banque mondiale — WDI pour le socle ; calibration de scénario pour les stocks non directement observés', observationYear: 2000,
         indicatorCodes: hasWdiObservation
           ? partialWdi ? [...(wdiPartiallyObservedIndicatorCodes[countryId] ?? [])] : [...worldBankWdi2000Source.indicatorCodes]
           : ['NY.GDP.MKTP.CD', 'NY.GDP.MKTP.KD.ZG', 'SP.POP.TOTL', 'SP.POP.GROW', 'FP.CPI.TOTL.ZG', 'SL.UEM.TOTL.ZS', 'NE.GDI.FTOT.ZS', 'NE.EXP.GNFS.ZS', 'NE.IMP.GNFS.ZS', 'NV.IND.TOTL.ZS'],
         estimatedIndicatorCodes: [
-          'ORDO_OUTPUT_GAP', 'ORDO_SECTOR_CAPACITY', 'ORDO_PRODUCT_BALANCE', 'ORDO_FINANCIAL_STRESS',
+          'ETAT_NATION_OUTPUT_GAP', 'ETAT_NATION_SECTOR_CAPACITY', 'ETAT_NATION_PRODUCT_BALANCE', 'ETAT_NATION_FINANCIAL_STRESS', 'ETAT_NATION_PRODUCTIVE_SYSTEM',
           ...(wdiCalibratedIndicatorCodes[countryId] ?? []),
         ],
         confidence: item.confidence,
@@ -374,6 +432,28 @@ export const worldEconomy2000: WorldEconomyState = {
     food: market('food', 2.4, 16), energy: market('energy', 2.1, 32), raw_materials: market('raw_materials', 2.3, 25),
     industrial_inputs: market('industrial_inputs', 1.7, 22), manufactured_goods: market('manufactured_goods', 1.5, 14),
     strategic_technology: market('strategic_technology', 1.0, 28),
+  },
+  oilMarket: {
+    benchmarkUsdPerBarrel: 28,
+    priceIndex: 100,
+    monthlyChangePct: 0,
+    demandIndex: 100,
+    supplyIndex: 100,
+    inventoryMonths: 1.954,
+    spareCapacityPct: 15.227,
+    disruptionRisk: 0,
+    modelledSupplySharePct: 15,
+    baselineModelledProduction: 1563,
+    baselineModelledCapacity: 1801,
+    baselineInventoryMonths: 1.954,
+    drivers: [
+      { id: 'demand', label: 'Demande mondiale', direction: 'neutral', detail: 'La reprise mondiale reste proche de son rythme de référence.' },
+      { id: 'supply', label: 'Offre disponible', direction: 'neutral', detail: 'La production recensée reste proche de son niveau de référence.' },
+      { id: 'stocks', label: 'Stocks', direction: 'neutral', detail: 'Les stocks de précaution couvrent près de deux mois de demande.' },
+      { id: 'spare_capacity', label: 'Capacité inutilisée', direction: 'neutral', detail: 'Les producteurs recensés conservent une marge de mobilisation.' },
+      { id: 'geopolitics', label: 'Risque géopolitique', direction: 'neutral', detail: 'Aucune perturbation pétrolière mondiale active.' },
+    ],
+    lastUpdatedAt: '2000-01-01',
   },
   activeShocks: [], cycle: 'expansion', lastUpdatedAt: '2000-01-01',
 };

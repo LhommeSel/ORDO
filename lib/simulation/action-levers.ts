@@ -42,26 +42,30 @@ export const actionLeverProfiles: Record<CommonActionLever, ActionLeverProfile> 
   mediation: profile('mediation', 'diplomacy', 'Médiation internationale', 4, 1.4, -7, [{ domain: 'diplomacy', commitment: 8 }, { domain: 'government', commitment: 4 }]),
   information_sharing: profile('information_sharing', 'diplomacy', 'Partage institutionnel d’informations', 3, 1.1, -4, [{ domain: 'diplomacy', commitment: 5 }, { domain: 'intelligence', commitment: 5 }]),
 
-  fiscal_stimulus: profile('fiscal_stimulus', 'economic', 'Relance budgétaire', 6, 8, 0, [{ domain: 'economy', commitment: 8 }, { domain: 'administration', commitment: 5 }, { domain: 'government', commitment: 4 }]),
-  fiscal_consolidation: profile('fiscal_consolidation', 'economic', 'Consolidation budgétaire', 9, 2, -4, [{ domain: 'economy', commitment: 7 }, { domain: 'administration', commitment: 6 }, { domain: 'government', commitment: 6 }]),
-  industrial_capacity: profile('industrial_capacity', 'economic', 'Programme de capacité industrielle', 18, 10, -8, [{ domain: 'economy', commitment: 10 }, { domain: 'administration', commitment: 7 }, { domain: 'government', commitment: 4 }]),
-  strategic_sector: profile('strategic_sector', 'economic', 'Programme de filière stratégique', 24, 14, -11, [{ domain: 'economy', commitment: 12 }, { domain: 'administration', commitment: 8 }, { domain: 'government', commitment: 4 }]),
+  fiscal_stimulus: profile('fiscal_stimulus', 'economic', 'Relance budgétaire', 4, 8, 0, [{ domain: 'economy', commitment: 8 }, { domain: 'administration', commitment: 5 }, { domain: 'government', commitment: 4 }]),
+  fiscal_consolidation: profile('fiscal_consolidation', 'economic', 'Consolidation budgétaire', 5, 2, -4, [{ domain: 'economy', commitment: 7 }, { domain: 'administration', commitment: 6 }, { domain: 'government', commitment: 6 }]),
+  industrial_capacity: profile('industrial_capacity', 'economic', 'Programme de capacité industrielle', 10, 10, -8, [{ domain: 'economy', commitment: 10 }, { domain: 'administration', commitment: 7 }, { domain: 'government', commitment: 4 }]),
+  strategic_sector: profile('strategic_sector', 'economic', 'Programme de filière stratégique', 12, 14, -11, [{ domain: 'economy', commitment: 12 }, { domain: 'administration', commitment: 8 }, { domain: 'government', commitment: 4 }]),
   trade_promotion: profile('trade_promotion', 'economic', 'Soutien aux exportations', 4, 1.5, 1, [{ domain: 'economy', commitment: 5 }, { domain: 'diplomacy', commitment: 4 }, { domain: 'administration', commitment: 2 }]),
-  energy_resilience: profile('energy_resilience', 'economic', 'Programme de résilience énergétique', 12, 7, -6, [{ domain: 'economy', commitment: 8 }, { domain: 'administration', commitment: 6 }, { domain: 'diplomacy', commitment: 3 }]),
-  economic_general: profile('economic_general', 'economic', 'Programme économique général', 6, 3.5, -2, [{ domain: 'economy', commitment: 7 }, { domain: 'administration', commitment: 4 }, { domain: 'government', commitment: 2 }]),
+  energy_resilience: profile('energy_resilience', 'economic', 'Programme de résilience énergétique', 6, 7, -6, [{ domain: 'economy', commitment: 8 }, { domain: 'administration', commitment: 6 }, { domain: 'diplomacy', commitment: 3 }]),
+  resource_prospection: profile('resource_prospection', 'economic', 'Prospection et inventaire des ressources', 2, 1.8, 3, [{ domain: 'economy', commitment: 4 }, { domain: 'administration', commitment: 4 }, { domain: 'government', commitment: 2 }]),
+  resource_development: profile('resource_development', 'economic', 'Programme de développement extractif', 8, 9, -9, [{ domain: 'economy', commitment: 9 }, { domain: 'administration', commitment: 7 }, { domain: 'government', commitment: 4 }]),
+  electrification: profile('electrification', 'economic', 'Grand plan d’électrification', 9, 12, -8, [{ domain: 'economy', commitment: 11 }, { domain: 'administration', commitment: 8 }, { domain: 'government', commitment: 5 }]),
+  economic_general: profile('economic_general', 'economic', 'Programme économique général', 3, 3.5, -2, [{ domain: 'economy', commitment: 7 }, { domain: 'administration', commitment: 4 }, { domain: 'government', commitment: 2 }]),
 
-  administrative_reform: profile('administrative_reform', 'institutional', 'Modernisation administrative', 12, 6, -6, [{ domain: 'administration', commitment: 9 }, { domain: 'government', commitment: 5 }, { domain: 'economy', commitment: 2 }]),
-  government_reorganization: profile('government_reorganization', 'institutional', 'Réorganisation gouvernementale', 8, 4.5, -4, [{ domain: 'administration', commitment: 7 }, { domain: 'government', commitment: 8 }]),
-  anti_corruption: profile('anti_corruption', 'institutional', 'Renforcement de l’intégrité publique', 12, 5, -9, [{ domain: 'administration', commitment: 10 }, { domain: 'government', commitment: 7 }, { domain: 'intelligence', commitment: 2 }]),
-  national_reform: profile('national_reform', 'institutional', 'Réforme nationale', 12, 4, -8, [{ domain: 'government', commitment: 8 }, { domain: 'administration', commitment: 9 }, { domain: 'diplomacy', commitment: 1 }]),
+  policy_audit: profile('policy_audit', 'institutional', 'Audit et expertise publique', 2, 1.8, 3, [{ domain: 'administration', commitment: 4 }, { domain: 'government', commitment: 2 }]),
+  administrative_reform: profile('administrative_reform', 'institutional', 'Modernisation administrative', 6, 6, -6, [{ domain: 'administration', commitment: 9 }, { domain: 'government', commitment: 5 }, { domain: 'economy', commitment: 2 }]),
+  government_reorganization: profile('government_reorganization', 'institutional', 'Réorganisation gouvernementale', 4, 4.5, -4, [{ domain: 'administration', commitment: 7 }, { domain: 'government', commitment: 8 }]),
+  anti_corruption: profile('anti_corruption', 'institutional', 'Renforcement de l’intégrité publique', 8, 5, -9, [{ domain: 'administration', commitment: 10 }, { domain: 'government', commitment: 7 }, { domain: 'intelligence', commitment: 2 }]),
+  national_reform: profile('national_reform', 'institutional', 'Réforme nationale', 7, 4, -8, [{ domain: 'government', commitment: 8 }, { domain: 'administration', commitment: 9 }, { domain: 'diplomacy', commitment: 1 }]),
 
-  force_readiness: profile('force_readiness', 'defense', 'Préparation et entraînement des forces', 9, 6, -3, [{ domain: 'defense', commitment: 9 }, { domain: 'administration', commitment: 3 }, { domain: 'government', commitment: 2 }]),
-  defense_procurement: profile('defense_procurement', 'defense', 'Acquisition d’équipements militaires', 24, 12, -9, [{ domain: 'defense', commitment: 10 }, { domain: 'administration', commitment: 6 }, { domain: 'economy', commitment: 4 }]),
+  force_readiness: profile('force_readiness', 'defense', 'Préparation et entraînement des forces', 5, 6, -3, [{ domain: 'defense', commitment: 9 }, { domain: 'administration', commitment: 3 }, { domain: 'government', commitment: 2 }]),
+  defense_procurement: profile('defense_procurement', 'defense', 'Acquisition d’équipements militaires', 12, 12, -9, [{ domain: 'defense', commitment: 10 }, { domain: 'administration', commitment: 6 }, { domain: 'economy', commitment: 4 }]),
   force_deployment: profile('force_deployment', 'defense', 'Déploiement de forces', 2, 5, -10, [{ domain: 'defense', commitment: 13 }, { domain: 'diplomacy', commitment: 5 }, { domain: 'government', commitment: 5 }]),
-  defense_industry: profile('defense_industry', 'defense', 'Renforcement de l’industrie de défense', 24, 14, -11, [{ domain: 'defense', commitment: 8 }, { domain: 'economy', commitment: 10 }, { domain: 'administration', commitment: 7 }]),
+  defense_industry: profile('defense_industry', 'defense', 'Renforcement de l’industrie de défense', 14, 14, -11, [{ domain: 'defense', commitment: 8 }, { domain: 'economy', commitment: 10 }, { domain: 'administration', commitment: 7 }]),
 
   intelligence_assessment: profile('intelligence_assessment', 'intelligence', 'Évaluation de renseignement', 2, 1.2, 3, [{ domain: 'intelligence', commitment: 5 }, { domain: 'diplomacy', commitment: 1 }]),
-  intelligence_surveillance: profile('intelligence_surveillance', 'intelligence', 'Opération de surveillance ciblée', 5, 2.8, -7, [{ domain: 'intelligence', commitment: 9 }, { domain: 'diplomacy', commitment: 2 }]),
+  intelligence_surveillance: profile('intelligence_surveillance', 'intelligence', 'Opération de surveillance ciblée', 3, 2.8, -7, [{ domain: 'intelligence', commitment: 9 }, { domain: 'diplomacy', commitment: 2 }]),
 };
 
 const politics = (
@@ -88,7 +92,13 @@ export const actionLeverPolitics: Record<CommonActionLever, ActionLeverPolitics>
   strategic_sector: politics({ economic: -15, sovereignty: 45 }, { growth: 48, employment: 36, fiscal_sustainability: -30, strategic_autonomy: 82 }, ['state_control', 'strategic_autonomy', 'deficit_spending'], [{ signal: 'public_industrial_investment', weight: 1 }], 'legislative', 62, 84, 58, 48),
   trade_promotion: politics({ economic: 22 }, { growth: 42, employment: 28, alliance_cohesion: 18, international_prestige: 15 }, ['commercial_deal', 'market_liberalization'], [], 'administrative', 28, 42, 46, 18),
   energy_resilience: politics({ sovereignty: 38 }, { growth: 12, fiscal_sustainability: -18, strategic_autonomy: 72 }, ['strategic_autonomy', 'state_control'], [], 'legislative', 58, 78, 68, 38),
+  resource_prospection: politics({}, {}, [], [], 'executive', 25, 40, 42, 16),
+  resource_development: politics({ economic: -6, sovereignty: 34, social: -8 }, { growth: 38, employment: 30, fiscal_sustainability: -20, strategic_autonomy: 46, social_cohesion: -12 }, ['state_control', 'strategic_autonomy', 'deficit_spending'], [{ signal: 'public_industrial_investment', weight: 0.65 }], 'legislative', 64, 76, 52, 54),
+  electrification: politics({ economic: -12, sovereignty: 30, social: 12 }, { growth: 42, employment: 34, fiscal_sustainability: -34, strategic_autonomy: 66, social_cohesion: 18 }, ['state_control', 'strategic_autonomy', 'deficit_spending'], [{ signal: 'public_industrial_investment', weight: 0.9 }], 'legislative', 72, 84, 60, 46),
   economic_general: politics({}, { growth: 28, employment: 18, fiscal_sustainability: -12 }, ['deficit_spending'], [], 'legislative', 48, 58, 45, 30),
+  // Une expertise éclaire un choix ultérieur. Elle ne préjuge ni de la
+  // réforme retenue ni de ses effets politiques ou économiques.
+  policy_audit: politics({}, {}, [], [], 'executive', 22, 38, 35, 12),
   administrative_reform: politics({ economic: 8 }, { growth: 18, fiscal_sustainability: 28, regime_survival: 18 }, ['market_liberalization'], [{ signal: 'administrative_reorganization', weight: 1 }], 'legislative', 58, 82, 42, 36),
   government_reorganization: politics({}, { regime_survival: 30, elite_support: -15 }, ['elite_displacement'], [{ signal: 'administrative_reorganization', weight: 1 }], 'executive', 64, 68, 58, 44),
   anti_corruption: politics({ social: 18 }, { fiscal_sustainability: 35, regime_survival: 12, elite_support: -55, social_cohesion: 38 }, ['elite_displacement', 'political_opening'], [{ signal: 'administrative_reorganization', weight: 0.8 }], 'legislative', 82, 86, 72, 58),
@@ -118,19 +128,45 @@ export function inferActionLever(category: CommonActionCategory, text: string): 
     if (/\b(austerite|consolidation|assainir|reduire|baisser|maitriser)\b.*\b(deficit|dette|depense)|\bequilibre budgetaire\b/.test(value)) return 'fiscal_consolidation';
     if (/\b(relance|stimulus|soutenir la demande|commande publique)\b/.test(value)) return 'fiscal_stimulus';
     if (/\bexport|\bprospection commerciale|\bsoutien commercial|\bvendre a l etranger/.test(value)) return 'trade_promotion';
+    if (/\b(electrif\w*|reseau electrique|mobilite electrique|pompes? a chaleur)\b/.test(value)) return 'electrification';
+    const developmentCue = /\b(mine\w*|extraction|exploitation)\b/.test(value);
+    const prospectionCue = /\b(prospect\w*|inventaire\w*|recens\w*|etude\w*|diagnostic\w*|gisement\w*|minerai\w*|ressourc\w* minier\w*|potentiel geologique|orpaillage|geolog\w*)\b/.test(value);
+    // Une demande de mine peut décrire le gisement ou citer le rapport qui la
+    // fonde. Le verbe matériel (« lancer une mine », « extraire ») doit alors
+    // primer sur le vocabulaire du gisement ; sinon elle serait classée comme
+    // simple prospection et contournerait la preuve livrée obligatoire.
+    const directProspectionIntent = /^(mener|faire|mandater|commander|realiser|effectuer|prospecter|etudier|dresser|recenser|inventorier|demander)\b.*\b(prospect\w*|inventaire\w*|recens\w*|etude\w*|diagnostic\w*)\b|^lancer une prospect\w*\b/.test(value);
+    if (developmentCue && !directProspectionIntent) return 'resource_development';
+    if (prospectionCue) return 'resource_prospection';
+    // « Mine » ouvre la famille extractive sans lister chaque ressource. La
+    // validation territoriale ultérieure exige ensuite une ressource reconnue,
+    // un territoire contrôlé et un rapport de prospection livré : ce mot seul
+    // ne suffit donc jamais à créer un projet fictif.
+    if (developmentCue) return 'resource_development';
     if (/\b(reserve strategique|stockage|securite energetique|resilience energetique|securis\w*|diversifier).*(gaz|petrole|energie)|\b(gaz|petrole|energie).*(reserve|stockage|resilience|securis\w*)\b/.test(value)) return 'energy_resilience';
     if (/\b(semi conduct|puce|electron|nucleaire|engrais|acier|pharma|chantier naval|telecom|machine outil|armement|filiere strategique)\b/.test(value)) return 'strategic_sector';
     if (/\b(reindustr|industrie|industriel|capacite de production|usine|filiere)\b/.test(value)) return 'industrial_capacity';
     return 'economic_general';
   }
   if (category === 'institutional') {
+    // L'audit est une étape de connaissance, même si son auteur mentionne la
+    // réforme qu'il envisage ensuite. Le jeu ne doit pas adopter cette réforme
+    // de manière implicite : le rapport ouvre un dossier, puis le joueur
+    // choisit librement sa suite.
+    if (/\b(audit|etude|expertise|commission|rapport|diagnostic|evaluation|prospective|projection|scenario)\b/.test(value)) return 'policy_audit';
     if (/\b(corruption|integrite|transparence|conflit d interet)\b/.test(value)) return 'anti_corruption';
-    if (/\b(reforme|relig\w*|laic\w*|confession\w*|immigr\w*|migrat\w*|asile|naturalisation|integration|societ\w*|famille|ordre public|droits civils|egalite)\b/.test(value)) return 'national_reform';
+    // Toute réforme systémique passe par le même parcours législatif et le
+    // profil de politique publique associé. Sans cette liste, "retraites" ou
+    // "santé" pouvaient être traitées à tort comme une simple modernisation.
+    if (/\b(reforme|projet de loi|loi cadre|deposer.*loi|retraite|pension|capitalisation|repartition|travail|emploi|salaire|syndic|impot|taxe|fiscal\w*|prelevement|protection sociale|prestation|hopital|sante|soins|ecole|educ\w*|universite|formation|energ\w*|electric|nucleaire|environnement|climat|pollution|industri\w*|reindustr|logement|foncier|justice|penal|securite interieure|protection civile|relig\w*|laic\w*|confession\w*|immigr\w*|migrat\w*|asile|naturalisation|integration|societ\w*|famille|ordre public|droits civils|egalite|constitution|election|parlement)\b/.test(value)) return 'national_reform';
     if (/\b(ministere|sous ministere|secretariat d etat|gouvernement|cabinet)\b/.test(value)) return 'government_reorganization';
     return 'administrative_reform';
   }
   if (category === 'defense') {
-    if (/\b(deploi|stationner|projeter|troupes?|forces?)\b/.test(value)) return 'force_deployment';
+    // "déployer" et "déploiement" se normalisent différemment : accepter
+    // les deux formes évite qu'un ordre de projection soit réduit à une
+    // simple préparation générale des forces.
+    if (/\b(deploi\w*|deploy\w*|stationner|projeter|troupes?|forces?|guerre|invasion|intrusion|incursion|offensive|etat major|renverser|renversement|prise de controle|occupation|intervention)\b/.test(value)) return 'force_deployment';
     if (/\b(industrie|usine|production|capacite)\b.*\b(arme|armement|militaire|defense)\b|\barmement\b.*\b(industrie|production)\b/.test(value)) return 'defense_industry';
     if (/\b(acheter|acquerir|commande|equipement|moderniser|remplacer)\b/.test(value)) return 'defense_procurement';
     return 'force_readiness';

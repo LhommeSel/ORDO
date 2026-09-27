@@ -1,4 +1,4 @@
-# Sécurité de l’intégration IA d’ORDO
+# Sécurité de l’intégration IA de État-Nation
 
 ## Frontière de confiance
 
@@ -6,20 +6,20 @@
 - Le navigateur envoie un contexte compact à `/api/ai/advisor`, jamais la sauvegarde complète.
 - Le modèle et le plafond de sortie sont imposés par le serveur.
 - La réponse de Luna respecte un schéma JSON puis subit une seconde validation locale.
-- Une réponse IA reste consultative. Seul le moteur d’ORDO peut produire des effets de jeu.
+- Une réponse IA reste consultative. Seul le moteur de État-Nation peut produire des effets de jeu.
 - Les requêtes et réponses OpenAI utilisent `store: false`.
 
 ## Variables du serveur
 
 | Nom | Type | Valeur de départ conseillée |
 | --- | --- | --- |
-| `OPENAI_API_KEY` | secret | clé du projet OpenAI ORDO |
+| `OPENAI_API_KEY` | secret | clé du projet OpenAI État-Nation |
 | `AI_RATE_LIMIT_SALT` | secret | chaîne aléatoire propre à la production |
 | `AI_ENABLED` | configuration | `true` uniquement après pose des limites OpenAI |
 | `AI_DAILY_BUDGET_USD` | configuration | `0.50` |
 | `AI_PER_IP_PER_MINUTE` | configuration | `4` |
-| `AI_PER_IP_PER_DAY` | configuration | `60` |
-| `AI_PER_SESSION_PER_DAY` | configuration | `20` |
+| `AI_PER_IP_PER_DAY` | configuration | `300` |
+| `AI_PER_SESSION_PER_DAY` | configuration | `100` |
 | `AI_MAX_INFLIGHT` | configuration | `4` |
 | `AI_MAX_OUTPUT_TOKENS` | configuration | `1400` |
 | `AI_MAX_REQUEST_BYTES` | configuration | `160000` |

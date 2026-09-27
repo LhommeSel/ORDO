@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
-import { Geist, Geist_Mono } from 'next/font/google';
+import { Geist, Geist_Mono, Newsreader } from 'next/font/google';
+import { GAME_BRAND } from '@/lib/brand';
 import './globals.css';
 
 const geistSans = Geist({
@@ -12,20 +13,25 @@ const geistMono = Geist_Mono({
   subsets: ['latin'],
 });
 
+const newsreader = Newsreader({
+  variable: '--font-newsreader',
+  subsets: ['latin'],
+});
+
 export const metadata: Metadata = {
-  title: 'ORDO — Simulation géopolitique',
-  description: 'Prototype de grande stratégie conversationnelle assistée par IA.',
+  title: GAME_BRAND.title,
+  description: 'Prenez la tête d’un État, arbitrez ses crises et transformez un monde géopolitique vivant.',
   openGraph: {
-    title: 'ORDO — Simulation géopolitique',
-    description: 'Négociez, arbitrez et transformez un monde simulé.',
+    title: GAME_BRAND.title,
+    description: `Prenez la tête d’un État. ${GAME_BRAND.tagline}.`,
     images: ['/og.png'],
     locale: 'fr_FR',
     type: 'website',
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'ORDO — Simulation géopolitique',
-    description: 'Négociez, arbitrez et transformez un monde simulé.',
+    title: GAME_BRAND.title,
+    description: `Prenez la tête d’un État. ${GAME_BRAND.tagline}.`,
     images: ['/og.png'],
   },
 };
@@ -38,7 +44,7 @@ export default function RootLayout({
   return (
     <html lang="fr" className="dark">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} ${newsreader.variable} antialiased`}
       >
         {children}
       </body>

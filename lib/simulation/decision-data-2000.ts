@@ -199,7 +199,7 @@ export function createDecisionProfiles2000(countries: Record<CountryId, CountryS
       riskTolerance: override.riskTolerance, adaptability: override.adaptability,
       satisficingThreshold: override.satisficingThreshold, choiceNoise: override.choiceNoise,
       constraints: override.constraints,
-      source: 'Profil décisionnel ORDO — situation politique et institutionnelle au 1er janvier 2000.',
+      source: 'Profil décisionnel de État-Nation — situation politique et institutionnelle au 1er janvier 2000.',
     } satisfies CountryDecisionProfile];
   }));
 }

@@ -10,6 +10,9 @@ import type {
 import { MAX_STRATEGIC_SECTOR_WORKLOAD_MONTHS } from './types';
 
 import { indexTerritorialState, synchronizeTerritorialEconomy } from './territories';
+import { canTransitionActionProgramStatus } from './action-lifecycle';
+import { industrialInputRequirementsFor, technologyTierFor } from './industrial-inputs';
+import { commissionedReportForProgram, finalizeReportForProgram } from './reports';
 
 const relationKey = (from: CountryId, to: CountryId) => `${from}:${to}`;
 const intelligenceKey = (observerId: CountryId, targetId: CountryId) => `${observerId}:${targetId}`;
@@ -26,6 +29,8 @@ const clamp = (value: number, minimum = 0, maximum = 100) =>
  */
 function normalizeSectorPatch(sector: WorldState['sectors'][string], patch: Partial<WorldState['sectors'][string]>) {
   const raw = { ...sector, ...patch };
+  const technology = clamp(raw.technology);
+  const technologyTier = technologyTierFor(technology);
   return {
     ...raw,
     capacity: clamp(raw.capacity),
@@ -36,7 +41,12 @@ function normalizeSectorPatch(sector: WorldState['sectors'][string], patch: Part
     ),
     health: clamp(raw.health),
     foreignDependency: clamp(raw.foreignDependency),
-    technology: clamp(raw.technology),
+    technology,
+    // Le niveau jouable et la demande matérielle suivent toute montée ou
+    // dégradation de maturité. Aucun programme ne peut donc promettre une
+    // technologie plus avancée sans augmenter ses dépendances physiques.
+    technologyTier,
+    inputRequirements: industrialInputRequirementsFor(raw.sector, technologyTier),
   };
 }
 
@@ -82,12 +92,22 @@ function applyEffect(state: WorldState, action: WorldAction, effect: WorldEffect
     return appendChange(next, action, effect, 'processedStopIds', before, after);
   }
 
+  if (effect.kind === 'world_event_add') {
+    const before = state.worldEvents.find((event) => event.id === effect.event.id) ?? null;
+    // Les événements sont des constats immuables : un même fait ne peut pas
+    // être réécrit ou dupliqué lors d'une seconde frontière de simulation.
+    if (before) return state;
+    const after = effect.event;
+    const next = { ...state, worldEvents: [...state.worldEvents, after] };
+    return appendChange(next, action, effect, `worldEvents.${after.id}`, before, after);
+  }
+
   if (effect.kind === 'metric_delta') {
     const country = state.countries[effect.countryId];
     if (!country) return state;
     const before = country.metrics[effect.metric];
     const rawAfter = before + effect.delta;
-    const after = effect.metric === 'budget' ? rawAfter : effect.metric === 'industry' ? Math.max(0, rawAfter) : clamp(rawAfter);
+    const after = effect.metric === 'industry' ? Math.max(0, rawAfter) : clamp(rawAfter);
     const next = {
       ...state,
       countries: {
@@ -99,6 +119,43 @@ function applyEffect(state: WorldState, action: WorldAction, effect: WorldEffect
       },
     };
     return appendChange(next, action, effect, `countries.${effect.countryId}.metrics.${effect.metric}`, before, Number(after.toFixed(3)));
+  }
+
+  if (effect.kind === 'fiscal_delta') {
+    const country = state.countries[effect.countryId];
+    if (!country) return state;
+    const field = effect.bucket === 'emergency_reserve'
+      ? 'emergencyReserve'
+      : effect.bucket === 'recurring_costs'
+        ? 'recurringProgramCosts'
+        : effect.bucket === 'recurring_savings'
+          ? 'recurringProgramSavings'
+          : 'discretionaryMargin';
+    const before = country.fiscal[field];
+    const after = Number(Math.max(0, before + effect.delta).toFixed(3));
+    const fiscal = { ...country.fiscal, [field]: after };
+    const next = { ...state, countries: { ...state.countries, [effect.countryId]: { ...country, fiscal } } };
+    return appendChange(next, action, effect, `countries.${effect.countryId}.fiscal.${field}`, before, after);
+  }
+
+  if (effect.kind === 'fiscal_patch') {
+    const country = state.countries[effect.countryId];
+    if (!country) return state;
+    const before = country.fiscal;
+    const after = {
+      ...before,
+      ...effect.patch,
+      annualRevenuePctGDP: Math.max(0, Number((effect.patch.annualRevenuePctGDP ?? before.annualRevenuePctGDP).toFixed(3))),
+      annualSpendingPctGDP: Math.max(0, Number((effect.patch.annualSpendingPctGDP ?? before.annualSpendingPctGDP).toFixed(3))),
+      publicDebtPctGDP: Math.max(0, Number((effect.patch.publicDebtPctGDP ?? before.publicDebtPctGDP).toFixed(3))),
+      annualDiscretionaryAllocation: Math.max(0, Number((effect.patch.annualDiscretionaryAllocation ?? before.annualDiscretionaryAllocation).toFixed(3))),
+      discretionaryMargin: Math.max(0, Number((effect.patch.discretionaryMargin ?? before.discretionaryMargin).toFixed(3))),
+      emergencyReserve: Math.max(0, Number((effect.patch.emergencyReserve ?? before.emergencyReserve).toFixed(3))),
+      recurringProgramCosts: Math.max(0, Number((effect.patch.recurringProgramCosts ?? before.recurringProgramCosts).toFixed(3))),
+      recurringProgramSavings: Math.max(0, Number((effect.patch.recurringProgramSavings ?? before.recurringProgramSavings).toFixed(3))),
+    };
+    const next = { ...state, countries: { ...state.countries, [effect.countryId]: { ...country, fiscal: after } } };
+    return appendChange(next, action, effect, `countries.${effect.countryId}.fiscal`, before, after);
   }
 
   if (effect.kind === 'politics_patch') {
@@ -143,6 +200,34 @@ function applyEffect(state: WorldState, action: WorldAction, effect: WorldEffect
     return appendChange(next, action, effect, `politicalCycles.${effect.countryId}`, cycle, after);
   }
 
+  if (effect.kind === 'national_politics_patch') {
+    const politics = state.nationalPolitics?.[effect.countryId];
+    if (!politics) return state;
+    const after = { ...politics, ...effect.patch, countryId: effect.countryId };
+    const next = { ...state, nationalPolitics: { ...state.nationalPolitics, [effect.countryId]: after } };
+    return appendChange(next, action, effect, `nationalPolitics.${effect.countryId}`, politics, after);
+  }
+
+  if (effect.kind === 'parliamentary_procedure_add') {
+    const politics = state.nationalPolitics?.[effect.countryId];
+    if (!politics) return state;
+    const before = politics.procedures[effect.procedure.id] ?? null;
+    const after = before ?? effect.procedure;
+    const nextPolitics = { ...politics, procedures: { ...politics.procedures, [effect.procedure.id]: after } };
+    const next = { ...state, nationalPolitics: { ...state.nationalPolitics, [effect.countryId]: nextPolitics } };
+    return appendChange(next, action, effect, `nationalPolitics.${effect.countryId}.procedures.${effect.procedure.id}`, before, after);
+  }
+
+  if (effect.kind === 'parliamentary_procedure_patch') {
+    const politics = state.nationalPolitics?.[effect.countryId];
+    const procedure = politics?.procedures[effect.procedureId];
+    if (!politics || !procedure) return state;
+    const after = { ...procedure, ...effect.patch, id: effect.procedureId, countryId: effect.countryId };
+    const nextPolitics = { ...politics, procedures: { ...politics.procedures, [effect.procedureId]: after } };
+    const next = { ...state, nationalPolitics: { ...state.nationalPolitics, [effect.countryId]: nextPolitics } };
+    return appendChange(next, action, effect, `nationalPolitics.${effect.countryId}.procedures.${effect.procedureId}`, procedure, after);
+  }
+
   if (effect.kind === 'country_strategy_patch') {
     const country = state.countries[effect.countryId];
     if (!country) return state;
@@ -175,6 +260,22 @@ function applyEffect(state: WorldState, action: WorldAction, effect: WorldEffect
       },
     };
     return appendChange(next, action, effect, `countries.${effect.countryId}.capacities.${effect.domain}.${field}`, before, Number(after.toFixed(3)));
+  }
+
+  if (effect.kind === 'capacity_maintenance_add') {
+    const country = state.countries[effect.countryId];
+    if (!country) return state;
+    const commitments = country.capacityMaintenance ?? {};
+    const before = commitments[effect.commitment.id] ?? null;
+    const after = before ?? effect.commitment;
+    const next = {
+      ...state,
+      countries: {
+        ...state.countries,
+        [effect.countryId]: { ...country, capacityMaintenance: { ...commitments, [effect.commitment.id]: after } },
+      },
+    };
+    return appendChange(next, action, effect, `countries.${effect.countryId}.capacityMaintenance.${effect.commitment.id}`, before, after);
   }
 
   if (effect.kind === 'capacity_overload_patch') {
@@ -245,6 +346,17 @@ function applyEffect(state: WorldState, action: WorldAction, effect: WorldEffect
     const after = { ...treaty, ...effect.patch };
     const next = { ...state, treaties: { ...state.treaties, [effect.treatyId]: after } };
     return appendChange(next, action, effect, `treaties.${effect.treatyId}`, treaty, after);
+  }
+
+  if (effect.kind === 'international_organization_patch') {
+    const organization = state.internationalOrganizations?.[effect.organizationId];
+    if (!organization) return state;
+    const after = { ...organization, ...effect.patch, id: organization.id };
+    const next = {
+      ...state,
+      internationalOrganizations: { ...state.internationalOrganizations, [effect.organizationId]: after },
+    };
+    return appendChange(next, action, effect, `internationalOrganizations.${effect.organizationId}`, organization, after);
   }
 
   if (effect.kind === 'historical_pressure') {
@@ -318,10 +430,14 @@ function applyEffect(state: WorldState, action: WorldAction, effect: WorldEffect
       deployed: Math.min(Math.max(0, rawOperation.deployed), Math.max(0.001, rawOperation.maximum)),
       availabilityPct: clamp(rawOperation.availabilityPct),
     } : undefined;
+    const portProfile = asset.portProfile && effect.patch.portProfile
+      ? { ...asset.portProfile, ...effect.patch.portProfile }
+      : asset.portProfile;
     const after = {
       ...asset,
       ...(effect.patch.status ? { status: effect.patch.status } : {}),
       ...(operation ? { operation, capacity: { value: operation.maximum, unit: operation.unit } } : {}),
+      ...(portProfile ? { portProfile } : {}),
     };
     const next = { ...state, territorial: { ...state.territorial, assets: { ...state.territorial.assets, [asset.id]: after } } };
     return appendChange(next, action, effect, `territorial.assets.${asset.id}`, asset, after);
@@ -490,6 +606,7 @@ function applyEffect(state: WorldState, action: WorldAction, effect: WorldEffect
     const dossier = state.strategicDossiers?.[effect.dossierId];
     if (!dossier) return state;
     const after = { ...dossier, ...effect.patch };
+    for (const field of effect.clear ?? []) Reflect.deleteProperty(after, field);
     const next = { ...state, strategicDossiers: { ...state.strategicDossiers, [effect.dossierId]: after } };
     return appendChange(next, action, effect, `strategicDossiers.${effect.dossierId}`, dossier, after);
   }
@@ -497,7 +614,12 @@ function applyEffect(state: WorldState, action: WorldAction, effect: WorldEffect
   if (effect.kind === 'dossier_entry_add') {
     const dossier = state.strategicDossiers?.[effect.dossierId];
     if (!dossier || dossier.entries.some((entry) => entry.id === effect.entry.id)) return state;
-    const entry = { ...effect.entry, sourceActionId: effect.entry.sourceActionId ?? action.id };
+    const entry = {
+      ...effect.entry,
+      sourceActionId: effect.entry.sourceActionId ?? action.id,
+      origin: effect.entry.origin ?? action.origin,
+      actorId: effect.entry.actorId ?? action.actorId,
+    };
     const after = {
       ...dossier,
       updatedAt: entry.date,
@@ -529,6 +651,42 @@ function applyEffect(state: WorldState, action: WorldAction, effect: WorldEffect
       next = appendChange({ ...next, territorial }, action, effect, `territorial.accounting.${effect.countryId}`, amounts(state.territorial), amounts(territorial));
     }
     return next;
+  }
+
+  if (effect.kind === 'aggregate_sector_delta') {
+    const economy = state.macroEconomies[effect.countryId];
+    const sector = economy?.sectors[effect.sector];
+    if (!economy || !sector) return state;
+    const bounds = {
+      capacityIndex: [0, 200],
+      utilizationPct: [0, 100],
+      productivityIndex: [0, 200],
+      employmentSharePct: [0, 100],
+    } as const;
+    const patch = Object.fromEntries(Object.entries(effect.delta).map(([key, delta]) => {
+      const typedKey = key as keyof typeof bounds;
+      const [minimum, maximum] = bounds[typedKey];
+      return [typedKey, clamp(sector[typedKey] + (delta ?? 0), minimum, maximum)];
+    })) as Partial<typeof sector>;
+    const afterSector = { ...sector, ...patch };
+    const afterEconomy = { ...economy, sectors: { ...economy.sectors, [effect.sector]: afterSector } };
+    const next = { ...state, macroEconomies: { ...state.macroEconomies, [effect.countryId]: afterEconomy } };
+    return appendChange(next, action, effect, `macroEconomies.${effect.countryId}.sectors.${effect.sector}`, sector, afterSector);
+  }
+
+  if (effect.kind === 'trade_flow_add') {
+    const before = state.tradeFlows[effect.flow.id] ?? null;
+    if (before) return state;
+    const next = { ...state, tradeFlows: { ...state.tradeFlows, [effect.flow.id]: effect.flow } };
+    return appendChange(next, action, effect, `tradeFlows.${effect.flow.id}`, before, effect.flow);
+  }
+
+  if (effect.kind === 'trade_flow_patch') {
+    const flow = state.tradeFlows[effect.flowId];
+    if (!flow) return state;
+    const after = { ...flow, ...effect.patch };
+    const next = { ...state, tradeFlows: { ...state.tradeFlows, [effect.flowId]: after } };
+    return appendChange(next, action, effect, `tradeFlows.${effect.flowId}`, flow, after);
   }
 
   if (effect.kind === 'macro_policy_delta') {
@@ -575,11 +733,34 @@ function applyEffect(state: WorldState, action: WorldAction, effect: WorldEffect
     return appendChange(next, action, effect, `structuralProfiles.${effect.countryId}`, before, after);
   }
 
+  if (effect.kind === 'structural_modifier_patch') {
+    const modifiers = state.structuralModifiers?.[effect.countryId];
+    const modifier = modifiers?.find((item) => item.id === effect.modifierId);
+    if (!modifiers || !modifier) return state;
+    const afterModifier = { ...modifier, ...effect.patch, id: modifier.id, countryId: modifier.countryId };
+    const afterModifiers = modifiers.map((item) => item.id === modifier.id ? afterModifier : item);
+    const next = { ...state, structuralModifiers: { ...state.structuralModifiers, [effect.countryId]: afterModifiers } };
+    const changed = Object.fromEntries(Object.keys(effect.patch)
+      .map((key) => [key, afterModifier[key as keyof typeof afterModifier]] as const)
+      .filter(([, value]) => value !== undefined));
+    const before = Object.fromEntries(Object.keys(effect.patch)
+      .map((key) => [key, modifier[key as keyof typeof modifier]] as const)
+      .filter(([, value]) => value !== undefined));
+    return appendChange(next, action, effect, `structuralModifiers.${effect.countryId}.${modifier.id}`, before, changed);
+  }
+
   if (effect.kind === 'stakeholder_group_add') {
     const before = state.stakeholderGroups[effect.group.id] ?? null;
     const after = before ?? effect.group;
     const next = { ...state, stakeholderGroups: { ...state.stakeholderGroups, [effect.group.id]: after } };
     return appendChange(next, action, effect, `stakeholderGroups.${effect.group.id}`, before, after);
+  }
+
+  if (effect.kind === 'stakeholder_group_patch') {
+    const before = state.stakeholderGroups[effect.groupId];
+    if (!before) return state;
+    const after = { ...before, ...effect.patch, id: before.id, countryId: before.countryId };
+    return appendChange({ ...state, stakeholderGroups: { ...state.stakeholderGroups, [before.id]: after } }, action, effect, `stakeholderGroups.${before.id}`, before, after);
   }
 
   if (effect.kind === 'stakeholder_reaction_add') {
@@ -612,6 +793,9 @@ function applyEffect(state: WorldState, action: WorldAction, effect: WorldEffect
       polarization: Number(clamp(effect.patch.polarization ?? reform.polarization).toFixed(2)),
       implementationCapacity: Number(clamp(effect.patch.implementationCapacity ?? reform.implementationCapacity).toFixed(2)),
       administrativeBurden: Number(clamp(effect.patch.administrativeBurden ?? reform.administrativeBurden).toFixed(2)),
+      evidenceLevel: Number(clamp(effect.patch.evidenceLevel ?? reform.evidenceLevel).toFixed(2)),
+      annualFiscalImpact: Number((effect.patch.annualFiscalImpact ?? reform.annualFiscalImpact).toFixed(2)),
+      indicators: Object.fromEntries(Object.entries({ ...reform.indicators, ...effect.patch.indicators }).map(([key, value]) => [key, Number(clamp(value).toFixed(2))])),
     };
     const next = { ...state, nationalReforms: { ...state.nationalReforms, [key]: after } };
     return appendChange(next, action, effect, `nationalReforms.${key}`, reform, after);
@@ -669,16 +853,58 @@ function applyEffect(state: WorldState, action: WorldAction, effect: WorldEffect
     const programs = state.actionPrograms ?? {};
     const before = programs[effect.program.id] ?? null;
     const after = before ?? effect.program;
-    const next = { ...state, actionPrograms: { ...programs, [effect.program.id]: after } };
+    const reports = state.reports ?? {};
+    const report = commissionedReportForProgram(after);
+    const next = {
+      ...state,
+      actionPrograms: { ...programs, [effect.program.id]: after },
+      ...(report && !reports[report.id] ? { reports: { ...reports, [report.id]: report } } : {}),
+    };
     return appendChange(next, action, effect, `actionPrograms.${effect.program.id}`, before, after);
   }
 
   if (effect.kind === 'action_program_patch') {
     const program = state.actionPrograms?.[effect.programId];
     if (!program) return state;
+    // Un programme terminé ne peut jamais être relancé par un effet tardif.
+    // Les mises à jour sans changement de statut (bilan, événements et
+    // rattachement à un dossier) restent autorisées.
+    if (effect.patch.status && !canTransitionActionProgramStatus(program.status, effect.patch.status)) return state;
     const after = { ...program, ...effect.patch };
-    const next = { ...state, actionPrograms: { ...state.actionPrograms, [effect.programId]: after } };
+    const reports = state.reports ?? {};
+    const reportId = `report-${effect.programId}`;
+    const currentReport = reports[reportId];
+    let next: WorldState = { ...state, actionPrograms: { ...state.actionPrograms, [effect.programId]: after } };
+    if (currentReport) {
+      let report = currentReport;
+      if (effect.patch.linkedDossierId) report = { ...report, linkedDossierId: effect.patch.linkedDossierId };
+      if (['succeeded', 'partially_succeeded', 'failed', 'cancelled'].includes(after.status) && after.status !== program.status) {
+        report = finalizeReportForProgram(report, after, state.currentDate, state);
+      }
+      if (report !== currentReport) next = { ...next, reports: { ...reports, [reportId]: report } };
+    }
     return appendChange(next, action, effect, `actionPrograms.${effect.programId}`, program, after);
+  }
+
+  if (effect.kind === 'territorial_project_add') {
+    const projects = state.territorialProjects ?? {};
+    const before = projects[effect.project.id] ?? null;
+    if (before) return state;
+    const next = { ...state, territorialProjects: { ...projects, [effect.project.id]: effect.project } };
+    return appendChange(next, action, effect, `territorialProjects.${effect.project.id}`, before, effect.project);
+  }
+
+  if (effect.kind === 'territorial_project_patch') {
+    const project = state.territorialProjects?.[effect.projectId];
+    if (!project) return state;
+    const after = { ...project, ...effect.patch };
+    // JSON retire les propriétés undefined. Reproduire ce comportement dès
+    // l'application afin qu'un arbitrage clos ne réapparaisse pas au rechargement.
+    if (Object.prototype.hasOwnProperty.call(effect.patch, 'pendingDecision') && effect.patch.pendingDecision === undefined) {
+      Reflect.deleteProperty(after, 'pendingDecision');
+    }
+    const next = { ...state, territorialProjects: { ...state.territorialProjects, [effect.projectId]: after } };
+    return appendChange(next, action, effect, `territorialProjects.${effect.projectId}`, project, after);
   }
 
   if (effect.kind === 'military_theater_add') {

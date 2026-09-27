@@ -20,6 +20,48 @@ const bookedOn = (contract: EnergyContract, date: ISODate) =>
 const baselineActiveOn = (flow: BaselineEnergyFlow, date: ISODate) =>
   flow.startDate <= date && flow.endDate >= date;
 
+/**
+ * Capacité annuelle abstraite d'un port pour recevoir une ressource.
+ *
+ * Un port n'est pas obligé d'être relié à un contrat : cette fonction expose
+ * seulement la capacité disponible si une route choisit explicitement ce
+ * terminal. Huit unités/an par point de capacité est une convention ÉTAT-NATION,
+ * volontairement stable et non présentée comme un tonnage réel.
+ */
+export function portEnergyImportCapacity(state: WorldState, assetId: string, resource: EnergyResource) {
+  const asset = state.territorial?.assets?.[assetId];
+  const profile = asset?.kind === 'port' ? asset.portProfile : undefined;
+  if (!profile) return null;
+  const requiredCapability = resource === 'gas' ? 'lng' : 'liquid_hydrocarbons';
+  if (!profile.capabilities.includes(requiredCapability)) return 0;
+  const installed = Math.max(0, Math.min(profile.goodsCapacity, profile.infrastructureCapacity));
+  const stateFactor = profile.operationalState === 'operating' ? 1
+    : profile.operationalState === 'congested' ? 0.68
+      : profile.operationalState === 'damaged' ? 0.4 : 0;
+  return Number((installed * 8 * stateFactor).toFixed(2));
+}
+
+/** Volume restant sur un terminal pour les contrats qui le ciblent. */
+export function portAvailableImportCapacity(state: WorldState, assetId: string, resource: EnergyResource, date = state.currentDate) {
+  const capacity = portEnergyImportCapacity(state, assetId, resource);
+  if (capacity === null) return null;
+  const booked = Object.values(state.energyContracts ?? {})
+    .filter((contract) => contract.portAssetId === assetId && contract.resource === resource && bookedOn(contract, date))
+    .reduce((sum, contract) => sum + contract.annualVolume, 0);
+  return Number(Math.max(0, capacity - booked).toFixed(2));
+}
+
+function portDeliveryRatio(state: WorldState, assetId: string | undefined, resource: EnergyResource, date: ISODate) {
+  if (!assetId) return 1;
+  const capacity = portEnergyImportCapacity(state, assetId, resource);
+  if (capacity === null) return 1;
+  if (capacity <= 0) return 0;
+  const booked = Object.values(state.energyContracts ?? {})
+    .filter((candidate) => candidate.portAssetId === assetId && candidate.resource === resource && bookedOn(candidate, date))
+    .reduce((sum, candidate) => sum + candidate.annualVolume, 0);
+  return booked > 0 ? Math.min(1, capacity / booked) : 1;
+}
+
 export function nodePhysicalExportCapacity(state: WorldState, nodeId: string) {
   const node = state.energyNodes[nodeId];
   if (!node) return 0;
@@ -65,7 +107,10 @@ export function baselineFlowDeliveredVolume(state: WorldState, flow: BaselineEne
 
 export function contractDeliveredVolume(state: WorldState, contract: EnergyContract, date = state.currentDate) {
   if (!activeOn(contract, date)) return 0;
-  return contract.annualVolume * nodeDeliveryRatio(state, contract.nodeId, date);
+  return contract.annualVolume * Math.min(
+    nodeDeliveryRatio(state, contract.nodeId, date),
+    portDeliveryRatio(state, contract.portAssetId, contract.resource, date),
+  );
 }
 
 function domesticProductionAt(state: WorldState, countryId: CountryId, resource: EnergyResource) {
@@ -118,6 +163,9 @@ export function proposeEnergyContract(
     endDate: ISODate;
     priceFormula: string;
     route: string;
+    /** Optionnel : si absent, la route reste abstraite ou passe par un réseau
+     * non détaillé. Lorsqu'il est fourni, le moteur vérifie le terminal. */
+    portAssetId?: string;
     priority?: number;
     politicalClauses?: string[];
     breachPenalty?: number;
@@ -129,6 +177,16 @@ export function proposeEnergyContract(
   if (!state.countries[input.buyerId]) return { ok: false as const, state, error: 'Pays acheteur inconnu.' };
   if (state.energyContracts[input.id]) return { ok: false as const, state, error: 'Cette proposition de contrat existe déjà dans le registre.' };
   if (input.startDate > input.endDate) return { ok: false as const, state, error: 'Période contractuelle invalide.' };
+  if (input.portAssetId) {
+    const asset = state.territorial?.assets?.[input.portAssetId];
+    const territory = asset ? state.territorial.territories[asset.territoryId] : undefined;
+    if (!asset?.portProfile || asset.kind !== 'port') return { ok: false as const, state, error: 'Le terminal portuaire choisi est introuvable.' };
+    if (!territory || territory.sovereignCountryId !== input.buyerId) return { ok: false as const, state, error: 'Le terminal d’arrivée doit appartenir au pays acheteur.' };
+    const capacity = portEnergyImportCapacity(state, input.portAssetId, node.resource);
+    if (capacity === 0) return { ok: false as const, state, error: `Le port ${asset.name} ne possède pas la capacité de réception ${node.resource === 'gas' ? 'GNL' : 'd’hydrocarbures liquides'}.` };
+    const availablePort = portAvailableImportCapacity(state, input.portAssetId, node.resource, input.startDate) ?? 0;
+    if (input.annualVolume > availablePort) return { ok: false as const, state, error: `Capacité portuaire insuffisante : ${availablePort.toFixed(1)} unités/an restent disponibles sur ${asset.name}.` };
+  }
   const available = nodeAvailableExport(state, node.id, input.startDate);
   if (input.annualVolume <= 0 || input.annualVolume > available) {
     return { ok: false as const, state, error: `Volume indisponible : ${available.toFixed(1)} unités/an restent exportables.` };
@@ -144,6 +202,7 @@ export function proposeEnergyContract(
     endDate: input.endDate,
     priceFormula: input.priceFormula,
     route: input.route,
+    ...(input.portAssetId ? { portAssetId: input.portAssetId } : {}),
     priority: input.priority ?? 50,
     politicalClauses: input.politicalClauses ?? [],
     breachPenalty: input.breachPenalty ?? 0,

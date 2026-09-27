@@ -2,7 +2,7 @@
  * Read-only audit of the 2000 national baseline against World Bank WDI.
  * Run with: npx tsx scripts/verify-national-baseline.ts
  *
- * This is an audit helper, not part of the simulation runtime. ORDO values are
+ * This is an audit helper, not part of the simulation runtime. État-Nation values are
  * rounded scenario inputs; a mismatch is a review signal, not an automatic
  * instruction to overwrite gameplay data.
  */
@@ -33,14 +33,14 @@ async function readIndicator(indicator: string): Promise<Map<string, number>> {
   );
 }
 
-function relativeGap(ordo: number, reference: number): number {
+function relativeGap(scenarioValue: number, reference: number): number {
   const denominator = Math.max(Math.abs(reference), 0.25);
-  return Math.abs(ordo - reference) / denominator;
+  return Math.abs(scenarioValue - reference) / denominator;
 }
 
 // Une valeur WDI exactement nulle pour une part sectorielle signale ici une
 // série absente ou non publiée, pas une industrie réellement inexistante. Elle
-// ne doit donc pas transformer une fiche ORDO en faux outlier.
+// ne doit donc pas transformer une fiche État-Nation en faux outlier.
 function comparable(key: Key, reference: number): boolean {
   return !(key === 'industry' && reference === 0);
 }
@@ -53,7 +53,7 @@ const data = Object.fromEntries(
 
 const toWorldBankUnits = (key: Key, value: number) => (key === 'gdp' ? value * 1e9 : key === 'population' ? value * 1e6 : value);
 
-console.log(`Audit World Bank 2000 — ${nationalBaseline2000.length} fiches ORDO`);
+console.log(`Audit World Bank 2000 — ${nationalBaseline2000.length} fiches État-Nation`);
 for (const key of Object.keys(indicators) as Key[]) {
   let available = 0;
   let within25 = 0;

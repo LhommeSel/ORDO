@@ -3,13 +3,13 @@ import type { CommonActionCategory, DossierImportance, DossierKind, DossierScope
 import type { AdvisorAIUsage } from './contracts';
 
 /**
- * Un tour n'est facturé qu'une fois côté ORDO. Il peut embarquer une réaction
+ * Un tour n'est facturé qu'une fois côté ÉTAT-NATION. Il peut embarquer une réaction
  * au joueur et l'évolution autonome du monde ; la première est omise lorsqu'il
  * n'y a aucune action récente à interpréter. Les réponses restent purement
  * déclaratives jusqu'à leur validation par lib/simulation/ai/world-pulse.ts.
  */
 // Version 3 ajoute les files de périmètre des dossiers et le lien parent.
-export const ORDO_WORLD_PULSE_SCHEMA_VERSION = 3 as const;
+export const ETAT_NATION_WORLD_PULSE_SCHEMA_VERSION = 3 as const;
 
 export type WorldPulseKind = 'player_reaction' | 'world_autonomy';
 
@@ -82,7 +82,7 @@ export type WorldPulseRequestItem = {
 };
 
 export type WorldPulseRequest = {
-  schemaVersion: typeof ORDO_WORLD_PULSE_SCHEMA_VERSION;
+  schemaVersion: typeof ETAT_NATION_WORLD_PULSE_SCHEMA_VERSION;
   requestId: string;
   sessionId: string;
   pulseId: string;
@@ -257,12 +257,12 @@ function migrateLegacyWorldPulseRequest(value: unknown): unknown {
     const worldDossierQueue = Array.isArray(context.worldDossierQueue) ? context.worldDossierQueue : [];
     return { ...item, context: { ...context, strategicDossierQueue, worldDossierQueue } };
   }) : value.pulses;
-  return { ...value, schemaVersion: ORDO_WORLD_PULSE_SCHEMA_VERSION, pulses };
+  return { ...value, schemaVersion: ETAT_NATION_WORLD_PULSE_SCHEMA_VERSION, pulses };
 }
 
 export function parseWorldPulseRequest(value: unknown): WorldPulseRequest | null {
   const migrated = migrateLegacyWorldPulseRequest(value);
-  if (!isRecord(migrated) || migrated.schemaVersion !== ORDO_WORLD_PULSE_SCHEMA_VERSION
+  if (!isRecord(migrated) || migrated.schemaVersion !== ETAT_NATION_WORLD_PULSE_SCHEMA_VERSION
     || !isText(migrated.requestId, 80, 8) || !isText(migrated.sessionId, 80, 8) || !isText(migrated.pulseId, 120, 8)
     || !Array.isArray(migrated.pulses) || migrated.pulses.length < 1 || migrated.pulses.length > 2) return null;
   const items = migrated.pulses;
@@ -296,7 +296,10 @@ export function isWorldPulseAnswer(value: unknown, kind: WorldPulseKind): value 
       && isTextArray(autonomousAction.targetIds, 3, 80)
       && typeof autonomousAction.category === 'string' && actionCategories.includes(autonomousAction.category as CommonActionCategory)
       && isText(autonomousAction.objective, 600, 12)
-      && (autonomousAction.operation === undefined || (typeof autonomousAction.operation === 'string'
+      // Le schéma JSON strict impose cette propriété et encode l'absence de
+      // sous-type spécialisé par null. Le validateur doit accepter la même
+      // forme : sinon une intention autonome valide est rejetée inutilement.
+      && (autonomousAction.operation === undefined || autonomousAction.operation === null || (typeof autonomousAction.operation === 'string'
         && ['contact', 'cooperation', 'defense_pact', 'mediation', 'information_sharing'].includes(autonomousAction.operation))));
     return (proposal.dossierId === null || isText(proposal.dossierId, 120, 1))
       && (proposal.parentDossierId === undefined || proposal.parentDossierId === null || isText(proposal.parentDossierId, 120, 1))

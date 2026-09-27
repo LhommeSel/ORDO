@@ -1,4 +1,5 @@
 import { aiRuntimePolicy } from './security';
+import { GAME_BRAND } from '../brand';
 
 type QuotaRow = { request_count: number; reset_at: number };
 type BudgetRow = { estimated_usd: number; reset_at: number };
@@ -46,7 +47,7 @@ async function getQuotaDatabase(): Promise<D1Like | null> {
   }
   if (!warnedUnavailable && process.env.NODE_ENV === 'production') {
     warnedUnavailable = true;
-    console.warn('ORDO persistent AI quota unavailable; using in-memory safeguards.');
+    console.warn('ÉTAT-NATION persistent AI quota unavailable; using in-memory safeguards.');
   }
   return null;
 }
@@ -142,7 +143,7 @@ export async function claimPersistentAIRequest(ipKey: string, sessionKey: string
         available: true,
         ok: false,
         code: 'budget_exhausted',
-        message: 'Le budget IA quotidien d’ORDO est épuisé.',
+        message: `Le budget IA quotidien de ${GAME_BRAND.name} est épuisé.`,
         retryAfterSeconds: secondsUntil(budget.reset_at, now),
       };
     }
@@ -175,7 +176,7 @@ export async function claimPersistentAIRequest(ipKey: string, sessionKey: string
   } catch (error) {
     // Une panne D1 ne doit pas rendre le jeu inutilisable ; le coupe-circuit
     // mémoire et la limite OpenAI restent actifs. Le détail n'est pas exposé.
-    console.error('ORDO persistent AI quota failure', { name: error instanceof Error ? error.name : 'unknown' });
+    console.error('ÉTAT-NATION persistent AI quota failure', { name: error instanceof Error ? error.name : 'unknown' });
     return { available: false, ok: true };
   }
 }
@@ -197,6 +198,6 @@ export async function recordPersistentAICost(estimatedUsd: number) {
          updated_at = excluded.updated_at`,
     ).bind(windowStart, resetAt, estimatedUsd, Date.now()).run();
   } catch (error) {
-    console.error('ORDO persistent AI cost recording failure', { name: error instanceof Error ? error.name : 'unknown' });
+    console.error('ÉTAT-NATION persistent AI cost recording failure', { name: error instanceof Error ? error.name : 'unknown' });
   }
 }

@@ -1,5 +1,6 @@
 import type { CapacityState, CountryState } from './types';
 import type { NationalBaselineDescriptor } from './national-baseline-2000';
+import { fiscalStateForCredits } from './fiscal';
 
 /**
  * Catalogue mondial de couverture. Les 95 lignes ci-dessous complètent les
@@ -225,7 +226,7 @@ export function createGlobalBaselineCountries2000(): Record<string, CountryState
     const governingSeats = descriptor.orientation === 'transition' || descriptor.orientation === 'liberal' ? Math.round(seats * 0.53) : Math.round(seats * 0.72);
     return [descriptor.id, {
       id: descriptor.id, name: descriptor.name, flag: descriptor.flag, weight: descriptor.scale, statisticalReliability: 52,
-      metrics: { budget: Math.max(18, Math.round(descriptor.gdp * 0.17)), industry: descriptor.industry, stability: descriptor.stability, security: descriptor.security }, capacities: capacities(descriptor),
+      metrics: { industry: descriptor.industry, stability: descriptor.stability, security: descriptor.security }, fiscal: fiscalStateForCredits(Math.max(18, Math.round(descriptor.gdp * 0.17))), capacities: capacities(descriptor),
       politics: { regime: descriptor.regime, executive: descriptor.leader, headOfGovernment: descriptor.leader, governmentLabel: descriptor.government, legislatureSeats: seats, governingSeats, publicApproval: Math.round((descriptor.stability + descriptor.security) / 2), administrativeCompliance: Math.round(Math.min(92, descriptor.stability + (descriptor.orientation === 'party_state' ? 18 : 4))), doctrine: d },
       strategy: { goals: descriptor.interests.map((label, index) => ({ id: `${descriptor.id.toLowerCase()}-goal-${index + 1}`, label, priority: index === 0 ? 88 : 72, progress: 32, status: 'active' as const })), vulnerabilities: descriptor.vulnerabilities, redLines: descriptor.redLines, partners: [], rivals: [], lastReviewDate: '2000-01-01' },
     } satisfies CountryState];

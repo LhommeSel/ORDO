@@ -4,16 +4,27 @@ import { useEffect, useMemo, useState, type KeyboardEvent } from 'react';
 import { geoArea, geoMercator, geoNaturalEarth1, geoPath } from 'd3-geo';
 import { Button } from '@/components/ui/button';
 import type { WorldState } from '@/lib/simulation/types';
-import type { Territory } from '@/lib/simulation/territory-types';
+import type { Territory, TerritorialPortCapability, TerritorialPortOperationalState } from '@/lib/simulation/territory-types';
 import { territoryEconomicShare, territorySummary } from '@/lib/simulation/territories';
 import { transferTerritory } from '@/lib/simulation/territorial-transfers';
 import { territoryMapCatalog } from '@/lib/territory-map-catalog';
 import { assetMonthlyOutput, assetOperationalOutput, operateTerritorialAsset, type TerritorialAssetActionKind } from '@/lib/simulation/territorial-assets';
+import { portClassLabels } from '@/lib/simulation/territory-data-americas-ports';
 
 const numbers = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 });
 const decimals = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 });
 const featureCache = new Map<string, GeoJSON.FeatureCollection>();
 const assetUnits: Record<string, string> = { MW: 'MW', bcm_per_year: 'Gm³/an', million_tonnes_per_year: 'Mt/an' };
+const portCapabilityLabels: Record<TerritorialPortCapability, string> = {
+  general_cargo: 'marchandises générales',
+  solid_bulk: 'vrac solide',
+  liquid_hydrocarbons: 'hydrocarbures liquides',
+  lng: 'terminal GNL',
+  passengers_ferries: 'passagers / ferries',
+};
+const portStateLabels: Record<TerritorialPortOperationalState, string> = {
+  operating: 'en service', congested: 'congestionné', damaged: 'endommagé', blockaded: 'bloqué', closed: 'fermé',
+};
 
 function assetOperationLabel(asset: WorldState['territorial']['assets'][string]) {
   const operation = asset.operation;
@@ -166,20 +177,32 @@ export function TerritoryExplorer({ world, countryId, onWorldChange, onNotice }:
           <h5>Actifs recensés ({assets.length})</h5>
           {assets.length ? <ul>{assets.map((asset) => {
             const pending = Object.values(world.actionPrograms ?? {}).find((program) => program.status === 'active' && program.territorialAssetId === asset.id);
-            return <li key={asset.id}><b>{asset.kind === 'port' || asset.kind === 'passage' || asset.kind === 'airport' ? '■' : '●'} {asset.name}</b> — {asset.operatorEntityId ? territorial.entities[asset.operatorEntityId]?.name : 'Opérateur à documenter'} · {asset.status === 'closed' ? 'fermé / arrêté au lancement' : assetOperationLabel(asset) ?? 'inventaire sans capacité chiffrée'}
+            const port = asset.portProfile;
+            return <li key={asset.id}><b>{asset.kind === 'port' || asset.kind === 'passage' || asset.kind === 'airport' ? '■' : '●'} {asset.name}</b> — {asset.operatorEntityId ? territorial.entities[asset.operatorEntityId]?.name : 'Opérateur à documenter'} · {port ? `${portClassLabels[port.classification]} · capacité disponible ${port.goodsCapacity}/10 (infrastructure ${port.infrastructureCapacity}/10)` : asset.status === 'closed' ? 'fermé / arrêté au lancement' : assetOperationLabel(asset) ?? 'inventaire sans capacité chiffrée'}
+              {port && <div className="mt-1 text-xs text-muted-foreground">Desserte nationale {port.nationalReach}/10 · risque de gouvernance {port.governanceRisk}/10 · état : {portStateLabels[port.operationalState]}<br />Capacités : {port.capabilities.map((capability) => portCapabilityLabels[capability]).join(' · ')} · potentiel d’extension {port.developmentPotential}/5</div>}
               {pending && <div className="mt-1 text-xs text-amber-300">Opération en cours · résolution prévue le {pending.expectedCompletionAt} · moyens temporairement engagés</div>}
-              {asset.operation && <div className="mt-2 flex flex-wrap gap-1">{canOperate && <>
+              {(asset.operation || port) && <div className="mt-2 flex flex-wrap gap-1">{canOperate && <>
+                {port && <>
+                  <Button size="sm" variant="outline" disabled={Boolean(pending) || port.governanceRisk <= 0} onClick={() => operate(asset.id, 'audit')}>Auditer</Button>
+                  <Button size="sm" variant="outline" disabled={Boolean(pending) || port.developmentPotential <= 0 || port.goodsCapacity >= port.infrastructureCapacity - 0.01 || port.infrastructureCapacity >= 10} onClick={() => operate(asset.id, 'invest')}>Étendre</Button>
+                  {!port.capabilities.includes('lng') && <Button size="sm" variant="outline" disabled={Boolean(pending)} onClick={() => operate(asset.id, 'equip_lng')}>Équiper GNL</Button>}
+                  {port.operationalState === 'congested' && <Button size="sm" variant="outline" disabled={Boolean(pending)} onClick={() => operate(asset.id, 'decongest')}>Désengorger</Button>}
+                  {(['damaged', 'closed'].includes(port.operationalState) || asset.status === 'damaged' || asset.status === 'closed') && <Button size="sm" variant="outline" disabled={Boolean(pending)} onClick={() => operate(asset.id, 'repair')}>Réparer</Button>}
+                </>}
+                {asset.operation && <>
                 <Button size="sm" variant="outline" disabled={Boolean(pending) || asset.status === 'closed' || asset.operation.deployed >= asset.operation.maximum - 0.001} onClick={() => operate(asset.id, 'mobilize')}>Mobiliser</Button>
                 <Button size="sm" variant="outline" disabled={Boolean(pending) || asset.status === 'closed' || asset.operation.availabilityPct >= 99.9} onClick={() => operate(asset.id, 'maintain')}>Entretenir</Button>
                 <Button size="sm" variant="outline" disabled={Boolean(pending) || asset.status === 'closed'} onClick={() => operate(asset.id, 'invest')}>Étendre</Button>
                 <Button size="sm" variant="outline" disabled={Boolean(pending) || asset.status === 'closed'} onClick={() => operate(asset.id, 'close')}>Suspendre</Button>
                 {(asset.status !== 'operating' || asset.operation.availabilityPct < 95) && <Button size="sm" variant="outline" disabled={Boolean(pending)} onClick={() => operate(asset.id, 'repair')}>Réparer</Button>}
+                </>}
+                {port && <Button size="sm" variant="outline" disabled={Boolean(pending) || port.operationalState === 'closed'} onClick={() => operate(asset.id, 'close')}>Suspendre</Button>}
               </>}</div>}
             </li>;
           })}</ul>
             : <p>Aucun actif recensé dans ce premier lot — cela ne signifie pas que le territoire n’en possède pas.</p>}
           {canOperate && selected.kind !== 'aggregate' && <div className="mt-4 border-t border-border/70 pt-3"><h5>Contrôle territorial</h5><p className="mt-1 text-xs text-muted-foreground">Les transferts sont atomiques : une occupation ne déplace pas le PIB ; une cession réconcilie souveraineté et comptes nationaux.</p><div className="mt-2 flex flex-wrap gap-2"><select aria-label="Pays cible du transfert" value={transferTarget} onChange={(event) => setTransferTarget(event.target.value)} className="h-9 min-w-52 border border-input bg-background px-2 text-sm"><option value="">Choisir un pays…</option>{transferTargets.map((country) => <option key={country.id} value={country.id}>{country.flag} {country.name}</option>)}</select><Button size="sm" variant="outline" disabled={!transferTarget} onClick={() => transfer('cession')}>Céder</Button><Button size="sm" variant="outline" disabled={!transferTarget} onClick={() => transfer('occupation')}>Occupation</Button>{selected.controllerEntityId !== selected.sovereignCountryId && <Button size="sm" variant="outline" onClick={() => transfer('liberation')}>Libérer</Button>}</div></div>}
-          <p className="territory-help">Les actifs sans capacité restent un inventaire localisé. Les actifs énergétiques chiffrés ont un débit mensuel dérivé ; seuls ceux marqués comme raccordés au registre influencent les flux. Les boutons d’exploitation apparaissent uniquement pour le pays joué.</p>
+          <p className="territory-help">Pour les ports, la classe décrit le rôle atteint dans le réseau et la capacité disponible peut varier avec la congestion, les dommages ou les investissements ; le plafond d’infrastructure reste distinct. Les actifs énergétiques chiffrés ont un débit mensuel dérivé ; seuls ceux marqués comme raccordés au registre influencent les flux. Les boutons d’exploitation apparaissent uniquement pour le pays joué.</p>
         </article>}
       </div>
     </div>

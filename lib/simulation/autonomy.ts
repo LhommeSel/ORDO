@@ -169,7 +169,7 @@ function reviewStrategicIndustry(state: WorldState, countryId: CountryId) {
     .sort((a, b) => (b.foreignDependency - b.health) - (a.foreignDependency - a.health))[0];
   if (!vulnerable) return state;
   const country = state.countries[countryId];
-  if (!country || country.metrics.budget < 4) return state;
+  if (!country || country.fiscal.discretionaryMargin < 4) return state;
   const urgency = Math.min(95, 30 + vulnerable.foreignDependency * 0.45 + Math.max(0, 55 - vulnerable.health) * 0.8);
   const candidate: StrategicActionCandidate = {
     id: `industry-${vulnerable.id}`, actorId: countryId,
@@ -189,7 +189,7 @@ function reviewStrategicIndustry(state: WorldState, countryId: CountryId) {
     kind: 'industrial', actorId: countryId, origin: 'local_rule',
     intent: `Réduire la vulnérabilité de la filière ${vulnerable.sector}`,
     effects: [
-      { kind: 'metric_delta', countryId, metric: 'budget', delta: -3, reason: 'Le programme industriel engage des crédits publics et des garanties.' },
+      { kind: 'fiscal_delta', countryId, bucket: 'discretionary', delta: -3, reason: 'Le programme industriel engage des crédits publics et des garanties.' },
       { kind: 'capacity_commitment', countryId, domain: 'economy', delta: 4, reason: 'La conception du programme mobilise les services économiques.' },
       { kind: 'sector_patch', sectorId: vulnerable.id, patch: { workloadMonths: vulnerable.workloadMonths + 24, capacity: Math.min(100, vulnerable.capacity + 3), technology: Math.min(100, vulnerable.technology + 1), health: Math.min(100, vulnerable.health + 2) }, reason: 'Le pays lance un programme pluriannuel de consolidation de la filière.' },
     ],
